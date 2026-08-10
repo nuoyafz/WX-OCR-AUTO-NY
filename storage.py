@@ -1,0 +1,453 @@
+"""
+数据存储模块 — SQLite按联系人存储 + JSON/CSV导出
+=================================================
+- 每条消息按联系人存储到SQLite数据库
+- 支持JSON和CSV格式导出
+- 提供查询接口（按联系人/时间/关键词/重要性筛选）
+"""
+import os
+import json
+import csv
+import sqlite3
+import logging
+from datetime import datetime
+
+logger = logging.getLogger(__name__)
+
+
+# -----------------------------
+# 安全工具函数：彻底解决 dict join 报错
+# -----------------------------
+def _safe_str(value):
+    """把任意类型值转换为可写入CSV的安全字符串。
+    防止: sequence item 0: expected str instance, dict found
+    """
+    if value is None:
+        return ""
+    if isinstance(value, str):
+        return value
+    if isinstance(value, (int, float, bool)):
+        return str(value)
+    if isinstance(value, (list, tuple)):
+        try:
+            return "[" + ", ".join(_safe_str(v) for v in value) + "]"
+        except Exception:
+            return str(value)
+    if isinstance(value, dict):
+        try:
+            return json.dumps(value, ensure_ascii=False)
+        except Exception:
+            return str(value)
+    try:
+        return str(value)
+    except Exception:
+        return ""
+
+
+def _safe_join(separator, iterable):
+    """安全join任何可迭代对象：先每个元素_safe_str()再拼接。"""
+    if not iterable:
+        return ""
+    try:
+        return separator.join(_safe_str(item) for item in iterable)
+    except Exception as e:
+        logger.warning(f"_safe_join 回退到str(): {e}")
+        return str(iterable)
+
+
+def _safe_action_items_str(action_items):
+    """action_items可能是list[str]或list[dict]或混合，统一转成可读字符串"""
+    if not action_items:
+        return ""
+    items = []
+    for ai in action_items:
+        if isinstance(ai, dict):
+            # 如果是结构化待办，拼出可读文本
+            parts = []
+            if "content" in ai:
+                parts.append(str(ai["content"]))
+            elif "text" in ai:
+                parts.append(str(ai["text"]))
+            elif "title" in ai:
+                parts.append(str(ai["title"]))
+            else:
+                # 兜底：用json
+                parts.append(json.dumps(ai, ensure_ascii=False))
+            for extra_key in ("due", "deadline", "priority", "owner"):
+                if ai.get(extra_key):
+                    parts.append(f"{extra_key}={ai[extra_key]}")
+            items.append("; ".join(parts))
+        else:
+            items.append(_safe_str(ai))
+    return ", ".join(items)
+
+
+class MessageStorage:
+    """消息存储管理器"""
+
+    def __init__(self, storage_config):
+        self.config = storage_config or {}
+        self.storage_type = self.config.get("type", "sqlite")
+        self.db_path = self.config.get("db_path", "data/messages.db")
+        self.json_path = self.config.get("json_path", "data/messages.json")
+        self.csv_path = self.config.get("csv_path", "data/messages.csv")
+
+        # 确保数据目录存在
+        db_dir = os.path.dirname(self.db_path)
+        if db_dir:
+            os.makedirs(db_dir, exist_ok=True)
+
+        if self.storage_type == "sqlite":
+            self._init_db()
+
+    def _init_db(self):
+        """初始化SQLite数据库"""
+        try:
+            conn = sqlite3.connect(self.db_path)
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS messages (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    contact TEXT NOT NULL,
+                    sender TEXT NOT NULL,
+                    raw_text TEXT NOT NULL,
+                    timestamp TEXT NOT NULL,
+                    matched_keywords TEXT,
+                    keyword_categories TEXT,
+                    regex_extracts TEXT,
+                    is_important INTEGER DEFAULT 0,
+                    importance_reason TEXT,
+                    llm_analysis TEXT,
+                    created_at TEXT DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+            conn.execute("""
+                CREATE INDEX IF NOT EXISTS idx_contact ON messages(contact)
+            """)
+            conn.execute("""
+                CREATE INDEX IF NOT EXISTS idx_timestamp ON messages(timestamp)
+            """)
+            conn.execute("""
+                CREATE INDEX IF NOT EXISTS idx_important ON messages(is_important)
+            """)
+            conn.commit()
+            conn.close()
+            logger.info(f"数据库初始化完成: {self.db_path}")
+        except Exception as e:
+            logger.error(f"数据库初始化失败: {e}")
+
+    def save(self, extraction_result):
+        """保存一条提取结果"""
+        if self.storage_type == "sqlite":
+            self._save_sqlite(extraction_result)
+        elif self.storage_type == "json":
+            self._save_json(extraction_result)
+        elif self.storage_type == "csv":
+            self._save_csv(extraction_result)
+
+    def _save_sqlite(self, result):
+        """保存到SQLite"""
+        try:
+            conn = sqlite3.connect(self.db_path)
+            conn.execute("""
+                INSERT INTO messages (
+                    contact, sender, raw_text, timestamp,
+                    matched_keywords, keyword_categories, regex_extracts,
+                    is_important, importance_reason, llm_analysis
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (
+                result.get("contact", ""),
+                result.get("sender", "other"),
+                result.get("raw_text", ""),
+                result.get("timestamp", ""),
+                json.dumps(result.get("matched_keywords", []), ensure_ascii=False),
+                json.dumps(result.get("keyword_categories", []), ensure_ascii=False),
+                json.dumps(result.get("regex_extracts", {}), ensure_ascii=False),
+                1 if result.get("is_important") else 0,
+                result.get("importance_reason", ""),
+                json.dumps(result.get("llm_analysis", {}), ensure_ascii=False),
+            ))
+            conn.commit()
+            conn.close()
+        except Exception as e:
+            logger.error(f"保存到SQLite失败: {e}")
+
+    def _save_json(self, result):
+        """保存到JSON文件（追加模式）"""
+        data = []
+        if os.path.exists(self.json_path):
+            try:
+                with open(self.json_path, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+            except (json.JSONDecodeError, IOError):
+                data = []
+        data.append(result)
+        json_dir = os.path.dirname(self.json_path)
+        if json_dir:
+            os.makedirs(json_dir, exist_ok=True)
+        with open(self.json_path, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+
+    def _save_csv(self, result):
+        """保存到CSV文件（追加模式）—— 使用安全join"""
+        csv_dir = os.path.dirname(self.csv_path)
+        if csv_dir:
+            os.makedirs(csv_dir, exist_ok=True)
+        file_exists = os.path.exists(self.csv_path)
+        with open(self.csv_path, "a", newline="", encoding="utf-8-sig") as f:
+            writer = csv.writer(f)
+            if not file_exists:
+                writer.writerow([
+                    "contact", "sender", "raw_text", "timestamp",
+                    "matched_keywords", "keyword_categories", "regex_extracts",
+                    "is_important", "importance_reason", "llm_analysis"
+                ])
+            writer.writerow([
+                _safe_str(result.get("contact", "")),
+                _safe_str(result.get("sender", "")),
+                _safe_str(result.get("raw_text", "")),
+                _safe_str(result.get("timestamp", "")),
+                _safe_join("|", result.get("matched_keywords", [])),
+                _safe_join("|", result.get("keyword_categories", [])),
+                json.dumps(result.get("regex_extracts", {}), ensure_ascii=False),
+                "是" if result.get("is_important") else "否",
+                _safe_str(result.get("importance_reason", "")),
+                json.dumps(result.get("llm_analysis", {}), ensure_ascii=False),
+            ])
+
+    def query(self, contact=None, keyword=None, important_only=False,
+              start_time=None, end_time=None, limit=100):
+        """查询消息"""
+        if self.storage_type != "sqlite":
+            logger.warning("查询功能仅支持SQLite模式")
+            return []
+
+        try:
+            conn = sqlite3.connect(self.db_path)
+            conn.row_factory = sqlite3.Row
+            sql = "SELECT * FROM messages WHERE 1=1"
+            params = []
+
+            if contact:
+                sql += " AND contact LIKE ?"
+                params.append(f"%{contact}%")
+            if keyword:
+                sql += " AND raw_text LIKE ?"
+                params.append(f"%{keyword}%")
+            if important_only:
+                sql += " AND is_important = 1"
+            if start_time:
+                sql += " AND timestamp >= ?"
+                params.append(start_time)
+            if end_time:
+                sql += " AND timestamp <= ?"
+                params.append(end_time)
+
+            sql += " ORDER BY timestamp DESC LIMIT ?"
+            params.append(limit)
+
+            rows = conn.execute(sql, params).fetchall()
+            conn.close()
+
+            results = []
+            for row in rows:
+                kw = row["matched_keywords"]
+                kc = row["keyword_categories"]
+                re_row = row["regex_extracts"]
+                la = row["llm_analysis"]
+                results.append({
+                    "id": row["id"],
+                    "contact": row["contact"],
+                    "sender": row["sender"],
+                    "raw_text": row["raw_text"],
+                    "timestamp": row["timestamp"],
+                    "matched_keywords": json.loads(kw) if kw else [],
+                    "keyword_categories": json.loads(kc) if kc else [],
+                    "regex_extracts": json.loads(re_row) if re_row else {},
+                    "is_important": bool(row["is_important"]),
+                    "importance_reason": row["importance_reason"] or "",
+                    "llm_analysis": json.loads(la) if la else {},
+                })
+            return results
+        except Exception as e:
+            logger.error(f"查询失败: {e}")
+            import traceback
+            logger.error(traceback.format_exc()[-200:])
+            return []
+
+    def get_contacts(self):
+        """获取所有联系人列表"""
+        if self.storage_type != "sqlite":
+            return []
+        try:
+            conn = sqlite3.connect(self.db_path)
+            rows = conn.execute(
+                "SELECT DISTINCT contact FROM messages ORDER BY contact"
+            ).fetchall()
+            conn.close()
+            return [row[0] for row in rows]
+        except Exception:
+            return []
+
+    def search(self, keyword, limit=50):
+        """搜索消息"""
+        if self.storage_type != "sqlite":
+            return []
+        try:
+            conn = sqlite3.connect(self.db_path)
+            conn.row_factory = sqlite3.Row
+            cur = conn.execute(
+                """SELECT * FROM messages
+                   WHERE raw_text LIKE ? OR contact LIKE ?
+                   ORDER BY timestamp DESC LIMIT ?""",
+                (f"%{keyword}%", f"%{keyword}%", limit)
+            )
+            rows = cur.fetchall()
+            conn.close()
+            return [dict(row) for row in rows]
+        except Exception as e:
+            logger.error(f"搜索失败: {e}")
+            return []
+
+    def get_stats(self):
+        """获取统计信息"""
+        if self.storage_type != "sqlite":
+            return {}
+        try:
+            conn = sqlite3.connect(self.db_path)
+            total = conn.execute("SELECT COUNT(*) FROM messages").fetchone()[0]
+            important = conn.execute(
+                "SELECT COUNT(*) FROM messages WHERE is_important=1"
+            ).fetchone()[0]
+            contacts = conn.execute(
+                "SELECT COUNT(DISTINCT contact) FROM messages"
+            ).fetchone()[0]
+            conn.close()
+            return {
+                "total_messages": total,
+                "important_messages": important,
+                "total_contacts": contacts,
+            }
+        except Exception:
+            return {}
+
+    # ------------------------------------------------------------------
+    # 按联系人分组导出 CSV （所有join均使用安全版，杜绝dict导致的崩溃）
+    # ------------------------------------------------------------------
+    def export_csv(self, filepath=None):
+        """导出全部数据为CSV（按联系人分组，对话合并格式）"""
+        filepath = filepath or self.csv_path
+        csv_dir = os.path.dirname(filepath)
+        if csv_dir:
+            os.makedirs(csv_dir, exist_ok=True)
+
+        all_data = self.query(limit=999999)
+
+        # 按联系人分组
+        contacts = {}
+        for row in all_data:
+            name = row["contact"] or "（未命名联系人）"
+            if name not in contacts:
+                contacts[name] = []
+            contacts[name].append(row)
+
+        try:
+            with open(filepath, "w", newline="", encoding="utf-8-sig") as f:
+                writer = csv.writer(f)
+                # 汇总信息
+                writer.writerow(["========== 联系人消息汇总 =========="])
+                writer.writerow([f"导出时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"])
+                writer.writerow([f"总联系人: {len(contacts)}  总消息数: {len(all_data)}"])
+                writer.writerow([])
+
+                for contact_name in sorted(contacts.keys()):
+                    rows = contacts[contact_name]
+                    important_count = sum(1 for m in rows if m["is_important"])
+                    writer.writerow([f"========== {contact_name} (消息数:{len(rows)}, 重要:{important_count}) =========="])
+
+                    # 按时间排序消息
+                    rows.sort(key=lambda x: x.get("timestamp", ""))
+
+                    # 写入消息（对话格式）
+                    current_date = ""
+                    for row in rows:
+                        ts = row.get("timestamp", "")
+                        date_part = ts.split(" ")[0] if " " in ts else ts
+
+                        # 日期分隔
+                        if date_part != current_date:
+                            current_date = date_part
+                            f.write(f"\n--- {date_part} ---\n")
+
+                        sender = "我" if row.get("sender") == "me" else contact_name
+                        content = row.get("raw_text", "")
+                        important = "★" if row.get("is_important") else ""
+
+                        # 对话格式：时间 发送者: 内容 [重要标记]
+                        time_part = ts.split(" ")[1] if " " in ts else ""
+                        keywords = _safe_join(" ", row.get("matched_keywords", []))
+                        summary = ""
+                        llm = row.get("llm_analysis", {})
+                        if isinstance(llm, dict):
+                            summary = llm.get("summary", "")
+
+                        line = f"{time_part}\t{sender}: {content}"
+                        if important:
+                            line += f" [★{row.get('importance_reason', '')}]"
+                        if keywords:
+                            line += f" [关键词: {keywords}]"
+                        if summary:
+                            line += f" [摘要: {summary}]"
+                        f.write(line + "\n")
+                    writer.writerow([])  # 空行分隔
+
+            logger.info(f"已导出CSV（按联系人分组）: {filepath} ({len(all_data)} 条, {len(contacts)} 个联系人)")
+            return True
+        except Exception as e:
+            logger.error(f"导出CSV失败: {e}", exc_info=True)
+            import traceback
+            logger.error(traceback.format_exc()[-400:])
+            raise
+
+    def export_json(self, filepath=None):
+        """导出全部数据为JSON（按联系人分组）"""
+        filepath = filepath or self.json_path
+        json_dir = os.path.dirname(filepath)
+        if json_dir:
+            os.makedirs(json_dir, exist_ok=True)
+        all_data = self.query(limit=999999)
+
+        # 按联系人分组
+        contacts = {}
+        for row in all_data:
+            name = row["contact"] or "（未命名联系人）"
+            if name not in contacts:
+                contacts[name] = {
+                    "contact": name,
+                    "message_count": 0,
+                    "important_count": 0,
+                    "messages": [],
+                }
+            contacts[name]["messages"].append({
+                "sender": "我" if row["sender"] == "me" else "对方",
+                "text": row["raw_text"],
+                "timestamp": row["timestamp"],
+                "keywords": row["matched_keywords"],
+                "regex_extracts": row["regex_extracts"],
+                "is_important": row["is_important"],
+                "importance_reason": row["importance_reason"],
+                "llm_analysis": row["llm_analysis"],
+            })
+            contacts[name]["message_count"] += 1
+            if row["is_important"]:
+                contacts[name]["important_count"] += 1
+
+        export_data = {
+            "export_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "total_contacts": len(contacts),
+            "total_messages": len(all_data),
+            "contacts": list(contacts.values()),
+        }
+
+        with open(filepath, "w", encoding="utf-8") as f:
+            json.dump(export_data, f, ensure_ascii=False, indent=2)
+        logger.info(f"已导出JSON（按联系人分组）: {filepath} ({len(all_data)} 条, {len(contacts)} 个联系人)")

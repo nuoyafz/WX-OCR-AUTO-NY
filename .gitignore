@@ -1,0 +1,59 @@
+# === 敏感文件（绝对不能上传）===
+config.yaml
+*.env
+.env
+*.key
+*.pem
+
+# === Python 缓存 ===
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+dist/
+*.egg-info/
+.installed.cfg
+
+# === 运行时数据 ===
+data/
+*.db
+*.sqlite
+*.sqlite3
+
+# === 调试截图 ===
+debug/
+*.png
+*.jpg
+*.jpeg
+!banner.txt
+
+# === 日志 ===
+*.log
+logs/
+
+# === 备份文件 ===
+*.bak
+*.bak2
+*.orig
+
+# === IDE ===
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# === 系统 ===
+Thumbs.db
+desktop.ini
+.DS_Store
+
+# === 其他 ===
+*.tmp
+*.temp
+sidebar_capture.png
+red_dot_mask.png
+red_dot_template.png
+debug_no_reddot.png
