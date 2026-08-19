@@ -40,6 +40,11 @@ class RedDotMonitor:
         self._processed = {}
         self._last_check_time = 0
         self._last_debug = ""
+        # 侧边栏截图在客户区中的实际原点 + 客户区实际尺寸（PrintWindow实测，避免外框/DPI偏差）
+        self._sidebar_client_origin = None  # (x, y) 截图左上角在客户区中的坐标
+        self._last_client_width = 0
+        self._last_client_height = 0
+        self._last_sidebar_img = None  # 最近一次侧边栏截图（用于预览）
 
         # === 模板匹配配置（方案4） ===
         self.template_dir = os.path.join(
@@ -61,9 +66,47 @@ class RedDotMonitor:
         return (sidebar_left, sidebar_top, sidebar_width, sidebar_height)
 
     def capture_sidebar(self, window):
-        from screenshot import capture_region
+        from screenshot import capture_region, capture_via_printwindow
         region = self.get_sidebar_region(window)
-        return capture_region(region)
+        left, top = region[0], region[1]
+
+        # 屏幕外模式：mss截不到屏幕外，用 PrintWindow 全窗截图后裁剪侧边栏
+        if left < -1000 or top < -1000:
+            from window_manager import _get_hwnd
+            hwnd = _get_hwnd(window)
+            if hwnd:
+                full = capture_via_printwindow(hwnd)
+                if full is not None:
+                    # 侧边栏区域在窗口内的相对坐标
+                    x = left - window.left
+                    y = top - window.top
+                    w, h = region[2], region[3]
+                    # ★ 客户区原点修正（关键）：
+                    #   实测证明 PrintWindow 位图内容为"全窗口"（含标题栏），位图第i行=窗口第i行，
+                    #   因此 SendMessageW 点击用的客户区行 = 位图行 - client_top_offset。
+                    #   client_top_offset = 窗口顶部到客户区顶部的距离，用 ClientToScreen 精确实测；
+                    #   之前用 window.height - full.shape[0] 估算标题栏，该值含底部隐形边框会多减。
+                    import win32gui
+                    _wr = win32gui.GetWindowRect(hwnd)
+                    _co = win32gui.ClientToScreen(hwnd, (0, 0))
+                    client_top_offset = max(0, _co[1] - _wr[1])
+                    y_origin = y - client_top_offset
+                    logger.info("[屏幕外] 全窗口截图(含标题栏)，客户区原点修正: "
+                                "y %d→%d (顶部偏移=%dpx)", y, y_origin, client_top_offset)
+                    logger.info("[屏幕外] 侧边栏PrintWindow裁剪: rel(%d,%d) %dx%d",
+                                x, y, w, h)
+                    # ★ 记录客户区实际尺寸 + 裁剪原点（点击坐标用实测值，避免外框/标题栏/DPI偏差）
+                    self._sidebar_client_origin = (int(x), int(y_origin))
+                    self._last_client_width = int(full.shape[1])
+                    self._last_client_height = int(full.shape[0])
+                    self._last_sidebar_img = full[y:y + h, x:x + w]
+                    return self._last_sidebar_img
+            logger.warning("[屏幕外] 侧边栏截图失败（PrintWindow无效）")
+            return None
+
+        sidebar_img = capture_region(region)
+        self._last_sidebar_img = sidebar_img
+        return sidebar_img
 
     # ================================================================
     # 方案4：模板匹配检测红点
@@ -73,12 +116,34 @@ class RedDotMonitor:
         if self._template_cache is not None:
             return self._template_cache
         if os.path.exists(self.template_path):
-            template = cv2.imread(self.template_path)
-            if template is not None and template.size > 0:
-                self._template_cache = template
-                logger.info(f"[模板匹配] 已加载红点模板: {self.template_path} "
-                           f"尺寸={template.shape[:2]}")
-                return template
+            # 修复：cv2.imread 不支持中文路径，用 np.fromfile + cv2.imdecode
+            try:
+                import numpy as np
+                with open(self.template_path, "rb") as f:
+                    file_bytes = np.frombuffer(f.read(), dtype=np.uint8)
+                template = cv2.imdecode(file_bytes, cv2.IMREAD_COLOR)
+                if template is not None and template.size > 0:
+                    # ★ 校验模板确实是红色（曾截到绿色图标导致模板匹配永久失效）
+                    t_hsv = cv2.cvtColor(template, cv2.COLOR_BGR2HSV)
+                    t_h, t_s, t_v = cv2.split(t_hsv)
+                    red_ratio = float(
+                        (((t_h <= 10) | (t_h >= 170)) & (t_s > 100) & (t_v > 120)).sum()
+                    ) / t_h.size
+                    if red_ratio < 0.30:
+                        logger.warning(
+                            f"[模板匹配] 模板非红色(红色占比{red_ratio:.0%})，"
+                            f"判定为损坏模板并删除: {self.template_path}")
+                        try:
+                            os.remove(self.template_path)
+                        except Exception:
+                            pass
+                        return None
+                    self._template_cache = template
+                    logger.info(f"[模板匹配] 已加载红点模板: {self.template_path} "
+                               f"尺寸={template.shape[:2]} 红色占比={red_ratio:.0%}")
+                    return template
+            except Exception as e:
+                logger.warning(f"[模板匹配] 加载模板失败: {e}")
         return None
 
     def _save_template_from_hsv(self, image, red_dots):
@@ -93,12 +158,21 @@ class RedDotMonitor:
         y2 = min(image.shape[0], y + h + pad)
         template = image[y1:y2, x1:x2].copy()
         if template.size > 0 and template.shape[0] >= 10 and template.shape[1] >= 10:
+            # ★ 保存前校验：截取区域必须以红色为主（防止把绿色图标等误存为模板）
+            t_hsv = cv2.cvtColor(template, cv2.COLOR_BGR2HSV)
+            t_h, t_s, t_v = cv2.split(t_hsv)
+            red_ratio = float(
+                (((t_h <= 10) | (t_h >= 170)) & (t_s > 100) & (t_v > 120)).sum()
+            ) / t_h.size
+            if red_ratio < 0.30:
+                logger.warning(f"[模板匹配] 截取区域红色占比过低({red_ratio:.0%})，放弃保存模板")
+                return False
             from PIL import Image as PILImage
             template_rgb = template[:, :, ::-1].copy()
             PILImage.fromarray(template_rgb).save(self.template_path)
             self._template_cache = template
             logger.info(f"[模板匹配] 自动截取红点模板并保存: {self.template_path} "
-                        f"尺寸={template.shape[:2]} "
+                        f"尺寸={template.shape[:2]} 红色占比={red_ratio:.0%} "
                         f"来源红点=({best['center_x']},{best['center_y']}) "
                         f"area={best['area']:.0f}")
             return True
@@ -132,7 +206,8 @@ class RedDotMonitor:
                 score = result[pt[1], pt[0]]
                 cx = pt[0] + scaled_w // 2
                 cy = pt[1] + scaled_h // 2
-                if cx < w_img * 0.35:
+                # 与HSV一致：微信4.0徽章在头像右上角(x≈15%-55%)，只排除最左导航栏
+                if cx < w_img * 0.10:
                     continue
                 all_matches.append({
                     "x": pt[0], "y": pt[1], "w": scaled_w, "h": scaled_h,
@@ -192,7 +267,8 @@ class RedDotMonitor:
         upper_red2 = np.array([180, 255, 255])
         mask2 = cv2.inRange(hsv, lower_red2, upper_red2)
         mask = cv2.bitwise_or(mask1, mask2)
-        kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5))
+        # 3x3形态学：5x5会腐蚀小徽章（12x12徽章面积从113→100，卡在阈值边缘）
+        kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
         mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel)
         mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel)
         try:
@@ -212,8 +288,9 @@ class RedDotMonitor:
             x, y, cw, ch = cv2.boundingRect(cnt)
             center_x = x + cw // 2
             center_y = y + ch // 2
-            # 真实微信红点面积约200-2000，收紧范围排除头像/图标
-            if area < 100 or area > 3000:
+            # 真实微信红点：无数字小红点约80-150，带数字徽章200-2000
+            # 面积下限从100降到50（3x3形态学后小徽章约100，无数字圆点更小）
+            if area < 50 or area > 3000:
                 rejected.append(f"area={area:.0f}")
                 continue
             aspect_ratio = float(cw) / max(ch, 1)
@@ -225,9 +302,11 @@ class RedDotMonitor:
             if circularity < 0.5:
                 rejected.append(f"circ={circularity:.2f}")
                 continue
-            # 未读红点在侧边栏右侧（x > 50%宽度），排除左侧头像区域
-            if center_x < w * 0.35:
-                rejected.append(f"x={center_x}(左侧非红点)")
+            # 位置过滤：微信4.0徽章在头像右上角（x≈15%-55%侧边栏宽度），
+            # 旧版在行右侧（x>70%）。下限10%即可排除最左侧导航栏图标(x<8%)，
+            # 头像等红色内容由面积/圆形度/白字特征排除
+            if center_x < w * 0.10:
+                rejected.append(f"x={center_x}(最左侧导航栏)")
                 continue
             roi = image[y:y+ch, x:x+cw]
             white_ratio = 0.0
@@ -272,6 +351,9 @@ class RedDotMonitor:
                 all_dots.append(d)
                 used_y.add(d["center_y"])
         all_dots.sort(key=lambda d: (-d.get("white_ratio", 0), -d.get("score", 0), d["center_y"]))
+        # 注意：不要按 x 坐标过滤"右侧红点"——微信4.0真实徽章位于头像右上角，
+        # 实测横跨侧边栏宽度的 15%-55%（多列布局），x 过滤会误杀真实未读徽章。
+        # 非徽章红色元素由 HSV 6特征(面积/圆形度/白字)与模板匹配分数自然排除。
         logger.info(f"[红点检测汇总] 模板={len(template_dots)}个, "
                     f"HSV={len(hsv_dots)}个, 合并去重后={len(all_dots)}个")
         return all_dots
@@ -406,14 +488,19 @@ class RedDotMonitor:
                     logger.info(f"[红点] 去重: 重复的联系人 '{name}'，跳过")
                     continue
                 seen_names.add(norm_name)
-                last_processed = self._processed.get(name, 0)
+                # 同时检查规范化名称和原始名称（确保mark_processed存储的键能被找到）
+                last_processed = max(
+                    self._processed.get(norm_name, 0),
+                    self._processed.get(name, 0)
+                )
                 elapsed = now - last_processed
                 if elapsed > self._cooldown:
                     fresh_unread.append(item)
+                    logger.info(f"[红点] ✅ 通过冷却检查: {name} (已冷却{elapsed:.0f}s)")
                 else:
                     remaining = int(self._cooldown - elapsed)
                     cooling.append(f"{name}({remaining}s)")
-                    logger.info(f"[红点] 冷却中: {name} 剩余{remaining}s，跳过")
+                    logger.info(f"[红点] ⏸ 冷却中: {name} 剩余{remaining}s，跳过")
             self._last_debug = (f"红点={len(red_dots)}个, OCR={len(ocr_results)}条, "
                                 f"匹配={len(unread_raw)}个, 待处理={len(fresh_unread)}个, "
                                 f"冷却中={cooling}")
@@ -421,7 +508,10 @@ class RedDotMonitor:
             if fresh_unread:
                 logger.info(f"[红点] ★★★ 待处理未读联系人: {[u['contact'] for u in fresh_unread]} ★★★")
             else:
-                logger.info("[红点] 未检测到待处理的未读消息，继续监控当前窗口")
+                if cooling:
+                    logger.info(f"[红点] 未读均处于冷却中({len(cooling)}个)，{cooling[0]} 后到期将重试点击")
+                else:
+                    logger.info("[红点] 未检测到未读消息，继续监控当前窗口")
             return fresh_unread
         except Exception as e:
             logger.error(f"[红点] 监控失败: {e}")
@@ -431,8 +521,12 @@ class RedDotMonitor:
             return []
 
     def mark_processed(self, contact_name):
-        self._processed[contact_name] = time.time()
-        logger.info(f"[红点] 已标记处理: {contact_name}, 冷却{self._cooldown}s")
+        # 规范化联系人名（与检查冷却时一致，避免键不匹配）
+        import re
+        norm_name = re.sub(r'\s+', '', contact_name)
+        self._processed[norm_name] = time.time()
+        self._processed[contact_name] = time.time()  # 同时存储原始名，兼容
+        logger.info(f"[红点] 已标记处理: {contact_name} (规范化={norm_name}), 冷却{self._cooldown}s")
 
     def get_click_position(self, window, red_dot_y_in_sidebar, red_dot_x_in_sidebar=None):
         """根据红点在侧边栏截图中的位置，计算屏幕点击坐标"""
@@ -448,6 +542,41 @@ class RedDotMonitor:
             click_x = sidebar_left + int(w * self.sidebar_width_ratio * 0.65)
         click_y = sidebar_top + red_dot_y_in_sidebar
         logger.info(f"[红点] 点击位置: 屏幕({click_x},{click_y})")
+        return (click_x, click_y)
+
+    def get_click_client_position(self, window, red_dot_y_in_sidebar, red_dot_x_in_sidebar=None):
+        """
+        计算客户区相对坐标（用于SendMessageW后台点击）
+        与get_click_position不同，此方法返回的是相对于窗口客户区左上角的坐标
+        这样即使窗口在屏幕外也能正确定位
+        ★ 优先使用 PrintWindow 实测的裁剪原点/客户区尺寸（避免标题栏/DPI偏差点错联系人）
+        """
+        # === 实测优先：用 capture_sidebar 记录的裁剪原点 + 客户区尺寸 ===
+        if self._sidebar_client_origin is not None and self._last_client_width > 0:
+            origin_x, origin_y = self._sidebar_client_origin
+            full_w = self._last_client_width
+            # X坐标：点击联系人名称区域（侧边栏65%处，避开左侧头像）
+            if red_dot_x_in_sidebar is not None:
+                # 用红点X但向左偏移（红点在右侧，名称在中部）
+                rel_x_in_sidebar = max(int(red_dot_x_in_sidebar * 0.5), int(full_w * 0.05))
+                click_x = origin_x + int(full_w * self.sidebar_width_ratio * 0.35) + rel_x_in_sidebar
+            else:
+                click_x = origin_x + int(full_w * self.sidebar_width_ratio * 0.65)
+            # Y坐标：裁剪原点 + 红点在裁剪图中的Y
+            click_y = origin_y + int(red_dot_y_in_sidebar)
+            logger.info(f"[红点] 客户区点击位置(实测): rel({click_x},{click_y}) "
+                        f"原点={self._sidebar_client_origin}")
+            return (click_x, click_y)
+
+        # === 兜底：按窗口尺寸比例估算 ===
+        w, h = window.width, window.height
+        if red_dot_x_in_sidebar is not None:
+            rel_x_in_sidebar = max(int(red_dot_x_in_sidebar * 0.5), int(w * 0.05))
+            click_x = int(w * self.sidebar_width_ratio * 0.35) + rel_x_in_sidebar
+        else:
+            click_x = int(w * self.sidebar_width_ratio * 0.65)
+        click_y = int(h * self.sidebar_top_ratio) + int(red_dot_y_in_sidebar)
+        logger.info(f"[红点] 客户区点击位置(估算): rel({click_x},{click_y})")
         return (click_x, click_y)
 
     def should_check(self, interval=3):

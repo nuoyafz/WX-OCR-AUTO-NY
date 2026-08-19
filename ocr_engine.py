@@ -262,6 +262,10 @@ def recognize(image, scale=1.0, min_confidence=0.40,
             from wechat_ocr_engine import recognize_with_wechat_ocr
             results = recognize_with_wechat_ocr(image, min_confidence)
             if results is not None:
+                # 文本清洗：修正常见识别瑕疵
+                for r in results:
+                    if "text" in r:
+                        r["text"] = _clean_text(r["text"])
                 # 微信OCR成功，应用后处理
                 if merge_bubble and len(results) > 1:
                     results = _merge_bubble_lines(results)
@@ -276,44 +280,121 @@ def recognize(image, scale=1.0, min_confidence=0.40,
     return _recognize_with_paddle(image, scale, min_confidence, merge_bubble, denoise)
 
 
+def _compute_adaptive_scale(h, w, base_scale):
+    """
+    智能缩放：提升小字识别率。
+    - 大图（聊天区域整屏截图）：按 base_scale 缩小，但下限 0.75，避免过度压毁文字
+    - 小图（增量OCR裁剪出的单条消息区域）：不再缩小，反而放大 1.5~2 倍
+    - 中图：保持原尺寸
+    增量裁剪的小区域若再缩小，文字会被压到不可识别——这是识别率差的关键。
+    """
+    small_dim = min(h, w)
+
+    if small_dim < 100:
+        return 2.0                       # 极小区域：放大2倍
+    if small_dim < 200:
+        return 1.5                       # 单条消息裁剪：放大1.5倍
+    if small_dim < 300:
+        return 1.0                       # 中等区域：保持原尺寸
+    return max(base_scale, 0.75)         # 整屏截图：按配置缩放（下限0.75）
+
+
+def _enhance_image(image):
+    """
+    增强图像用于OCR重试：灰度 + 降噪 + CLAHE + 自适应二值化。
+    仅在第一遍识别为空时使用，作为兜底提升浅色/低对比度文字的可识别性。
+    """
+    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY) if len(image.shape) == 3 else image.copy()
+
+    # 轻度降噪保边缘
+    gray = cv2.bilateralFilter(gray, d=5, sigmaColor=50, sigmaSpace=50)
+
+    # CLAHE 增强局部对比度（浅色文字更清晰）
+    clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
+    gray = clahe.apply(gray)
+
+    # 自适应二值化：把背景压白、文字提黑，大幅提升对比度
+    binary = cv2.adaptiveThreshold(
+        gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 31, 15
+    )
+    return cv2.cvtColor(binary, cv2.COLOR_GRAY2BGR)
+
+
+def _clean_text(text):
+    """
+    OCR文本清洗：修正常见识别瑕疵。
+    - 压缩多余空格/空行
+    - 清理行首行尾的噪声符号（|、-、_ 等）
+    - 合并重复的标点（。。。→。）
+    """
+    if not text:
+        return text
+
+    # 压缩连续空白为单空格（保留换行）
+    import re as _re
+    text = _re.sub(r'[ \t\u3000]+', ' ', text)
+    text = _re.sub(r'\n{3,}', '\n\n', text)
+
+    # 行首行尾的孤立噪声符号
+    text = _re.sub(r'^[\s\|_\-—•·~`]+', '', text)
+    text = _re.sub(r'[\s\|_\-—•·~`]+$', '', text)
+
+    # 重复标点压缩
+    text = _re.sub(r'([。！？!?])\1+', r'\1', text)
+
+    return text.strip()
+
+
 def _recognize_with_paddle(image, scale=1.0, min_confidence=0.40,
                            merge_bubble=False, denoise=False):
     """PaddleOCR识别（原始逻辑）"""
     ocr = get_ocr()
 
-    # === 步骤1: 图片预处理（默认禁用——预处理可能降低OCR精度） ===
-    processed = image  # 直接用原图，PaddleOCR自带预处理
-
-    # === 步骤2: 图片区域检测（已禁用——误伤聊天气泡白色背景，导致文字被过滤） ===
+    # === 步骤1: 图片区域检测（已禁用——误伤聊天气泡白色背景，导致文字被过滤） ===
     image_regions = []
 
-    # === 步骤3: 缩放 ===
-    h, w = processed.shape[:2]
-    if scale < 1.0:
-        small = cv2.resize(processed, (int(w * scale), int(h * scale)))
-        input_image = small
+    # === 步骤2: 智能缩放（小图放大，大图按配置缩小） ===
+    h, w = image.shape[:2]
+    eff_scale = _compute_adaptive_scale(h, w, scale)
+    if abs(eff_scale - 1.0) > 0.001:
+        input_image = cv2.resize(image, (int(w * eff_scale), int(h * eff_scale)))
     else:
-        input_image = processed
+        input_image = image
 
-    # === 步骤4: OCR识别 ===
-    try:
-        results = ocr.ocr(input_image, cls=True)
-    except Exception as e:
-        logger.error(f"OCR识别失败: {e}")
-        return []
+    # === 步骤3: OCR识别 ===
+    def _run_ocr(img):
+        try:
+            results = ocr.ocr(img, cls=True)
+        except Exception as e:
+            logger.error(f"OCR识别失败: {e}")
+            return None
+        if not results or not results[0]:
+            return []
+        return results[0]
 
-    if not results or not results[0]:
+    raw_lines = _run_ocr(input_image)
+
+    # === 步骤3.5: 第一遍为空时，用增强图重试（浅色/低对比度文字兜底） ===
+    if raw_lines is None:
         return []
+    if not raw_lines:
+        logger.info("[OCR] 第一遍未识别到文字，尝试增强图重试")
+        enhanced = _enhance_image(image)
+        if abs(eff_scale - 1.0) > 0.001:
+            enhanced = cv2.resize(enhanced, (int(w * eff_scale), int(h * eff_scale)))
+        raw_lines = _run_ocr(enhanced)
+        if not raw_lines:
+            return []
 
     parsed = []
-    for line in results[0]:
+    for line in raw_lines:
         bbox = line[0]
         text = line[1][0]
         confidence = line[1][1]
 
         # 坐标映射回原图
-        if scale < 1.0:
-            bbox = [[p[0] / scale, p[1] / scale] for p in bbox]
+        if abs(eff_scale - 1.0) > 0.001:
+            bbox = [[p[0] / eff_scale, p[1] / eff_scale] for p in bbox]
 
         text = text.strip()
         if not text:
@@ -329,6 +410,11 @@ def _recognize_with_paddle(image, scale=1.0, min_confidence=0.40,
             logger.debug(f"跳过图片区域内的OCR: '{text[:20]}'")
             continue
 
+        # 文本清洗（压缩空白/清理噪声符号/合并重复标点）
+        text = _clean_text(text)
+        if not text:
+            continue
+
         parsed.append({
             "text": text,
             "confidence": confidence,
@@ -337,7 +423,7 @@ def _recognize_with_paddle(image, scale=1.0, min_confidence=0.40,
             "x_center": (bbox[0][0] + bbox[1][0]) / 2,
         })
 
-    # === 步骤5: 合并同气泡多行文本 ===
+    # === 步骤4: 合并同气泡多行文本 ===
     if merge_bubble and len(parsed) > 1:
         parsed = _merge_bubble_lines(parsed)
 

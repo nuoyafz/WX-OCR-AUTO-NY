@@ -57,6 +57,7 @@ class WeChatEngine:
         self.config_path = config_path
         self.callbacks = callbacks or {}
         self._on_new_message = callbacks.get("on_new_message") if callbacks else None  # 新消息实时回调
+        self._on_capture_cb = callbacks.get("on_capture")  # 截图预览回调
         self._running = False
         self._thread = None
         self._stop_flag = threading.Event()
@@ -93,6 +94,8 @@ class WeChatEngine:
         self.window = None
         self._last_red_dot_check = 0
 
+        # 最小化监控模式：offscreen=屏幕外保活(推荐), minimized=闪现截图, normal=前台
+        self.minimize_mode = self.wechat_config.get("minimize_mode", "offscreen")
         # 快速模式属性
         self.fast_mode = self.wechat_config.get("fast_mode", True)
         self._last_window_title = ""
@@ -151,6 +154,77 @@ class WeChatEngine:
             except Exception:
                 pass
 
+    def _on_capture(self, image):
+        """截图预览回调：把截图发送到UI预览窗口"""
+        cb = getattr(self, "_on_capture_cb", None) or self.callbacks.get("on_capture")
+        if cb:
+            try:
+                cb(image)
+            except Exception as e:
+                logger.warning("[预览] 回调失败: %s", e)
+
+    def _on_new_message_cb(self, message):
+        """新消息回调：发送到UI实时消息面板"""
+        if self._on_new_message:
+            try:
+                self._on_new_message(message)
+            except Exception:
+                pass
+
+    def _send_ui_card(self, contact, sender, content, timestamp,
+                      extracted=None, is_important=False,
+                      importance_reason="", msg_key=None, is_update=False):
+        """
+        统一发送富信息消息卡片（附带 keywords/summary/category 供UI彩色展示）。
+        - 首次发送：立即发基础卡（快速反馈）
+        - 提取完成后：用同一 msg_key 发更新卡，UI 原位刷新，避免重复卡片
+        """
+        if not self._on_new_message:
+            return
+
+        if msg_key is None:
+            try:
+                import hashlib
+                msg_key = hashlib.md5(f"{contact}|{content}|{timestamp}".encode("utf-8")).hexdigest()[:12]
+            except Exception:
+                msg_key = f"{contact}_{timestamp}"
+
+        payload = {
+            "contact": contact,
+            "sender": sender,
+            "content": content,
+            "timestamp": timestamp,
+            "is_important": bool(is_important),
+            "importance_reason": importance_reason or "",
+            "msg_key": msg_key,
+            "is_update": bool(is_update),
+        }
+
+        # 富信息：提取结果中的关键词/摘要/分类/正则信息
+        if extracted:
+            payload["keywords"] = extracted.get("matched_keywords", []) or []
+            payload["categories"] = extracted.get("keyword_categories", []) or []
+            payload["regex_extracts"] = extracted.get("regex_extracts", {}) or {}
+            llm_analysis = extracted.get("llm_analysis") or {}
+            if isinstance(llm_analysis, dict):
+                payload["summary"] = llm_analysis.get("summary", "") or ""
+                payload["category"] = llm_analysis.get("category", "") or ""
+                payload["urgency"] = llm_analysis.get("urgency", 0) or 0
+                payload["sentiment"] = llm_analysis.get("sentiment", "") or ""
+                action_items = llm_analysis.get("action_items") or []
+                if isinstance(action_items, list):
+                    payload["action_items"] = action_items[:5]
+            if not payload.get("summary") and not payload.get("keywords") and not payload.get("categories"):
+                # 无LLM信息时，也从关键词分类生成轻量摘要
+                cats = payload["categories"]
+                if cats:
+                    payload["category"] = "、".join(cats)
+
+        try:
+            self._on_new_message(payload)
+        except Exception as e:
+            logger.warning(f"[UI卡片] 发送失败: {e}")
+
     def initialize(self):
         """初始化各模块（在启动前调用）— 分步加载，逐步输出日志，避免用户感知卡顿"""
         self._log("info", "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
@@ -161,7 +235,7 @@ class WeChatEngine:
         # 步骤1：消息解析器
         self._log("info", "[1/6] 正在初始化消息解析器...")
         time.sleep(0.3)
-        stable_frames = self.wechat_config.get("stable_frames", 2)
+        stable_frames = self.wechat_config.get("stable_frames", 1)
         context_size = self.wechat_config.get("context_size", 20)
         self.parser = MessageParser(stable_frames=stable_frames, context_size=context_size)
         self._log("info", f"  ✔ 消息解析器就绪 (稳定帧={stable_frames}, 上下文={context_size})")
@@ -223,7 +297,39 @@ class WeChatEngine:
         self._log("info", "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
         self._log("info", "✔ 全部模块初始化完成，准备开始监控")
         self._log("info", "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+
+        # ★ 根据微信状态自适应（尊重用户选择）：
+        #   - 微信在桌面(非最小化) → 保持原位，监控用PrintWindow后台截图，不打扰用户
+        #   - 微信已最小化 → 移到屏幕外，后台监控（桌面消失，点任务栏图标可恢复）
+        if self.minimize_mode == "offscreen" and self.window is not None:
+            try:
+                from window_manager import is_window_minimized, move_window_offscreen
+                if is_window_minimized(self.window):
+                    if move_window_offscreen(self.window):
+                        self._log("info", "[屏幕外] 微信已最小化 → 移到屏幕外后台监控（点任务栏图标可恢复）")
+                    else:
+                        self._log("warning", "[屏幕外] 移出屏幕失败，微信保持当前状态")
+                else:
+                    self._log("info", "[监控] 微信在桌面(未最小化)，保持原位监控，不移动窗口")
+            except Exception as e:
+                self._log("warning", f"[屏幕外] 初始化移屏异常: {e}")
+
         return True
+
+    def _get_valid_hwnd(self):
+        """获取有效的微信窗口句柄（统一入口）"""
+        import win32gui
+        hwnd = getattr(self.window, '_hWnd', None)
+        if hwnd and win32gui.IsWindow(hwnd):
+            return hwnd
+        # 重新查找
+        if self.window and self.window.title:
+            hwnd = win32gui.FindWindow(None, self.window.title)
+            if hwnd and win32gui.IsWindow(hwnd):
+                self.window._hWnd = hwnd
+                self._log("info", f"[句柄] 重新获取窗口句柄: {hwnd}")
+                return hwnd
+        return None
 
     def find_window(self):
         """查找微信窗口"""
@@ -249,28 +355,99 @@ class WeChatEngine:
             self._log("info", f"DPI缩放: {scale}% (DPI={dpi})")
         except Exception:
             self._log("info", "DPI缩放: 检测失败")
+
+        # 检查窗口最小化状态
+        try:
+            from window_manager import is_window_minimized
+            if is_window_minimized(self.window):
+                if self.minimize_mode == "minimized":
+                    self._log("info", "[最小化监控] 微信已最小化，启用后台截图模式")
+                    self._log("info", "[最小化监控] PrintWindow + 屏幕外恢复方案已就绪")
+                else:
+                    self._log("warning", f"[最小化监控] 微信已最小化，minimize_mode={self.minimize_mode}（建议用offscreen模式）")
+        except Exception:
+            pass
+
         return True
 
     def start(self):
-        """启动监控（在后台线程中运行）"""
+        """启动监控（在后台线程中运行，支持窗口等待）"""
         if self._running:
-            return
-
-        if not self.find_window():
-            self._on_status("error")
-            return
-
-        if not self.initialize():
-            self._on_status("error")
             return
 
         self._running = True
         self._stop_flag.clear()
         self._on_status("running")
-        self._log("info", "开始监听微信消息...")
+        self._log("info", "━━━ 正在启动监控，请稍候 ━━━")
 
-        self._thread = threading.Thread(target=self._main_loop, daemon=True)
+        self._thread = threading.Thread(target=self._monitor_thread, daemon=True)
         self._thread.start()
+
+    def _monitor_thread(self):
+        """监控线程：等待窗口 → 初始化 → 主循环（含自动重连）"""
+        # 阶段1：等待微信窗口出现（支持最小化）
+        if not self._wait_for_window():
+            self._running = False
+            self._on_status("stopped")
+            return
+
+        # 阶段2：初始化模块
+        if not self.initialize():
+            self._running = False
+            self._on_status("error")
+            return
+
+        # 阶段3：主循环（含窗口丢失自动重连）
+        self._main_loop()
+
+    def _wait_for_window(self):
+        """
+        等待微信窗口出现，持续监控。
+        支持最小化窗口，找不到时每3秒重试。
+        """
+        retry_count = 0
+        while not self._stop_flag.is_set():
+            self.window = find_wechat_window()
+            if self.window:
+                self._log("info", f"✔ 找到微信窗口: {self.window.title}")
+                self._log("info", f"  位置: left={self.window.left}, top={self.window.top}")
+                self._log("info", f"  大小: {self.window.width}x{self.window.height}")
+
+                # DPI诊断
+                try:
+                    import ctypes
+                    hdc = ctypes.windll.user32.GetDC(0)
+                    dpi = ctypes.windll.gdi32.GetDeviceCaps(hdc, 88)
+                    ctypes.windll.user32.ReleaseDC(0, hdc)
+                    scale = round(dpi / 96 * 100)
+                    self._log("info", f"  DPI缩放: {scale}% (DPI={dpi})")
+                except Exception:
+                    pass
+
+                # 检查最小化状态
+                try:
+                    from window_manager import is_window_minimized
+                    if is_window_minimized(self.window):
+                        if self.minimize_mode == "minimized":
+                            self._log("info", "[最小化监控] 微信已最小化，启用后台截图模式")
+                            self._log("info", "[最小化监控] PrintWindow + 屏幕外恢复方案已就绪")
+                        else:
+                            self._log("warning", f"[最小化监控] 微信已最小化，minimize_mode={self.minimize_mode}（建议用offscreen模式）")
+                except Exception:
+                    pass
+
+                return True
+
+            retry_count += 1
+            if retry_count == 1:
+                self._log("warning", "未找到微信窗口，开始持续等待...")
+                self._log("info", "请打开微信并登录，程序将自动检测")
+            elif retry_count % 10 == 0:
+                self._log("info", f"[窗口等待] 已等待 {retry_count * 3} 秒，仍在监控微信窗口...")
+
+            time.sleep(3)
+
+        return False
 
     def stop(self):
         """停止监控"""
@@ -278,6 +455,15 @@ class WeChatEngine:
         self._running = False
         self._on_status("stopped")
         self._log("info", "正在停止监控...")
+
+        # 屏幕外模式：恢复窗口到原始可见位置
+        try:
+            from window_manager import is_window_offscreen, bring_window_back
+            if self.window and is_window_offscreen(self.window):
+                bring_window_back(self.window)
+                self._log("info", "[屏幕外] 停止监控：窗口已恢复到原始位置")
+        except Exception:
+            pass
 
         if self._thread and self._thread.is_alive():
             self._thread.join(timeout=3)
@@ -291,6 +477,65 @@ class WeChatEngine:
 
     def is_running(self):
         return self._running
+
+    def _flush_stable_candidates(self, contact_name):
+        """
+        确认稳定帧超时的候选新消息。
+        场景：新消息出现→第1帧OCR进入候选池→画面静止→增量检测跳过OCR→
+        候选永远凑不够stable_frames帧。此处按超时强制确认并通知UI/提取。
+        """
+        try:
+            candidates = self.parser.flush_stable_timeout()
+        except Exception:
+            return
+        for msg in candidates:
+            content = str(msg.get("content", "")).strip()
+            if not content or msg.get("sender") == "me":
+                continue
+            if any(skip in content for skip in ["助手v2.0", "AI助手", "微信 AI", "信息提取", "自动回复", "数据查看", "设置", "红点", "屏幕外", "保活", "截图", "预览", "诊断", "增量", "窗口坐标"]):
+                continue
+            if len(content) < 2:
+                continue
+            import re
+            if re.match(r'^\d{1,2}[:：]\d{2}$', content) or re.match(r'^\d+$', content):
+                continue
+            if re.match(r'^(昨天|今天|明天|后天|星期[一二三四五六日天]|周[一二三四五六日天])$', content):
+                continue
+            system_words = ["以下是新消息", "收到红包", "撤回了一条消息", "拍了拍", "以上是打招呼", "添加了", "邀请你"]
+            if any(sw in content for sw in system_words):
+                continue
+            self.stats["messages_detected"] += 1
+            self._log("info", f"[新消息·确认] {contact_name}: {content[:80]}")
+            _ts = datetime.now().strftime("%H:%M:%S")
+            _sender = msg.get("sender", "other")
+            # 先发基础卡（快速反馈），提取完成后用同一msg_key原位更新
+            self._send_ui_card(contact_name, _sender, content, _ts)
+            # 信息提取（与主流程一致）
+            if self.extractor:
+                try:
+                    extracted = self.extractor.extract(
+                        text=content,
+                        sender=_sender,
+                        contact_name=contact_name,
+                        timestamp=datetime.now(),
+                    )
+                    self.stats["extracted"] += 1
+                    if extracted.get("is_important"):
+                        self.stats["important"] += 1
+                        self._log("warning", f"[重要] {contact_name}: {extracted.get('importance_reason', '')}")
+                    # 富信息更新卡：关键词/摘要/分类，原位刷新不重复
+                    self._send_ui_card(
+                        contact_name, _sender, content, _ts,
+                        extracted=extracted,
+                        is_important=extracted.get("is_important", False),
+                        importance_reason=extracted.get("importance_reason", ""),
+                        is_update=True,
+                    )
+                    if self.storage:
+                        self.storage.save(extracted)
+                    self._on_extract(extracted)
+                except Exception:
+                    pass
 
     def _main_loop(self):
         """主循环"""
@@ -310,8 +555,32 @@ class WeChatEngine:
                 loop_start = time.time()
 
                 if not is_window_visible(self.window):
+                    # 窗口不可见/丢失，尝试重新查找
+                    hwnd = getattr(self.window, '_hWnd', None)
+                    if hwnd:
+                        try:
+                            import win32gui
+                            if not win32gui.IsWindow(hwnd):
+                                self._log("warning", "微信窗口已关闭，尝试重新连接...")
+                                if not self._wait_for_window():
+                                    break
+                                contact_name = get_contact_name(self.window)
+                                self._log("info", f"重新连接成功: {contact_name}")
+                                continue
+                        except Exception:
+                            pass
                     time.sleep(poll_interval)
                     continue
+
+                # === 屏幕外保活：最小化→立即恢复+移屏幕外，保持渲染 ===
+                if self.minimize_mode == "offscreen":
+                    try:
+                        from window_manager import keep_alive_offscreen
+                        keep_alive_offscreen(self.window)
+                        # 给Qt渲染时间：移到屏幕外后立即截图可能截到空白
+                        time.sleep(0.3)
+                    except Exception as e:
+                        self._log("warning", f"[保活] 异常: {e}")
 
                 # 勿扰模式：只暂停红点自动切换，不堵住当前窗口监控
                 dnd_active = self._check_do_not_disturb()
@@ -334,6 +603,13 @@ class WeChatEngine:
                             self._log("info", "[快速] 检测到窗口标题未读数，触发红点扫描")
                         self._log("info", "[红点] 正在扫描左侧栏未读消息...")
                         unread = self.red_dot_monitor.get_unread_contacts(self.window)
+                        # ★ 红点扫描期间也推送预览（侧边栏截图），避免预览一直"等待截图"
+                        try:
+                            _sb_img = getattr(self.red_dot_monitor, '_last_sidebar_img', None)
+                            if _sb_img is not None:
+                                self._on_capture(_sb_img)
+                        except Exception:
+                            pass
                         debug_info = getattr(self.red_dot_monitor, '_last_debug', '')
                         if debug_info:
                             self._log("info", f"[红点] 诊断: {debug_info}")
@@ -345,19 +621,174 @@ class WeChatEngine:
                             self._log("info", "[红点] 未检测到未读消息，继续监控当前窗口")
 
                 # 1. 截图
-                image = capture_chat_bottom(self.window, ratio=capture_ratio)
+                try:
+                    from screenshot import capture_via_printwindow, capture_chat_bottom, capture_minimized_window
+                    from window_manager import is_window_minimized
+                    hwnd = getattr(self.window, '_hWnd', None)
+                    image = None
+
+                    if self.minimize_mode == "offscreen":
+                        # 屏幕外模式：先自愈（防最小化隐形窗口），再三级回退截图
+                        if not hwnd:
+                            hwnd = self._get_valid_hwnd()
+                        if hwnd:
+                            # 关键：截图前确保窗口"恢复态"，否则截到237x56隐形窗口
+                            from screenshot import ensure_window_rendering
+                            win_rect = ensure_window_rendering(hwnd, self.window)
+
+                            if win_rect is None:
+                                self._log("error", "[截图] 自愈失败：窗口无法恢复渲染")
+                                image = None
+                            else:
+                                rl, rt, rw, rh = win_rect
+                                # 诊断：截图前窗口坐标（限频5秒）
+                                _now_cr = time.time()
+                                if _now_cr - getattr(self, "_last_coord_log", 0) > 5:
+                                    self._last_coord_log = _now_cr
+                                    self._log("info", f"[截图] 窗口坐标=({rl},{rt}) {rw}x{rh}, "
+                                               f"屏幕外={rl<=-1000}")
+                                # offscreen模式：无论窗口在哪都用PrintWindow（避免mss截到程序UI）
+                                if self.minimize_mode == "offscreen":
+                                    full_img = capture_via_printwindow(hwnd)
+                                    if full_img is None or (hasattr(full_img, 'mean') and full_img.mean() < 5):
+                                        self._log("info", "[截图] PrintWindow无效，尝试BitBlt...")
+                                        from screenshot import capture_via_bitblt
+                                        full_img = capture_via_bitblt(hwnd)
+                                elif rl > -1000:
+                                    # 非offscreen模式：窗口在可见区域 → mss直接截
+                                    from screenshot import capture_region
+                                    full_img = capture_region(win_rect)
+                                else:
+                                    # 非offscreen模式：屏幕外 → PrintWindow
+                                    full_img = capture_via_printwindow(hwnd)
+
+                                # 回退1已合并到上面（offscreen模式自动尝试BitBlt）
+
+                                # 回退2已移除：不再闪现窗口（用户要求后台监控不闪窗）
+                                # PrintWindow/BitBlt都失败时，直接报告失败，保持窗口在屏幕外
+                                if full_img is None or (hasattr(full_img, 'mean') and full_img.mean() < 5) or (full_img is not None and full_img.shape[1] < 300):
+                                    if rl <= -1000:
+                                        self._log("warning", "[截图] 屏幕外PrintWindow/BitBlt均失败，"
+                                                   "窗口保持在屏幕外不闪现（后台模式不干扰用户）")
+
+                                if full_img is not None and full_img.mean() >= 5 and full_img.shape[1] >= 300:
+                                    from screenshot import crop_chat_region_img
+                                    image = crop_chat_region_img(full_img, bottom_ratio=capture_ratio)
+                                    self._last_full_capture = full_img  # 预览用全窗图
+
+                                    # 定期保存诊断图（每15秒最多1张）
+                                    now_ts = time.time()
+                                    if now_ts - getattr(self, "_last_diag_save", 0) > 15:
+                                        self._last_diag_save = now_ts
+                                        from screenshot import save_debug_image
+                                        save_debug_image(full_img, prefix="capture")
+                                else:
+                                    shape_info = f"{full_img.shape[1]}x{full_img.shape[0]}, mean={full_img.mean():.1f}" if full_img is not None else "None"
+                                    self._log("warning", f"[截图] 截图无效({shape_info})，存fail图")
+                                    if full_img is not None:
+                                        from screenshot import save_debug_image
+                                        save_debug_image(full_img, prefix="fail")
+                        else:
+                            self._log("error", "[截图] 无法获取有效窗口句柄")
+
+                    elif self.minimize_mode == "minimized":
+                        # 最小化模式：恢复窗口到可见位置截图（旧方案，闪窗）
+                        if not hwnd:
+                            self._log("warning", "[截图] 无窗口句柄，尝试重新获取")
+                            hwnd = self._get_valid_hwnd()
+                        if hwnd:
+                            flash_pos = self.wechat_config.get("flash_position", "corner")
+                            image = capture_minimized_window(
+                                self.window, hwnd=hwnd,
+                                skip_printwindow=True, flash_position=flash_pos)
+                            if image is not None:
+                                from screenshot import crop_chat_region_img
+                                image = crop_chat_region_img(image, bottom_ratio=capture_ratio)
+                        else:
+                            self._log("error", "[截图] 无法获取有效窗口句柄")
+                    else:
+                        # 正常模式：先试 PrintWindow（窗口被遮挡时有效），再用 mss
+                        if hwnd:
+                            full_img = capture_via_printwindow(hwnd)
+                            if full_img is not None and full_img.mean() > 5:
+                                from screenshot import crop_chat_region_img
+                                image = crop_chat_region_img(full_img, bottom_ratio=capture_ratio)
+                                self._log("info", f"[截图] PrintWindow成功: {full_img.shape[1]}x{full_img.shape[0]} → 聊天区底部{capture_ratio}")
+
+                        if image is None:
+                            if is_window_minimized(self.window):
+                                self._log("info", "[截图] 窗口已最小化，尝试屏幕外恢复")
+                                image = capture_minimized_window(self.window, skip_printwindow=True)
+                                if image is not None:
+                                    from screenshot import crop_chat_region_img
+                                    image = crop_chat_region_img(image, bottom_ratio=capture_ratio)
+                            else:
+                                image = capture_chat_bottom(self.window, ratio=capture_ratio)
+
+                except Exception as e:
+                    self._log("error", f"截图异常: {e}")
+                    import traceback
+                    self._log("error", traceback.format_exc())
+                    image = None
+
                 self.stats["frames_captured"] += 1
 
-                if is_image_blank(image):
-                    self._log("warning", "截图为空，可能窗口被遮挡")
+                if image is None or is_image_blank(image):
+                    if image is None:
+                        self._log("warning", "截图失败，可能窗口被遮挡或最小化")
+                    else:
+                        self._log("warning", "截图为空，可能窗口被遮挡")
+                    
+                    # 即使截图失败，也发送上一张成功的预览图（避免预览冻结）
+                    last_good = getattr(self, "_last_good_preview", None)
+                    if last_good is not None:
+                        try:
+                            self._on_capture(last_good)
+                        except Exception:
+                            pass
+                    
                     time.sleep(poll_interval)
                     continue
+                
+                # 保存当前截图为上一张成功的预览图
+                self._last_good_preview = image
+
+                # === 截图预览：实时更新预览窗口（立即发送，不等OCR） ===
+                try:
+                    # 优先使用全窗图（offscreen模式），否则使用OCR裁剪图
+                    preview_img = getattr(self, "_last_full_capture", None)
+                    if preview_img is None:
+                        preview_img = image
+                    
+                    # 发送预览
+                    self._on_capture(preview_img)
+                    self._last_full_capture = None  # 用完即清
+                    
+                    # 限频日志：确认预览链路在工作（每5秒最多1条）
+                    _now = time.time()
+                    if _now - getattr(self, "_last_preview_log", 0) > 5:
+                        self._last_preview_log = _now
+                        _pw = (preview_img.shape[1], preview_img.shape[0]) if hasattr(preview_img, "shape") else (0, 0)
+                        _mean = float(preview_img.mean()) if hasattr(preview_img, "mean") else 0
+                        self._log("info", f"[预览] ✅ 已发送截图 {_pw[0]}x{_pw[1]} (均值={_mean:.1f})")
+                except Exception as e:
+                    # 限频错误日志（每30秒最多1条）
+                    _now = time.time()
+                    if _now - getattr(self, "_last_preview_err_log", 0) > 30:
+                        self._last_preview_err_log = _now
+                        self._log("warning", f"[预览] ❌ 发送失败: {e}")
+
+                # 检查是否最小化模式（跳过增量检测，直接做全量OCR）
+                from window_manager import is_window_minimized
+                _is_min = is_window_minimized(self.window)
 
                 # 2. 增量检测：判断是否需要做OCR
-                if self.smart_monitor:
+                # 最小化模式下跳过增量检测（因为PrintWindow截图可能不稳定）
+                if self.smart_monitor and not _is_min:
                     need_ocr, diff_regions = self.smart_monitor.should_run_ocr(image)
                     if not need_ocr:
-                        # 画面无变化，静默跳过（不打日志避免刷屏）
+                        # 画面无变化：先确认稳定帧超时候选（防新消息漏报），再跳过
+                        self._flush_stable_candidates(contact_name)
                         time.sleep(poll_interval)
                         continue
 
@@ -376,7 +807,9 @@ class WeChatEngine:
                     ocr_results = self.smart_monitor.incremental_ocr(image, diff_regions, _ocr_func)
                     self.stats["ocr_calls"] += 1
                 else:
-                    # 回退：全量OCR
+                    # 最小化模式 或 无增量检测：全量OCR
+                    if _is_min:
+                        self._log("info", "[最小化] 跳过增量检测，直接全量OCR")
                     ocr_results = recognize(
                         image,
                         scale=ocr_scale,
@@ -387,11 +820,25 @@ class WeChatEngine:
                     self.stats["ocr_calls"] += 1
 
                 if not ocr_results:
-                    self._log("info", "OCR未识别到文字")
+                    self._flush_stable_candidates(contact_name)
+                    self._log("warning", "OCR未识别到文字（截图尺寸=%dx%d, 均值=%.1f）" % (
+                        image.shape[1], image.shape[0], image.mean()) if image is not None else "OCR无结果")
                     time.sleep(poll_interval)
                     continue
 
                 self._log("info", f"OCR识别到 {len(ocr_results)} 条文本")
+                for i, r in enumerate(ocr_results[:5]):
+                    txt = r.get("text", "")[:30] if isinstance(r, dict) else str(r)[:30]
+                    self._log("info", f"  [{i}] {txt}")
+
+                # === 诊断：OCR后sender分布（限频10秒） ===
+                _now_diag = time.time()
+                if _now_diag - getattr(self, "_last_ocr_diag", 0) > 10:
+                    self._last_ocr_diag = _now_diag
+                    _me_cnt = sum(1 for r in ocr_results if isinstance(r, dict) and r.get("sender") == "me")
+                    _oth_cnt = len(ocr_results) - _me_cnt
+                    self._log("info", f"[诊断] OCR sender分布: me={_me_cnt}, other={_oth_cnt}, "
+                               f"图尺寸={image.shape[1]}x{image.shape[0]}")
 
                 # 3. 识别发送者
                 ocr_results = identify_senders(ocr_results, image)
@@ -399,6 +846,24 @@ class WeChatEngine:
                 # 4. 解析新消息
                 result = self.parser.feed(ocr_results)
                 new_messages = result["new_messages"]
+                # === 诊断：parser结果 ===
+                if not new_messages and ocr_results:
+                    _last_grp = self.parser.candidate_pool
+                    _proc = len(self.parser.processed_hashes)
+                    _grp_cnt = 0
+                    try:
+                        groups = self.parser._group_by_bubble(ocr_results)
+                        _grp_cnt = len(groups)
+                        if groups:
+                            _ls = self.parser._get_bubble_sender(groups[-1])
+                            _lt = self.parser._get_bubble_text(groups[-1])[:30]
+                        else:
+                            _ls, _lt = "N/A", "N/A"
+                    except Exception:
+                        _ls, _lt = "err", "err"
+                    self._log("info", f"[parser] OCR有{len(ocr_results)}条但新消息0条 "
+                               f"(候选池={len(_last_grp)}, 已处理={_proc}, "
+                               f"分组={_grp_cnt}, 末组发送者={_ls}, 末组文本={_lt})")
                 # pHash去重（比MD5更鲁棒）
                 if self.smart_monitor:
                     deduped = []
@@ -416,7 +881,7 @@ class WeChatEngine:
                     if msg.get("sender") == "me":
                         continue
                     # 过滤自身UI窗口的OCR误识别内容
-                    if any(skip in content for skip in ["助手v2.0", "AI助手", "微信 AI", "信息提取", "自动回复", "数据查看", "设置"]):
+                    if any(skip in content for skip in ["助手v2.0", "AI助手", "微信 AI", "信息提取", "自动回复", "数据查看", "设置", "红点", "屏幕外", "保活", "截图", "预览", "诊断", "增量", "窗口坐标"]):
                         continue
                     # 过滤过短的无效内容（单个字符或纯标点）
                     if len(content) < 2:
@@ -437,24 +902,17 @@ class WeChatEngine:
                     self.stats["messages_detected"] += 1
                     self._log("info", f"[新消息] {contact_name}: {content[:80]}")
 
-                    # 实时通知UI
-                    if self._on_new_message:
-                        try:
-                            self._on_new_message({
-                                "contact": contact_name,
-                                "sender": msg.get("sender", "other"),
-                                "content": content,
-                                "timestamp": datetime.now().strftime("%H:%M:%S"),
-                                "is_important": False,
-                            })
-                        except Exception:
-                            pass
+                    # 实时通知UI：先发基础卡（快速反馈），提取完成后用同一msg_key原位更新
+                    _ts = datetime.now().strftime("%H:%M:%S")
+                    _sender = msg.get("sender", "other")
+                    self._send_ui_card(contact_name, _sender, content, _ts)
+                    self._log("info", f"[主循环->UI] 发送: {contact_name}: {content[:40]}")
 
                     # === 信息提取 ===
                     if self.extractor:
                         extracted = self.extractor.extract(
                             text=content,
-                            sender=msg.get("sender", "other"),
+                            sender=_sender,
                             contact_name=contact_name,
                             timestamp=datetime.now(),
                         )
@@ -464,19 +922,15 @@ class WeChatEngine:
                             self.stats["important"] += 1
                             self._log("warning",
                                 f"[重要] {contact_name}: {extracted.get('importance_reason', '')}")
-                            # 实时通知UI（重要消息）
-                            if self._on_new_message:
-                                try:
-                                    self._on_new_message({
-                                        "contact": contact_name,
-                                        "sender": msg.get("sender", "other"),
-                                        "content": content,
-                                        "timestamp": datetime.now().strftime("%H:%M:%S"),
-                                        "is_important": True,
-                                        "importance_reason": extracted.get("importance_reason", ""),
-                                    })
-                                except Exception:
-                                    pass
+
+                        # 富信息更新卡：关键词/摘要/分类，原位刷新不重复
+                        self._send_ui_card(
+                            contact_name, _sender, content, _ts,
+                            extracted=extracted,
+                            is_important=extracted.get("is_important", False),
+                            importance_reason=extracted.get("importance_reason", ""),
+                            is_update=True,
+                        )
 
                         if self.storage:
                             self.storage.save(extracted)
@@ -507,10 +961,16 @@ class WeChatEngine:
                         )
                         if reply:
                             time.sleep(send_delay)
-                            focus_window(self.window)
-                            time.sleep(0.2)
 
-                            success = send_text(self.window, reply)
+                            from window_manager import is_window_offscreen
+                            _is_offscreen = is_window_offscreen(self.window)
+                            if _is_offscreen:
+                                from sender import send_text_offscreen
+                                success = send_text_offscreen(self.window, reply)
+                            else:
+                                focus_window(self.window)
+                                time.sleep(0.2)
+                                success = send_text(self.window, reply)
                             if success:
                                 self.stats["replies_sent"] += 1
                                 self.parser.add_to_context("assistant", reply)
@@ -535,13 +995,25 @@ class WeChatEngine:
                         self.window = new_window
                         contact_name = new_contact
                         self.parser = MessageParser(
-                            stable_frames=self.wechat_config.get("stable_frames", 2),
+                            stable_frames=self.wechat_config.get("stable_frames", 1),
                             context_size=self.wechat_config.get("context_size", 20),
                         )
                         self._log("info", f"[轮询] 已切换到: {contact_name}")
                         # 切换后立即截图提取一次
                         time.sleep(0.5)
-                        scan_image = capture_chat_bottom(self.window, ratio=capture_ratio)
+                        # 主循环扫描也优先PrintWindow（避免mss截到程序UI）
+                        _scan_hwnd = getattr(self.window, "_hWnd", None)
+                        if _scan_hwnd and self.minimize_mode == "offscreen":
+                            from screenshot import capture_via_printwindow as _cpw2
+                            _scan_full = _cpw2(_scan_hwnd)
+                            if _scan_full is not None and _scan_full.mean() >= 5 and _scan_full.shape[1] >= 300:
+                                _sh, _sw = _scan_full.shape[:2]
+                                _sbh = int(_sh * capture_ratio)
+                                scan_image = _scan_full[_sh - _sbh:, :]
+                            else:
+                                scan_image = capture_chat_bottom(self.window, ratio=capture_ratio)
+                        else:
+                            scan_image = capture_chat_bottom(self.window, ratio=capture_ratio)
                         if scan_image is not None and not is_image_blank(scan_image):
                             scan_ocr = recognize(scan_image, scale=ocr_scale,
                                                   min_confidence=ocr_min_conf,
@@ -646,6 +1118,20 @@ class WeChatEngine:
         import pyautogui
         from message_parser import MessageParser
 
+        if not hasattr(self, '_click_retry_counts'):
+            self._click_retry_counts = {}
+        MAX_CLICK_RETRIES = 3
+
+        _was_offscreen = False
+        if self.minimize_mode == "offscreen":
+            try:
+                from window_manager import is_window_offscreen
+                if is_window_offscreen(self.window):
+                    _was_offscreen = True
+                    self._log("info", "[屏幕外] 后台模式处理未读，不闪现窗口")
+            except Exception:
+                pass
+
         for item in unread_contacts:
             if self._stop_flag.is_set():
                 break
@@ -697,23 +1183,47 @@ class WeChatEngine:
             method = item.get("method", "hsv")
             self._log("info", f"[红点] 切换到 {contact} (未读:{unread_count}, 方式:{method})")
 
-            # 点击切换到该联系人
-            # 点击联系人名称位置（侧边栏中央，而非红点位置）
-            click_x, click_y = self.red_dot_monitor.get_click_position(
-                self.window, item["red_dot_y"], None  # None=用侧边栏中央X
-            )
-            self._log("info", f"[红点] 点击坐标: ({click_x}, {click_y})")
+            hwnd = getattr(self.window, "_hWnd", None)
             try:
-                # 使用win32api点击（DPI安全，物理坐标）
-                import win32api
-                win32api.SetCursorPos((int(click_x), int(click_y)))
-                time.sleep(0.1)
-                win32api.mouse_event(win32con.MOUSEEVENTF_LEFTDOWN, 0, 0, 0, 0)
-                time.sleep(0.05)
-                win32api.mouse_event(win32con.MOUSEEVENTF_LEFTUP, 0, 0, 0, 0)
-                self._log("info", f"[红点] 点击完成: ({int(click_x)}, {int(click_y)})")
+                if hwnd and _was_offscreen:
+                    from window_manager import edge_click_window
+                    click_cx, click_cy = self.red_dot_monitor.get_click_client_position(
+                        self.window, item["red_dot_y"], None
+                    )
+                    # 边缘点击方案：窗口移到屏幕边缘(露1px)→激活→SendInput物理点击→移回
+                    self._log("info", f"[红点] 边缘点击: ({click_cx}, {click_cy})")
+                    ok = edge_click_window(self.window, click_cx, click_cy)
+                    if not ok:
+                        self._click_retry_counts[contact] = self._click_retry_counts.get(contact, 0) + 1
+                        retries = self._click_retry_counts.get(contact, 0)
+                        if retries >= MAX_CLICK_RETRIES:
+                            self._log("warning", f"[红点] {contact} 点击重试{retries}次失败，强制标记已处理")
+                            self.red_dot_monitor.mark_processed(contact)
+                            self._click_retry_counts[contact] = 0
+                            continue
+                        self._log("warning", f"[红点] 点击失败 (重试{retries}/{MAX_CLICK_RETRIES})")
+                        continue
+                    self._log("info", "[红点] 后台点击完成（待验证切换）")
+                else:
+                    click_x, click_y = self.red_dot_monitor.get_click_position(
+                        self.window, item["red_dot_y"], None
+                    )
+                    self._log("info", f"[红点] 物理点击坐标: ({click_x}, {click_y})")
+                    import win32api
+                    win32api.SetCursorPos((int(click_x), int(click_y)))
+                    time.sleep(0.1)
+                    win32api.mouse_event(win32con.MOUSEEVENTF_LEFTDOWN, 0, 0, 0, 0)
+                    time.sleep(0.05)
+                    win32api.mouse_event(win32con.MOUSEEVENTF_LEFTUP, 0, 0, 0, 0)
+                    self._log("info", f"[红点] 物理点击完成: ({int(click_x)}, {int(click_y)})")
             except Exception as e:
                 self._log("error", f"[红点] 点击失败: {e}")
+                self._click_retry_counts[contact] = self._click_retry_counts.get(contact, 0) + 1
+                retries = self._click_retry_counts.get(contact, 0)
+                if retries >= MAX_CLICK_RETRIES:
+                    self.red_dot_monitor.mark_processed(contact)
+                    self._click_retry_counts[contact] = 0
+                    self._log("warning", f"[红点] {contact} 点击重试{retries}次失败，强制跳过")
                 continue
 
             time.sleep(2.5)  # 等待聊天窗口加载完成（增加等待让页面充分加载）
@@ -730,13 +1240,36 @@ class WeChatEngine:
                 self.smart_monitor.reset()
             # 不再使用MessageParser（stable_frames机制不适合单次截图场景）
 
-            # 截图完整聊天区域（不是只截底部35%）
+            # 截图：优先用 PrintWindow（避免mss截到程序UI），flags=3对Qt微信有效
             full_ratio = self.wechat_config.get("capture_ratio_full", 0.85)
-            image = capture_chat_bottom(self.window, ratio=full_ratio)
+            hwnd = getattr(self.window, "_hWnd", None)
+            if hwnd:
+                from screenshot import capture_via_printwindow
+                _full_img = capture_via_printwindow(hwnd)
+                if _full_img is not None and _full_img.mean() >= 5 and _full_img.shape[1] >= 300:
+                    from screenshot import crop_chat_region_img
+                    image = crop_chat_region_img(_full_img, bottom_ratio=full_ratio)
+                    self._log("info", f"[红点] {new_contact} PrintWindow截图成功: {_full_img.shape[1]}x{_full_img.shape[0]} → 聊天区")
+                else:
+                    self._log("warning", f"[红点] {new_contact} PrintWindow无效，回退mss")
+                    image = capture_chat_bottom(self.window, ratio=full_ratio)
+            else:
+                image = capture_chat_bottom(self.window, ratio=full_ratio)
             if image is None or is_image_blank(image):
-                self._log("warning", f"[红点] {new_contact} 截图为空，跳过")
-                self.red_dot_monitor.mark_processed(contact)
+                self._log("warning", f"[红点] {new_contact} 截图为空，疑似切换未生效 → 重试点击")
+                self._click_retry_counts[contact] = self._click_retry_counts.get(contact, 0) + 1
+                retries = self._click_retry_counts.get(contact, 0)
+                if retries >= MAX_CLICK_RETRIES:
+                    self._log("warning", f"[红点] {contact} 切换重试{retries}次仍为空，强制标记已处理")
+                    self.red_dot_monitor.mark_processed(contact)
+                    self._click_retry_counts[contact] = 0
                 continue
+
+            # ★ 识别期间推送预览（当前聊天截图），避免预览一直"等待截图"
+            try:
+                self._on_capture(image)
+            except Exception:
+                pass
 
             # OCR识别
             ocr_scale = self.wechat_config.get("ocr_scale", 1.0)
@@ -758,19 +1291,39 @@ class WeChatEngine:
                 if not ocr_results or len(ocr_results) < 3:
                     # 向上滚动
                     try:
-                        import pyautogui
-                        win_x = self.window.left
-                        win_y = self.window.top
-                        win_w = self.window.width
-                        win_h = self.window.height
-                        # 聊天区域中心
-                        chat_cx = win_x + int(win_w * 0.55)
-                        chat_cy = win_y + int(win_h * 0.55)
-                        pyautogui.scroll(5, chat_cx, chat_cy)  # 向上滚动
+                        hwnd_scroll = getattr(self.window, "_hWnd", None)
+                        if hwnd_scroll and _was_offscreen:
+                            from window_manager import edge_scroll_window
+                            win_w = self.window.width
+                            win_h = self.window.height
+                            scroll_cx = int(win_w * 0.55)
+                            scroll_cy = int(win_h * 0.55)
+                            edge_scroll_window(self.window, scroll_cx, scroll_cy, delta=3)
+                        else:
+                            import pyautogui
+                            win_x = self.window.left
+                            win_y = self.window.top
+                            win_w = self.window.width
+                            win_h = self.window.height
+                            chat_cx = win_x + int(win_w * 0.55)
+                            chat_cy = win_y + int(win_h * 0.55)
+                            pyautogui.scroll(5, chat_cx, chat_cy)  # 向上滚动
                         time.sleep(0.5)
                         scroll_attempts += 1
                         self._log("info", f"[红点] {new_contact} 向上滚动({scroll_attempts}/{max_scroll})")
-                        image2 = capture_chat_bottom(self.window, ratio=full_ratio)
+                        # 滚动后截图也优先PrintWindow
+                        _hwnd2 = getattr(self.window, "_hWnd", None)
+                        if _hwnd2:
+                            from screenshot import capture_via_printwindow as _cpw
+                            _full2 = _cpw(_hwnd2)
+                            if _full2 is not None and _full2.mean() >= 5:
+                                _h2, _w2 = _full2.shape[:2]
+                                _bh2 = int(_h2 * full_ratio)
+                                image2 = _full2[_h2 - _bh2:, :]
+                            else:
+                                image2 = capture_chat_bottom(self.window, ratio=full_ratio)
+                        else:
+                            image2 = capture_chat_bottom(self.window, ratio=full_ratio)
                         if image2 is not None and not is_image_blank(image2):
                             ocr_results2 = recognize(
                                 image2, scale=ocr_scale, min_confidence=ocr_min_conf,
@@ -784,22 +1337,29 @@ class WeChatEngine:
                     break
 
             if not all_ocr_results:
-                self._log("warning", f"[红点] {new_contact} 未识别到文字")
-                self.red_dot_monitor.mark_processed(contact)
+                self._log("warning", f"[红点] {new_contact} 未识别到文字，疑似切换未生效 → 重试点击")
+                self._click_retry_counts[contact] = self._click_retry_counts.get(contact, 0) + 1
+                retries = self._click_retry_counts.get(contact, 0)
+                if retries >= MAX_CLICK_RETRIES:
+                    self._log("warning", f"[红点] {contact} 重试{retries}次仍无文字，强制标记已处理")
+                    self.red_dot_monitor.mark_processed(contact)
+                    self._click_retry_counts[contact] = 0
                 continue
 
-            # 发送者判断
+            # 发送者判断（identify_senders 已做位置+颜色综合判断）
             all_ocr_results = identify_senders(all_ocr_results, image)
 
-            # 增强发送者判断：右侧(x>55%)是"我"，左侧(x<45%)是"对方"，中间不确定
+            # 保守兜底：只在极端位置强制修正（屏幕外截图比例正常）
             img_w = image.shape[1] if image is not None else 800
             for r in all_ocr_results:
                 x_center = r.get("x_center", 0)
-                if x_center > img_w * 0.55:
+                # 极端靠右 (>70%) 强制为 me
+                if x_center > img_w * 0.70:
                     r["sender"] = "me"
-                elif x_center < img_w * 0.45:
+                # 极端靠左 (<30%) 强制为 other
+                elif x_center < img_w * 0.30:
                     r["sender"] = "other"
-                # 中间区域保持原判断
+                # 其他情况保留 identify_senders 的判断
 
             # 去重（按文本内容）
             seen_texts = set()
@@ -845,7 +1405,7 @@ class WeChatEngine:
                 if not content:
                     continue
                 # 过滤自身UI窗口的OCR误识别内容
-                if any(skip in content for skip in ["助手v2.0", "AI助手", "微信 AI", "信息提取", "自动回复", "数据查看", "设置"]):
+                if any(skip in content for skip in ["助手v2.0", "AI助手", "微信 AI", "信息提取", "自动回复", "数据查看", "设置", "红点", "屏幕外", "保活", "截图", "预览", "诊断", "增量", "窗口坐标"]):
                     continue
                 # 过滤过短的无效内容（单个字符或纯标点）
                 if len(content) < 2:
@@ -868,24 +1428,17 @@ class WeChatEngine:
                     continue
                 self.stats["messages_detected"] += 1
 
-                # 实时通知UI
-                if self._on_new_message:
-                    try:
-                        self._on_new_message({
-                            "contact": new_contact,
-                            "sender": msg.get("sender", "other"),
-                            "content": content,
-                            "timestamp": datetime.now().strftime("%H:%M:%S"),
-                            "is_important": False,  # 后面更新
-                        })
-                    except Exception:
-                        pass
+                # 实时通知UI：先发基础卡（快速反馈），提取完成后用同一msg_key原位更新
+                _ts = datetime.now().strftime("%H:%M:%S")
+                _sender = msg.get("sender", "other")
+                self._send_ui_card(new_contact, _sender, content, _ts)
+                self._log("info", f"[红点->UI] 发送: {new_contact}: {content[:40]}")
 
                 # 信息提取
                 if self.extractor:
                     extracted = self.extractor.extract(
                         text=content,
-                        sender=msg.get("sender", "other"),
+                        sender=_sender,
                         contact_name=new_contact,
                         timestamp=datetime.now(),
                     )
@@ -896,19 +1449,14 @@ class WeChatEngine:
                         self._log("warning",
                             f"[红点][重要] {new_contact}: {extracted.get('importance_reason', '')}")
 
-                        # 更新UI通知重要性
-                        if self._on_new_message and extracted.get("is_important"):
-                            try:
-                                self._on_new_message({
-                                    "contact": new_contact,
-                                    "sender": msg.get("sender", "other"),
-                                    "content": content,
-                                    "timestamp": datetime.now().strftime("%H:%M:%S"),
-                                    "is_important": True,
-                                    "importance_reason": extracted.get("importance_reason", ""),
-                                })
-                            except Exception:
-                                pass
+                    # 富信息更新卡：关键词/摘要/分类，原位刷新不重复
+                    self._send_ui_card(
+                        new_contact, _sender, content, _ts,
+                        extracted=extracted,
+                        is_important=extracted.get("is_important", False),
+                        importance_reason=extracted.get("importance_reason", ""),
+                        is_update=True,
+                    )
 
                     if self.storage:
                         self.storage.save(extracted)
@@ -929,14 +1477,14 @@ class WeChatEngine:
 
                     self._on_extract(extracted)
 
-            # 标记已处理
+            # 标记已处理（真正处理成功才进冷却，并清零重试计数）
             self.red_dot_monitor.mark_processed(contact)
+            self._click_retry_counts[contact] = 0
 
         # 切回原窗口（点击侧边栏第一个或原始联系人）
         try:
             if original_contact:
                 self._log("info", f"[红点] 切回原窗口: {original_contact}")
-                # 获取侧边栏截图，找到原联系人位置
                 sidebar_img = self.red_dot_monitor.capture_sidebar(self.window)
                 if sidebar_img is not None:
                     ocr_results = recognize(
@@ -946,7 +1494,6 @@ class WeChatEngine:
                         merge_bubble=False,
                         denoise=False,
                     )
-                    # 找到原联系人的Y坐标
                     target_y = None
                     for r in ocr_results:
                         text = str(r.get("text", "")).strip()
@@ -954,15 +1501,23 @@ class WeChatEngine:
                             target_y = r.get("y_center", 0)
                             break
                     if target_y:
-                        click_x, click_y = self.red_dot_monitor.get_click_position(
-                            self.window, int(target_y), None
-                        )
-                        import win32api
-                        win32api.SetCursorPos((int(click_x), int(click_y)))
-                        time.sleep(0.1)
-                        win32api.mouse_event(win32con.MOUSEEVENTF_LEFTDOWN, 0, 0, 0, 0)
-                        time.sleep(0.05)
-                        win32api.mouse_event(win32con.MOUSEEVENTF_LEFTUP, 0, 0, 0, 0)
+                        _hwnd3 = getattr(self.window, "_hWnd", None)
+                        if _hwnd3 and _was_offscreen:
+                            from window_manager import edge_click_window
+                            click_cx, click_cy = self.red_dot_monitor.get_click_client_position(
+                                self.window, int(target_y), None
+                            )
+                            edge_click_window(self.window, click_cx, click_cy)
+                        else:
+                            click_x, click_y = self.red_dot_monitor.get_click_position(
+                                self.window, int(target_y), None
+                            )
+                            import win32api
+                            win32api.SetCursorPos((int(click_x), int(click_y)))
+                            time.sleep(0.1)
+                            win32api.mouse_event(win32con.MOUSEEVENTF_LEFTDOWN, 0, 0, 0, 0)
+                            time.sleep(0.05)
+                            win32api.mouse_event(win32con.MOUSEEVENTF_LEFTUP, 0, 0, 0, 0)
                         time.sleep(1.0)
                         self._log("info", f"[红点] 已切回: {original_contact}")
                     else:
@@ -972,6 +1527,10 @@ class WeChatEngine:
 
         self._on_stats()
         self._log("info", f"[红点] 处理完成，共 {len(unread_contacts)} 个联系人")
+
+        # === 屏幕外模式：处理完无需移回（本来就在屏幕外） ===
+        if _was_offscreen:
+            self._log("info", "[屏幕外] 后台监控完成，窗口保持屏幕外")
 
     def reset_ai_training(self):
         """重置AI训练（微信更新UI后重新学习）"""

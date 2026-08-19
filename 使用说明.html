@@ -5,352 +5,727 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>微信AI助手 - 使用说明</title>
 <style>
+  :root {
+    --bg: #0a0f1e;
+    --bg-soft: #111827;
+    --card: #141d2f;
+    --card-hover: #1a2540;
+    --border: #22304d;
+    --text: #e6edf7;
+    --text-muted: #93a4c0;
+    --green: #07C160;
+    --green-dark: #05a352;
+    --blue: #38bdf8;
+    --purple: #a78bfa;
+    --amber: #fbbf24;
+    --red: #f87171;
+    --radius: 14px;
+  }
   * { margin: 0; padding: 0; box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
   body {
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", sans-serif;
-    background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
-    color: #e2e8f0; line-height: 1.7; padding: 20px;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", "PingFang SC", sans-serif;
+    background:
+      radial-gradient(1200px 600px at 80% -10%, rgba(7,193,96,.12), transparent 60%),
+      radial-gradient(900px 500px at 10% 10%, rgba(56,189,248,.08), transparent 55%),
+      var(--bg);
+    color: var(--text);
+    line-height: 1.75;
   }
-  .container { max-width: 900px; margin: 0 auto; }
-  .header {
-    text-align: center; padding: 40px 20px; margin-bottom: 30px;
-    background: rgba(30, 41, 59, 0.8); border-radius: 16px;
-    border: 1px solid rgba(148, 163, 184, 0.2);
+  .container { max-width: 1080px; margin: 0 auto; padding: 0 24px; }
+
+  /* ===== 顶部导航 ===== */
+  nav {
+    position: sticky; top: 0; z-index: 100;
+    background: rgba(10,15,30,.82);
+    backdrop-filter: blur(14px);
+    border-bottom: 1px solid var(--border);
   }
-  .header h1 {
-    font-size: 2.5em; margin-bottom: 10px;
-    background: linear-gradient(135deg, #60a5fa, #a78bfa);
-    -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+  nav .nav-inner {
+    max-width: 1080px; margin: 0 auto; padding: 0 24px;
+    display: flex; align-items: center; gap: 28px; height: 58px;
   }
-  .header .subtitle { color: #94a3b8; font-size: 1.1em; }
+  .nav-brand { display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 1.02em; }
+  .nav-brand .logo {
+    width: 30px; height: 30px; border-radius: 8px;
+    background: linear-gradient(135deg, var(--green), #0ea5e9);
+    display: grid; place-items: center; color: #fff; font-size: 16px;
+    box-shadow: 0 4px 14px rgba(7,193,96,.35);
+  }
+  nav a {
+    color: var(--text-muted); text-decoration: none; font-size: .92em;
+    transition: color .2s; white-space: nowrap;
+  }
+  nav a:hover { color: var(--green); }
+
+  /* ===== Hero ===== */
+  .hero { padding: 78px 0 56px; text-align: center; }
+  .hero .badges { margin-bottom: 22px; display: flex; justify-content: center; gap: 10px; flex-wrap: wrap; }
   .badge {
-    display: inline-block; padding: 4px 12px; margin: 2px;
-    border-radius: 12px; font-size: 0.85em; font-weight: 600;
+    display: inline-block; padding: 5px 14px; border-radius: 999px;
+    font-size: .8em; font-weight: 600; border: 1px solid var(--border);
+    background: rgba(20,29,47,.7); color: var(--text-muted);
   }
-  .badge-python { background: #1e3a5f; color: #60a5fa; }
-  .badge-ocr { background: #3b1e5f; color: #c084fc; }
-  .badge-ai { background: #1e5f3b; color: #4ade80; }
-  section {
-    background: rgba(30, 41, 59, 0.6); border-radius: 12px;
-    padding: 25px; margin-bottom: 20px;
-    border: 1px solid rgba(148, 163, 184, 0.15);
+  .badge.green { color: var(--green); border-color: rgba(7,193,96,.4); }
+  .badge.blue { color: var(--blue); border-color: rgba(56,189,248,.4); }
+  .badge.purple { color: var(--purple); border-color: rgba(167,139,250,.4); }
+  .hero h1 {
+    font-size: clamp(2.1rem, 5vw, 3.4rem); font-weight: 800; line-height: 1.2;
+    background: linear-gradient(120deg, #fff 20%, var(--green) 50%, var(--blue) 80%);
+    -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent;
   }
-  section h2 {
-    color: #60a5fa; margin-bottom: 15px; padding-bottom: 10px;
-    border-bottom: 2px solid rgba(96, 165, 250, 0.3); font-size: 1.5em;
+  .hero .sub { margin-top: 16px; color: var(--text-muted); font-size: 1.12em; max-width: 640px; margin-inline: auto; }
+  .hero .cta { margin-top: 30px; display: flex; gap: 14px; justify-content: center; flex-wrap: wrap; }
+  .btn {
+    display: inline-block; padding: 11px 26px; border-radius: 10px;
+    font-weight: 600; text-decoration: none; font-size: .95em;
+    transition: transform .15s, box-shadow .2s;
   }
-  section h3 { color: #a78bfa; margin: 15px 0 8px; font-size: 1.15em; }
-  .feature-grid {
-    display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-    gap: 12px; margin: 15px 0;
+  .btn:hover { transform: translateY(-2px); }
+  .btn-primary { background: linear-gradient(135deg, var(--green), var(--green-dark)); color: #fff; box-shadow: 0 6px 20px rgba(7,193,96,.35); }
+  .btn-ghost { background: rgba(20,29,47,.8); color: var(--text); border: 1px solid var(--border); }
+  .btn-ghost:hover { border-color: var(--green); color: var(--green); }
+
+  /* ===== Section 通用 ===== */
+  section { padding: 46px 0; }
+  .sec-head { text-align: center; margin-bottom: 38px; }
+  .sec-head .tag {
+    display: inline-block; font-size: .78em; font-weight: 700; letter-spacing: .12em;
+    color: var(--green); text-transform: uppercase; margin-bottom: 10px;
   }
-  .feature-card {
-    background: rgba(15, 23, 42, 0.8); padding: 15px; border-radius: 8px;
-    border-left: 3px solid #60a5fa;
+  .sec-head h2 { font-size: clamp(1.5rem, 3vw, 2.1rem); font-weight: 800; }
+  .sec-head p { color: var(--text-muted); margin-top: 8px; }
+
+  .card {
+    background: linear-gradient(180deg, var(--card), var(--bg-soft));
+    border: 1px solid var(--border); border-radius: var(--radius);
+    padding: 24px; transition: transform .2s, border-color .2s, box-shadow .2s;
   }
-  .feature-card.important { border-left-color: #f87171; }
-  .feature-card.ai { border-left-color: #4ade80; }
-  .feature-card h4 { margin-bottom: 5px; color: #f1f5f9; }
-  .feature-card p { font-size: 0.9em; color: #94a3b8; }
-  code {
-    background: #0f172a; padding: 2px 6px; border-radius: 4px;
-    font-family: "Cascadia Code", Consolas, monospace; color: #fbbf24; font-size: 0.9em;
+  .card:hover { transform: translateY(-4px); border-color: rgba(7,193,96,.4); box-shadow: 0 14px 40px rgba(0,0,0,.4); }
+
+  /* ===== 特性网格 ===== */
+  .grid-3 { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 18px; }
+  .feature .icon {
+    width: 44px; height: 44px; border-radius: 12px; display: grid; place-items: center;
+    font-size: 22px; margin-bottom: 14px;
+    background: rgba(7,193,96,.12); border: 1px solid rgba(7,193,96,.3);
   }
+  .feature h3 { font-size: 1.08em; margin-bottom: 8px; }
+  .feature p { color: var(--text-muted); font-size: .92em; }
+  .feature ul { margin: 10px 0 0 18px; color: var(--text-muted); font-size: .88em; }
+  .feature li { margin: 4px 0; }
+
+  /* ===== 截图 ===== */
+  .shot-wrap { margin: 26px 0; }
+  .shot {
+    border-radius: 16px; overflow: hidden;
+    border: 1px solid var(--border);
+    box-shadow: 0 24px 60px rgba(0,0,0,.5);
+    background: #0b1020;
+  }
+  .shot img { display: block; width: 100%; height: auto; }
+  .shot-cap {
+    text-align: center; color: var(--text-muted); font-size: .88em; margin-top: 12px;
+  }
+  .shot-cap b { color: var(--green); }
+  .shot-toolbar {
+    display: flex; align-items: center; gap: 7px; padding: 10px 16px;
+    background: #0e1526; border-bottom: 1px solid var(--border);
+  }
+  .dot { width: 11px; height: 11px; border-radius: 50%; }
+  .dot.r { background: #ff5f57; } .dot.y { background: #febc2e; } .dot.g { background: #28c840; }
+  .shot-toolbar .ttl { margin-left: 10px; color: var(--text-muted); font-size: .82em; }
+
+  /* ===== 步骤 ===== */
+  .steps { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 18px; counter-reset: step; }
+  .step { position: relative; padding-top: 40px; }
+  .step::before {
+    counter-increment: step; content: counter(step);
+    position: absolute; top: 0; left: 24px;
+    width: 34px; height: 34px; border-radius: 10px;
+    background: linear-gradient(135deg, var(--green), var(--green-dark));
+    color: #fff; display: grid; place-items: center; font-weight: 800;
+    box-shadow: 0 6px 16px rgba(7,193,96,.3);
+  }
+  .step h3 { font-size: 1.05em; margin-bottom: 6px; }
+  .step p { color: var(--text-muted); font-size: .9em; }
+
+  /* ===== 代码 ===== */
   pre {
-    background: #0f172a; padding: 15px; border-radius: 8px; overflow-x: auto;
-    border: 1px solid rgba(148, 163, 184, 0.2); margin: 10px 0;
+    background: #0a0f1e; border: 1px solid var(--border); border-radius: 10px;
+    padding: 18px 20px; overflow-x: auto; font-size: .9em; margin: 14px 0;
   }
-  pre code { background: none; padding: 0; color: #e2e8f0; }
-  .step {
-    display: flex; align-items: flex-start; margin: 12px 0; padding: 12px;
-    background: rgba(15, 23, 42, 0.5); border-radius: 8px;
+  code {
+    font-family: "Cascadia Code", Consolas, "Courier New", monospace;
+    color: var(--amber); font-size: .92em;
   }
-  .step-num {
-    flex-shrink: 0; width: 32px; height: 32px; border-radius: 50%;
-    background: linear-gradient(135deg, #60a5fa, #a78bfa); color: #fff;
-    display: flex; align-items: center; justify-content: center;
-    font-weight: bold; margin-right: 15px;
+  pre code { color: #c7d5ef; line-height: 1.65; }
+  pre .c { color: #6b7a99; } pre .k { color: var(--purple); } pre .s { color: var(--green); } pre .n { color: var(--blue); }
+  .inline-code {
+    background: rgba(7,193,96,.1); border: 1px solid rgba(7,193,96,.25);
+    color: #7df0b5; padding: 1px 7px; border-radius: 6px; font-family: Consolas, monospace;
+    font-size: .88em; white-space: nowrap;
   }
-  .step-content { flex: 1; }
-  .step-content strong { color: #f1f5f9; }
-  .color-cards { display: flex; flex-wrap: wrap; gap: 8px; margin: 10px 0; }
-  .color-card {
-    padding: 8px 14px; border-radius: 6px; font-size: 0.85em; font-weight: 600;
+
+  /* ===== 界面分区 ===== */
+  .tabs-grid { display: grid; gap: 18px; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); }
+  .tab-item { display: flex; gap: 14px; align-items: flex-start; }
+  .tab-item .tab-ico {
+    flex: 0 0 auto; width: 42px; height: 42px; border-radius: 12px;
+    display: grid; place-items: center; font-size: 20px;
+    background: rgba(56,189,248,.12); border: 1px solid rgba(56,189,248,.3);
   }
-  .c-green { background: #16a34a; color: #fff; }
-  .c-white { background: #f1f5f9; color: #0f172a; }
-  .c-red { background: #dc2626; color: #fff; }
-  .c-orange { background: #ea580c; color: #fff; }
-  .c-blue { background: #2563eb; color: #fff; }
-  .c-purple { background: #7c3aed; color: #fff; }
-  table { width: 100%; border-collapse: collapse; margin: 10px 0; }
-  th, td { padding: 10px 12px; text-align: left; border-bottom: 1px solid rgba(148,163,184,0.2); }
-  th { color: #60a5fa; font-weight: 600; }
-  .tip {
-    background: rgba(59, 130, 246, 0.1); border-left: 3px solid #3b82f6;
-    padding: 12px 15px; border-radius: 4px; margin: 10px 0; color: #93c5fd;
+  .tab-item h3 { font-size: 1.02em; margin-bottom: 4px; }
+  .tab-item p { color: var(--text-muted); font-size: .9em; }
+
+  /* ===== 配色说明 ===== */
+  .color-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 14px; }
+  .color-chip { border-radius: 12px; padding: 16px; color: #fff; font-weight: 600; text-align: center; box-shadow: inset 0 0 0 1px rgba(255,255,255,.12); }
+  .color-chip small { display: block; font-weight: 400; font-size: .78em; opacity: .85; margin-top: 4px; }
+  .c-green { background: linear-gradient(135deg,#27ae60,#07C160); }
+  .c-white { background: linear-gradient(135deg,#b7c2d6,#e6edf7); color: #333; }
+  .c-red { background: linear-gradient(135deg,#e04848,#f87171); }
+  .c-orange { background: linear-gradient(135deg,#e07b00,#fbbf24); }
+  .c-blue { background: linear-gradient(135deg,#1d6fe0,#38bdf8); }
+  .c-purple { background: linear-gradient(135deg,#7c3aed,#a78bfa); }
+
+  /* ===== FAQ ===== */
+  details {
+    background: var(--card); border: 1px solid var(--border); border-radius: 12px;
+    margin-bottom: 12px; overflow: hidden;
   }
+  details summary {
+    padding: 16px 20px; cursor: pointer; font-weight: 600; list-style: none;
+    display: flex; justify-content: space-between; align-items: center;
+    transition: color .2s;
+  }
+  details summary:hover { color: var(--green); }
+  details summary::after { content: "+"; font-size: 1.4em; color: var(--green); transition: transform .2s; }
+  details[open] summary::after { transform: rotate(45deg); }
+  details .body { padding: 0 20px 18px; color: var(--text-muted); font-size: .93em; }
+  details .body ul { margin-left: 18px; }
+
+  /* ===== 警告 ===== */
   .warn {
-    background: rgba(239, 68, 68, 0.1); border-left: 3px solid #ef4444;
-    padding: 12px 15px; border-radius: 4px; margin: 10px 0; color: #fca5a5;
+    background: rgba(248,113,113,.08); border: 1px solid rgba(248,113,113,.3);
+    border-radius: 12px; padding: 16px 20px; color: #fda4af; font-size: .92em; margin: 16px 0;
   }
-  .footer { text-align: center; padding: 30px; color: #64748b; font-size: 0.9em; }
+  .tip {
+    background: rgba(7,193,96,.08); border: 1px solid rgba(7,193,96,.3);
+    border-radius: 12px; padding: 16px 20px; color: #86efac; font-size: .92em; margin: 16px 0;
+  }
+
+  footer {
+    border-top: 1px solid var(--border); padding: 36px 0; text-align: center;
+    color: var(--text-muted); font-size: .88em;
+  }
+
+  /* 滚动条 */
+  ::-webkit-scrollbar { width: 10px; height: 10px; }
+  ::-webkit-scrollbar-thumb { background: #22304d; border-radius: 6px; }
+  ::-webkit-scrollbar-thumb:hover { background: #2f4266; }
+
+  /* ===== 滚动渐入 ===== */
+  .reveal { opacity: 0; transform: translateY(28px); transition: opacity .7s ease, transform .7s cubic-bezier(.16,1,.3,1); }
+  .reveal.visible { opacity: 1; transform: none; }
+  .reveal.d1 { transition-delay: .08s; } .reveal.d2 { transition-delay: .16s; }
+  .reveal.d3 { transition-delay: .24s; } .reveal.d4 { transition-delay: .32s; }
+
+  /* ===== 返回顶部 ===== */
+  .to-top {
+    position: fixed; right: 26px; bottom: 30px; z-index: 99;
+    width: 46px; height: 46px; border-radius: 50%;
+    background: linear-gradient(135deg, var(--green), var(--green-dark));
+    color: #fff; font-size: 20px; display: grid; place-items: center;
+    box-shadow: 0 8px 24px rgba(7,193,96,.4); cursor: pointer;
+    opacity: 0; pointer-events: none; transform: translateY(12px);
+    transition: opacity .3s, transform .3s; border: none;
+  }
+  .to-top.show { opacity: 1; pointer-events: auto; transform: none; }
+  .to-top:hover { transform: translateY(-3px); }
+
+  /* ===== 灯箱 ===== */
+  .lightbox {
+    position: fixed; inset: 0; z-index: 999; display: none;
+    align-items: center; justify-content: center;
+    background: rgba(4,8,18,.9); backdrop-filter: blur(8px);
+  }
+  .lightbox.open { display: flex; }
+  .lightbox img {
+    max-width: 92vw; max-height: 88vh; border-radius: 12px;
+    box-shadow: 0 30px 90px rgba(0,0,0,.7); border: 1px solid var(--border);
+    animation: zoomIn .28s cubic-bezier(.16,1,.3,1);
+  }
+  @keyframes zoomIn { from { transform: scale(.92); opacity: 0; } to { transform: none; opacity: 1; } }
+  .lightbox .lb-close {
+    position: absolute; top: 22px; right: 30px; color: #fff; font-size: 34px;
+    cursor: pointer; opacity: .8; transition: opacity .2s, transform .2s; line-height: 1;
+  }
+  .lightbox .lb-close:hover { opacity: 1; transform: rotate(90deg); }
+  .lightbox .lb-cap { position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%); color: var(--text-muted); font-size: .9em; }
+
+  /* ===== Hero 红点脉冲 ===== */
+  .reddot-pulse {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 30px; height: 30px; border-radius: 50%;
+    background: #FA5151; color: #fff; font-size: 13px; font-weight: 700;
+    position: relative; animation: float 3.2s ease-in-out infinite;
+  }
+  .reddot-pulse::before, .reddot-pulse::after {
+    content: ""; position: absolute; inset: 0; border-radius: 50%;
+    border: 2px solid rgba(250,81,81,.7); animation: pulse 2s ease-out infinite;
+  }
+  .reddot-pulse::after { animation-delay: 1s; }
+  @keyframes pulse {
+    0% { transform: scale(1); opacity: .9; }
+    100% { transform: scale(2.4); opacity: 0; }
+  }
+  @keyframes float { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-5px); } }
+
+  .shot { cursor: zoom-in; }
+
+  @media (max-width: 640px) {
+    nav .nav-links { display: none; }
+    .hero { padding: 50px 0 36px; }
+    section { padding: 34px 0; }
+  }
 </style>
 </head>
 <body>
-<div class="container">
 
-  <div class="header">
-    <h1>微信AI助手</h1>
-    <p class="subtitle">智能监控 · 自动识别 · 信息提取 · AI回复</p>
-    <div style="margin-top:15px;">
-      <span class="badge badge-python">Python 3.10+</span>
-      <span class="badge badge-ocr">PaddleOCR</span>
-      <span class="badge badge-ai">千问LLM</span>
+<!-- ===== 顶部导航 ===== -->
+<nav>
+  <div class="nav-inner">
+    <div class="nav-brand">
+      <span class="logo">💬</span> 微信AI助手
+    </div>
+    <div class="nav-links">
+      <a href="#features">功能特性</a>
+      <a href="#interface">界面预览</a>
+      <a href="#reddot">红点原理</a>
+      <a href="#quickstart">快速开始</a>
+      <a href="#config">配置说明</a>
+      <a href="#faq">常见问题</a>
     </div>
   </div>
+</nav>
 
-  <section>
-    <h2>功能概览</h2>
-    <div class="feature-grid">
-      <div class="feature-card important">
-        <h4>红点监控</h4>
-        <p>自动检测微信左侧栏未读红点，切换到未读联系人，提取消息后切回原窗口</p>
+<!-- ===== Hero ===== -->
+<header class="hero">
+  <div class="container">
+    <div class="badges">
+      <span class="badge green">🐍 Python 3.10+</span>
+      <span class="badge blue">🔍 PaddleOCR</span>
+      <span class="badge purple">🤖 通义千问 LLM</span>
+      <span class="badge">🪟 Windows 10/11</span>
+    </div>
+    <h1>微信AI助手 <span class="reddot-pulse" title="未读消息实时监控中">3</span></h1>
+    <p class="sub">后台无感监控微信消息 · 红点自动识别 · OCR 文字提取 · AI 智能分析 · 可选自动回复</p>
+    <div class="cta">
+      <a href="#quickstart" class="btn btn-primary">🚀 快速开始</a>
+      <a href="#interface" class="btn btn-ghost">📸 查看界面</a>
+    </div>
+  </div>
+</header>
+
+<!-- ===== 功能特性 ===== -->
+<section id="features">
+  <div class="container">
+    <div class="sec-head">
+      <span class="tag">Features</span>
+      <h2>核心功能</h2>
+      <p>从截图到识别、从提取到回复，全自动一条龙</p>
+    </div>
+    <div class="grid-3">
+      <div class="card feature reveal d1">
+        <div class="icon">🔴</div>
+        <h3>红点监控</h3>
+        <p>自动扫描微信左侧栏未读红点，识别后切换到对应联系人，提取完自动切回原窗口。</p>
+        <ul>
+          <li>模板匹配 + HSV 6特征双重检测</li>
+          <li>自动学习红点模板，越用越准</li>
+          <li>冷却机制防止重复切换</li>
+        </ul>
       </div>
-      <div class="feature-card">
-        <h4>OCR 识别</h4>
-        <p>PaddleOCR 实时识别聊天界面文字，支持发送者区分（自己/对方）</p>
+      <div class="card feature reveal d2">
+        <div class="icon">🔍</div>
+        <h3>OCR 识别</h3>
+        <p>基于 PaddleOCR 的中英文混合识别，精准区分自己/对方的消息气泡。</p>
+        <ul>
+          <li>帧间差异 + pHash 增量检测</li>
+          <li>底部区域裁剪减少无效识别</li>
+          <li>稳定帧过滤避免重复解析</li>
+        </ul>
       </div>
-      <div class="feature-card ai">
-        <h4>AI 信息提取</h4>
-        <p>千问LLM自动提取：分类、紧急度、摘要、待办事项、情绪分析</p>
+      <div class="card feature reveal d3">
+        <div class="icon">🧠</div>
+        <h3>AI 信息提取</h3>
+        <p>接入通义千问大模型，自动分析消息内容并提取关键信息。</p>
+        <ul>
+          <li>消息分类 / 紧急程度 / 摘要</li>
+          <li>待办事项与情绪分析</li>
+          <li>关键词 + 正则自定义规则</li>
+        </ul>
       </div>
-      <div class="feature-card ai">
-        <h4>AI 自动回复</h4>
-        <p>多角色回复风格（技术顾问/商务伙伴/可爱朋友/段子手），默认关闭</p>
+      <div class="card feature reveal d1">
+        <div class="icon">🤖</div>
+        <h3>AI 自动回复</h3>
+        <p>多角色回复风格：技术顾问、商务伙伴、可爱朋友、段子手，按联系人分配。</p>
+        <ul>
+          <li>前 10 次 AI 学习，之后纯规则模式</li>
+          <li>可配置发送延迟防风控</li>
+          <li>默认关闭，按需开启</li>
+        </ul>
       </div>
-      <div class="feature-card">
-        <h4>数据导出</h4>
-        <p>CSV / JSON 双格式，按联系人分组，退出时自动导出</p>
+      <div class="card feature reveal d2">
+        <div class="icon">🗄️</div>
+        <h3>数据管理</h3>
+        <p>本地 SQLite 存储，消息自动导出，支持历史搜索与日报周报。</p>
+        <ul>
+          <li>CSV / JSON 双格式导出</li>
+          <li>关键词 + 联系人 + 日期搜索</li>
+          <li>HTML 格式日报 / 周报</li>
+        </ul>
       </div>
-      <div class="feature-card">
-        <h4>Obsidian 同步</h4>
-        <p>支持文件直写和 REST API 两种模式，自动同步到 Obsidian Vault</p>
-      </div>
-      <div class="feature-card">
-        <h4>增量检测</h4>
-        <p>帧间差异 + pHash 去重，只在画面变化时触发OCR，降低CPU占用</p>
-      </div>
-      <div class="feature-card important">
-        <h4>关键词高亮</h4>
-        <p>自定义关键词规则，重要消息自动标记并彩色卡片展示</p>
+      <div class="card feature reveal d3">
+        <div class="icon">📓</div>
+        <h3>Obsidian 同步</h3>
+        <p>将提取的消息同步到 Obsidian 知识库，按联系人和日期组织笔记。</p>
+        <ul>
+          <li>文件直写 / REST API 双模式</li>
+          <li>自动创建结构化笔记</li>
+          <li>支持 Vault 目录自定义</li>
+        </ul>
       </div>
     </div>
-  </section>
+  </div>
+</section>
 
-  <section>
-    <h2>快速开始</h2>
+<!-- ===== 界面预览 ===== -->
+<section id="interface">
+  <div class="container">
+    <div class="sec-head">
+      <span class="tag">Interface</span>
+      <h2>界面预览</h2>
+      <p>左侧导航 + 右侧内容区，四大标签页一目了然</p>
+    </div>
 
-    <div class="step">
-      <div class="step-num">1</div>
-      <div class="step-content">
-        <strong>双击 <code>start.bat</code> 启动</strong><br>
-        脚本会自动检查 Python 环境和依赖包，首次运行会询问是否安装依赖（输入 <code>y</code> 确认）
+    <div class="shot-wrap">
+      <div class="shot">
+        <div class="shot-toolbar">
+          <span class="dot r"></span><span class="dot y"></span><span class="dot g"></span>
+          <span class="ttl">微信 AI 助手 — 主界面（监控页）</span>
+        </div>
+        <img src="docs_assets/app_main.png" alt="微信AI助手主界面" loading="lazy">
+      </div>
+      <div class="shot-cap"><b>图1</b> 主界面：顶部控制条、实时统计、消息卡片 / 预览 / 运行日志</div>
+    </div>
+
+    <div class="tabs-grid">
+      <div class="card tab-item reveal d1">
+        <span class="tab-ico">📡</span>
+        <div>
+          <h3>监控</h3>
+          <p>开始/停止监控、截图帧/OCR/消息/提取/重要/回复六项实时统计，消息卡片 + 截图预览 + 运行日志三视图。</p>
+        </div>
+      </div>
+      <div class="card tab-item reveal d2">
+        <span class="tab-ico">💬</span>
+        <div>
+          <h3>自动回复</h3>
+          <p>自动回复总开关、多角色管理（技术顾问/商务伙伴/可爱朋友/段子手）、AI 训练进度与重置。</p>
+        </div>
+      </div>
+      <div class="card tab-item reveal d3">
+        <span class="tab-ico">📊</span>
+        <div>
+          <h3>数据</h3>
+          <p>历史消息搜索（关键词/联系人/日期）、重要消息筛选、日报/周报生成与导出。</p>
+        </div>
+      </div>
+      <div class="card tab-item reveal d4">
+        <span class="tab-ico">⚙️</span>
+        <div>
+          <h3>设置</h3>
+          <p>LLM API 配置、OCR 参数调节、联系人过滤黑名单/白名单、Obsidian 同步、窗口校准向导。</p>
+        </div>
       </div>
     </div>
+  </div>
+</section>
 
-    <div class="step">
-      <div class="step-num">2</div>
-      <div class="step-content">
-        <strong>打开微信窗口</strong><br>
-        确保微信已登录并显示在桌面上（不要最小化），程序会自动定位窗口
+<!-- ===== 红点原理 ===== -->
+<section id="reddot">
+  <div class="container">
+    <div class="sec-head">
+      <span class="tag">How it works</span>
+      <h2>红点识别原理</h2>
+      <p>模板匹配优先 + HSV 6特征兜底的双重检测方案</p>
+    </div>
+
+    <div class="shot-wrap" style="display:grid; grid-template-columns: repeat(auto-fit,minmax(320px,1fr)); gap:20px;">
+      <div class="shot">
+        <div class="shot-toolbar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="ttl">微信左侧栏（软件实时捕获）</span></div>
+        <img src="docs_assets/wechat.png" alt="微信窗口" loading="lazy">
+      </div>
+      <div class="shot">
+        <div class="shot-toolbar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="ttl">红点检测结果（坐标标注）</span></div>
+        <img src="docs_assets/reddot_demo.png" alt="红点检测演示" loading="lazy">
       </div>
     </div>
+    <div class="shot-cap">左图为被监控的微信窗口；右图是软件从侧边栏截图中检测出的红点，黄色框标出位置与坐标，随后自动计算点击坐标切换到对应联系人。</div>
 
-    <div class="step">
-      <div class="step-num">3</div>
-      <div class="step-content">
-        <strong>点击「开始监控」</strong><br>
-        程序会分步初始化各模块（约5秒），日志区会逐步显示加载进度
+    <div class="grid-3" style="margin-top:26px;">
+      <div class="card feature reveal d1">
+        <div class="icon">🎯</div>
+        <h3>模板匹配（优先）</h3>
+        <ul>
+          <li>首次运行自动截取红点模板</li>
+          <li>cv2.matchTemplate 精准定位</li>
+          <li>多尺度匹配（0.8x~1.2x）适应 DPI</li>
+          <li>NMS 去重避免重复框选</li>
+        </ul>
+      </div>
+      <div class="card feature reveal d2">
+        <div class="icon">🎨</div>
+        <h3>HSV 6特征（兜底）</h3>
+        <ul>
+          <li>颜色：#FA5151 微信标准红</li>
+          <li>面积 100~3000 px²</li>
+          <li>圆形度 &gt; 0.5 排除图标</li>
+          <li>内部白色数字校验</li>
+        </ul>
+      </div>
+      <div class="card feature reveal d3">
+        <div class="icon">🪟</div>
+        <h3>后台无感模式</h3>
+        <ul>
+          <li>最小化后移入虚拟屏幕（-10000,0）</li>
+          <li>PrintWindow 强制渲染保活</li>
+          <li>SendMessageW 后台点击，绝不抢焦点</li>
+          <li>你点任务栏图标即可恢复窗口</li>
+        </ul>
       </div>
     </div>
+  </div>
+</section>
 
-    <div class="step">
-      <div class="step-num">4</div>
-      <div class="step-content">
-        <strong>查看实时消息</strong><br>
-        切换到「实时消息」标签页，新消息会以彩色卡片形式出现在最上方
+<!-- ===== 快速开始 ===== -->
+<section id="quickstart">
+  <div class="container">
+    <div class="sec-head">
+      <span class="tag">Quick Start</span>
+      <h2>快速开始</h2>
+      <p>三步搞定，开机即用</p>
+    </div>
+    <div class="steps">
+      <div class="card step reveal d1">
+        <h3>准备环境</h3>
+        <p>Windows 10/11 + Python 3.10+，桌面版微信 4.x 已登录，阿里云千问 API Key。</p>
+      </div>
+      <div class="card step reveal d2">
+        <h3>安装启动</h3>
+        <p>双击 <span class="inline-code">start.bat</span> 一键安装依赖并启动；或手动执行 <span class="inline-code">python ui_app.py</span>。</p>
+      </div>
+      <div class="card step reveal d3">
+        <h3>配置运行</h3>
+        <p>在设置页填入 LLM API Key，点击「开始监控」，最小化微信即可后台运行。</p>
       </div>
     </div>
-  </section>
+    <pre><code><span class="c"># 方式一：一键启动（推荐）</span>
+<span class="k">双击</span> start.bat
 
-  <section>
-    <h2>界面说明</h2>
+<span class="c"># 方式二：手动</span>
+pip <span class="k">install</span> -r requirements.txt
+pip <span class="k">install</span> pywin32 psutil
+python ui_app.py</code></pre>
+    <div class="tip">💡 首次启动需初始化 PaddleOCR 模型与 LLM 客户端，约 5~10 秒，界面会分步显示加载进度，属正常现象。</div>
+  </div>
+</section>
 
-    <h3>监控标签页</h3>
-    <table>
-      <tr><th>区域</th><th>说明</th></tr>
-      <tr><td>开始/停止监控</td><td>启动或停止后台监控线程</td></tr>
-      <tr><td>测试OCR</td><td>手动截取当前聊天窗口并识别文字，用于调试</td></tr>
-      <tr><td>统计面板</td><td>实时显示：截图数、OCR次数、消息数、提取数、重要数、回复数</td></tr>
-      <tr><td>实时消息</td><td>新消息卡片，最新消息在最上方，按重要性彩色边框</td></tr>
-      <tr><td>运行日志</td><td>程序运行日志，含 [红点] [增量] [轮询] 等前缀分类</td></tr>
-    </table>
-
-    <h3>消息卡片颜色说明</h3>
-    <div class="color-cards">
-      <span class="color-card c-green">自己的消息</span>
-      <span class="color-card c-white">对方的消息</span>
-      <span class="color-card c-red">重要/紧急消息</span>
-      <span class="color-card c-orange">关键词命中</span>
-      <span class="color-card c-blue">提取的信息</span>
-      <span class="color-card c-purple">AI 摘要</span>
+<!-- ===== 配置说明 ===== -->
+<section id="config">
+  <div class="container">
+    <div class="sec-head">
+      <span class="tag">Configuration</span>
+      <h2>配置说明</h2>
+      <p>核心配置都在 <span class="inline-code">config.yaml</span>，修改后重启生效</p>
     </div>
 
-    <h3>回复设置标签页</h3>
-    <table>
-      <tr><th>功能</th><th>说明</th></tr>
-      <tr><td>自动回复开关</td><td>默认<strong>关闭</strong>，开启后自动回复对方消息</td></tr>
-      <tr><td>角色管理</td><td>为不同联系人配置不同回复风格</td></tr>
-      <tr><td>AI训练</td><td>前10次AI辅助学习，之后切换为纯规则模式</td></tr>
-    </table>
-
-    <h3>设置标签页</h3>
-    <table>
-      <tr><th>配置项</th><th>说明</th></tr>
-      <tr><td>LLM 配置</td><td>API地址、密钥、模型名称（默认阿里云千问）</td></tr>
-      <tr><td>OCR 参数</td><td>缩放比例、最低置信度、气泡合并、降噪</td></tr>
-      <tr><td>联系人过滤</td><td>白名单/黑名单，黑名单默认含公众号、服务号等</td></tr>
-      <tr><td>Obsidian 同步</td><td>Vault路径、同步模式、API地址</td></tr>
-      <tr><td>窗口校准</td><td>手动框选聊天区域，解决DPI缩放偏移</td></tr>
-    </table>
-  </section>
-
-  <section>
-    <h2>红点监控机制</h2>
-    <p>红点监控是本工具的核心功能，自动检测微信左侧栏的未读消息红点：</p>
-
-    <h3>检测流程</h3>
-    <pre><code>每3秒扫描左侧栏
-    ↓
-模板匹配（优先）→ HSV 6特征检测（兜底）
-    ↓
-OCR 识别侧边栏文字
-    ↓
-红点Y坐标 ↔ 联系人名Y坐标 匹配（±60像素）
-    ↓
-切换到未读联系人 → 提取消息 → 切回原窗口
-    ↓
-60秒冷却（防止重复切换）</code></pre>
-
-    <h3>HSV 6大特征</h3>
-    <table>
-      <tr><th>特征</th><th>阈值</th><th>说明</th></tr>
-      <tr><td>颜色</td><td>#FA5151</td><td>微信红点精确颜色</td></tr>
-      <tr><td>面积</td><td>100-3000 px²</td><td>排除头像和图标</td></tr>
-      <tr><td>圆形度</td><td>&gt; 0.5</td><td>排除非圆形红色元素</td></tr>
-      <tr><td>位置</td><td>x &gt; 35% 宽度</td><td>排除左侧头像区</td></tr>
-      <tr><td>内部白字</td><td>white_ratio &gt; 0.03</td><td>必须有白色数字</td></tr>
-      <tr><td>排序</td><td>按 white_ratio 降序</td><td>优先处理数字最多的红点</td></tr>
-    </table>
-
-    <div class="tip">
-      <strong>模板匹配</strong>：首次运行时自动从HSV检测结果中截取红点模板并保存，后续运行优先使用模板匹配，精度更高。
-    </div>
-  </section>
-
-  <section>
-    <h2>配置文件说明</h2>
-    <p>所有配置集中在 <code>config.yaml</code>，修改后保存，在设置页点击「保存设置」生效。</p>
-
-    <h3>关键配置项</h3>
-    <pre><code># 自动回复（默认关闭）
-auto_reply:
-  enabled: false
-  send_delay: 0.5
-
-# 红点监控
-red_dot_monitor:
+    <div class="grid-3">
+      <div class="card feature reveal d1">
+        <div class="icon">🔑</div>
+        <h3>LLM API</h3>
+        <pre><code>llm:
+  api_key: sk-xxxx      <span class="c"># 千问Key</span>
+  model: qwen3.7-flash</code></pre>
+      </div>
+      <div class="card feature reveal d2">
+        <div class="icon">🔴</div>
+        <h3>红点监控</h3>
+        <pre><code>red_dot_monitor:
   enabled: true
-  cooldown_seconds: 15
-  red_min_area: 150
-  red_max_area: 5000
+  cooldown_seconds: 15</code></pre>
+      </div>
+      <div class="card feature reveal d3">
+        <div class="icon">🤖</div>
+        <h3>自动回复</h3>
+        <pre><code>auto_reply:
+  enabled: false   <span class="c"># 默认关闭</span>
+  send_delay: 0.5</code></pre>
+      </div>
+    </div>
 
-# LLM 配置
-llm:
-  provider: custom
-  base_url: https://dashscope.aliyuncs.com/compatible-mode
-  api_key: your-api-key
-  model: qwen3.7-flash-2026-07-15
-
-# 联系人过滤（黑名单默认含公众号/服务号等）
-contacts_filter:
-  whitelist: []
-  blacklist:
+    <h3 style="margin:26px 0 6px; color:var(--blue);">📋 联系人过滤</h3>
+    <pre><code>contacts_filter:
+  whitelist: []                 <span class="c"># 白名单（空 = 全部监控）</span>
+  blacklist:                    <span class="c"># 黑名单（默认含系统账号）</span>
     - 公众号
     - 服务号
     - 订阅号
     - 文件传输助手
+    - 折叠的群聊</code></pre>
 
-# Obsidian 同步
-obsidian:
-  mode: file
-  vault_path: E:\Obsidian\file\诺亚
-  folder: 微信消息
-  auto_sync: true</code></pre>
-  </section>
-
-  <section>
-    <h2>常见问题</h2>
-
-    <h3>Q: 启动时提示「未找到微信窗口」</h3>
-    <p>确保微信已登录且窗口显示在桌面（非最小化），窗口标题不含「AI」或「助手」。</p>
-
-    <h3>Q: OCR 识别不到文字</h3>
-    <div class="tip">
-      1. 检查微信窗口是否被遮挡<br>
-      2. 在设置页调整 OCR 缩放比例（建议 0.5-0.85）<br>
-      3. 使用「窗口校准」功能手动框选聊天区域<br>
-      4. 查看 DPI 缩放设置（推荐 100% 或 125%）
+    <h3 style="margin:26px 0 6px; color:var(--blue);">🖌️ 消息卡片配色</h3>
+    <div class="color-grid">
+      <div class="color-chip c-green">🟢 自己的消息<small>绿色卡片</small></div>
+      <div class="color-chip c-white">⚪ 对方的消息<small>白色卡片</small></div>
+      <div class="color-chip c-red">🔴 重要/紧急<small>红色高亮</small></div>
+      <div class="color-chip c-orange">🟠 关键词命中<small>橙色标签</small></div>
+      <div class="color-chip c-blue">🔵 提取信息<small>蓝色区块</small></div>
+      <div class="color-chip c-purple">🟣 AI 摘要<small>紫色摘要</small></div>
     </div>
 
-    <h3>Q: 红点检测不到未读消息</h3>
-    <div class="tip">
-      1. 查看 <code>debug</code> 目录下的 <code>sidebar_capture.png</code> 和 <code>red_dot_mask.png</code><br>
-      2. 确认红点颜色为 #FA5151（微信标准红）<br>
-      3. 调整 <code>red_min_area</code> 和 <code>red_max_area</code> 参数<br>
-      4. 首次运行会自动截取红点模板，后续精度会提升
-    </div>
-
-    <h3>Q: 自动回复误触发</h3>
-    <div class="warn">
-      自动回复默认<strong>关闭</strong>。如需开启，请在「回复设置」标签页手动开启，并配置好联系人角色。建议先用「测试OCR」验证识别准确性。
-    </div>
-
-    <h3>Q: 首次启动很慢</h3>
-    <p>首次启动需要初始化 PaddleOCR 模型和 LLM 客户端，约5-10秒。程序会分步加载并显示进度日志，属正常现象。</p>
-
-    <h3>Q: 导出的 CSV 乱码</h3>
-    <p>用记事本打开 CSV 另存为「UTF-8 with BOM」编码，或直接用 Excel 打开并选择「UTF-8」编码导入。</p>
-  </section>
-
-  <section>
-    <h2>快捷操作</h2>
-    <table>
-      <tr><th>操作</th><th>说明</th></tr>
-      <tr><td>双击 <code>start.bat</code></td><td>一键启动（推荐）</td></tr>
-      <tr><td>命令行启动</td><td><code>python ui_app.py</code></td></tr>
-      <tr><td>停止监控</td><td>点击「停止监控」按钮，自动导出数据</td></tr>
-      <tr><td>重置AI训练</td><td>设置页 → 重置AI训练，重新进入学习期</td></tr>
-      <tr><td>生成报告</td><td>搜索标签页 → 生成今日报告/本周报告</td></tr>
-    </table>
-  </section>
-
-  <div class="footer">
-    <p>微信AI助手 · 基于Python + PaddleOCR + 千问LLM</p>
-    <p>本工具仅供学习交流，请遵守微信使用条款</p>
+    <div class="warn">⚠️ 自动回复默认关闭。开启前请先用「识别」按钮验证 OCR 准确性，并合理设置发送延迟，频繁自动回复可能触发微信风控。</div>
   </div>
+</section>
 
+<!-- ===== 常见问题 ===== -->
+<section id="faq">
+  <div class="container">
+    <div class="sec-head">
+      <span class="tag">FAQ</span>
+      <h2>常见问题</h2>
+    </div>
+
+    <details open>
+      <summary>启动提示「未找到微信窗口」怎么办？</summary>
+      <div class="body">
+        <ul>
+          <li>确保微信已登录且窗口显示在桌面（非最小化）</li>
+          <li>微信窗口标题不能包含「AI」或「助手」（会与本程序窗口混淆）</li>
+          <li>多显示器环境下，确保微信在主显示器</li>
+        </ul>
+      </div>
+    </details>
+
+    <details>
+      <summary>OCR 识别不到文字？</summary>
+      <div class="body">
+        <ul>
+          <li>检查微信窗口是否被其他窗口遮挡</li>
+          <li>在设置页调整 OCR 缩放比例（建议 0.5~0.85）</li>
+          <li>使用「窗口校准」手动框选聊天区域</li>
+          <li>查看系统 DPI 缩放（推荐 100% 或 125%）</li>
+        </ul>
+      </div>
+    </details>
+
+    <details>
+      <summary>红点检测不到未读消息？</summary>
+      <div class="body">
+        <ul>
+          <li>查看 <span class="inline-code">debug/</span> 目录下的调试截图（sidebar_capture.png / debug_no_reddot.png）</li>
+          <li>确认红点颜色为标准微信红 #FA5151</li>
+          <li>调整 <span class="inline-code">red_min_area</span> / <span class="inline-code">red_max_area</span> 参数</li>
+          <li>首次运行会自动截取红点模板，多运行几次精度会提升</li>
+        </ul>
+      </div>
+    </details>
+
+    <details>
+      <summary>最小化后识别不到未读消息？</summary>
+      <div class="body">
+        <ul>
+          <li>确认配置中 <span class="inline-code">minimize_mode: offscreen</span>（屏幕外保活模式）</li>
+          <li>该模式下微信会被移到虚拟屏幕（-10000,0）保持渲染，点任务栏图标即可恢复</li>
+          <li>若仍失败，可尝试「👁 显示微信」按钮手动恢复后再监控</li>
+        </ul>
+      </div>
+    </details>
+
+    <details>
+      <summary>自动回复没有生效？</summary>
+      <div class="body">
+        <ul>
+          <li>确认已配置 LLM API Key 且模型名正确</li>
+          <li>确认 <span class="inline-code">auto_reply.enabled: true</span></li>
+          <li>检查联系人是否被黑名单过滤</li>
+          <li>查看「日志」标签页中回复失败的具体原因</li>
+        </ul>
+      </div>
+    </details>
+  </div>
+</section>
+
+<footer>
+  <div class="container">
+    <p><b style="color:var(--green)">微信AI助手</b> · 截图 + OCR + 大模型 · 纯视觉方案 · 安全可靠</p>
+    <p style="margin-top:6px; font-size:.82em;">本工具仅供学习交流，请遵守微信使用条款 · 数据本地存储，不上传任何服务器</p>
+  </div>
+</footer>
+
+<!-- ===== 返回顶部 ===== -->
+<button class="to-top" id="toTop" title="返回顶部">↑</button>
+
+<!-- ===== 灯箱 ===== -->
+<div class="lightbox" id="lightbox">
+  <span class="lb-close" id="lbClose">✕</span>
+  <img id="lbImg" src="" alt="放大预览">
+  <div class="lb-cap" id="lbCap"></div>
 </div>
+
+<script>
+  // 滚动渐入
+  const io = new IntersectionObserver((entries) => {
+    entries.forEach(e => { if (e.isIntersecting) { e.target.classList.add('visible'); io.unobserve(e.target); } });
+  }, { threshold: .12 });
+  document.querySelectorAll('.reveal').forEach(el => io.observe(el));
+
+  // 返回顶部
+  const toTop = document.getElementById('toTop');
+  window.addEventListener('scroll', () => {
+    toTop.classList.toggle('show', window.scrollY > 420);
+  }, { passive: true });
+  toTop.addEventListener('click', () => window.scrollTo({ top: 0, behavior: 'smooth' }));
+
+  // 灯箱：点击截图放大
+  const lb = document.getElementById('lightbox');
+  const lbImg = document.getElementById('lbImg');
+  const lbCap = document.getElementById('lbCap');
+  document.querySelectorAll('.shot img').forEach(img => {
+    img.addEventListener('click', () => {
+      lbImg.src = img.src;
+      const cap = img.closest('.shot-wrap');
+      lbCap.textContent = cap ? cap.querySelector('.shot-cap').textContent.trim() : '';
+      lb.classList.add('open');
+      document.body.style.overflow = 'hidden';
+    });
+  });
+  function closeLb() { lb.classList.remove('open'); document.body.style.overflow = ''; }
+  document.getElementById('lbClose').addEventListener('click', closeLb);
+  lb.addEventListener('click', e => { if (e.target === lb) closeLb(); });
+  document.addEventListener('keydown', e => { if (e.key === 'Escape') closeLb(); });
+
+  // 导航链接高亮
+  const links = document.querySelectorAll('nav a');
+  const secs = [...document.querySelectorAll('section[id]')];
+  window.addEventListener('scroll', () => {
+    let cur = '';
+    secs.forEach(s => { if (window.scrollY >= s.offsetTop - 120) cur = s.id; });
+    links.forEach(a => a.style.color = a.getAttribute('href') === '#' + cur ? 'var(--green)' : '');
+  }, { passive: true });
+</script>
+
 </body>
 </html>

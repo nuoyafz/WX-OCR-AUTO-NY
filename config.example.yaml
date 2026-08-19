@@ -214,11 +214,16 @@ wechat:
   dnd_pause_after_typing: 5
   do_not_disturb: true
   fast_mode: true
+  # 最小化监控模式：
+  #   normal    = 仅前台监控（窗口最小化时跳过）
+  #   minimized = 支持最小化后台截图（PrintWindow + 屏幕外恢复）
+  minimize_mode: offscreen  # offscreen=屏幕外保活(推荐), minimized=闪现截图, normal=前台
   ocr_denoise: true
   ocr_engine: auto
   ocr_merge_bubble: true
-  ocr_min_confidence: 0.6
-  ocr_scale: 0.5
+  # 识别率优化：0.5缩放会压毁小字，提到0.8；置信度降到0.5提高召回
+  ocr_min_confidence: 0.5
+  ocr_scale: 0.8
   poll_interval: 1.0
   smart_monitor:
     bottom_ratio: 0.25

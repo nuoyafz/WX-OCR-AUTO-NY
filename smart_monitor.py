@@ -36,6 +36,9 @@ class SmartMonitor:
         self.hamming_threshold = self.config.get("hamming_threshold", 5)  # 汉明距离阈值
         self._seen_phashes = []  # [(phash, text), ...]
         self._max_phash_cache = 200  # 最多缓存200条
+        # 精确匹配去重缓存：短文本pHash误判率高，改用精确匹配
+        self._seen_exact = set()
+        self._max_exact_cache = 500
 
         # 绝技4参数：底部检测
         self.bottom_ratio = self.config.get("bottom_ratio", 0.25)  # 只看底部25%
@@ -233,24 +236,32 @@ class SmartMonitor:
             True = 重复消息（应跳过）
             False = 新消息
         """
-        if not text or len(text) < 1:
+        if not text:
             return True
 
-        phash = self._text_phash(text)
+        # 精确匹配去重（所有长度先查一遍）
+        if text in self._seen_exact:
+            self.stats["messages_deduplicated"] += 1
+            return True
 
-        for seen_hash, seen_text in self._seen_phashes:
-            hamming = self._hamming_distance(phash, seen_hash)
-            if hamming <= self.hamming_threshold:
-                # 相似消息
-                self.stats["messages_deduplicated"] += 1
-                logger.debug(f"pHash去重: '{text[:20]}' ~ '{seen_text[:20]}' (hamming={hamming})")
-                return True
+        # 长文本再用pHash模糊去重（短文本特征稀疏，pHash会误判）
+        if len(text) >= 8:
+            phash = self._text_phash(text)
+            for seen_hash, seen_text in self._seen_phashes:
+                hamming = self._hamming_distance(phash, seen_hash)
+                if hamming <= self.hamming_threshold:
+                    self.stats["messages_deduplicated"] += 1
+                    logger.debug(f"pHash去重: '{text[:20]}' ~ '{seen_text[:20]}' (hamming={hamming})")
+                    return True
+            self._seen_phashes.append((phash, text))
+            if len(self._seen_phashes) > self._max_phash_cache:
+                self._seen_phashes.pop(0)
 
-        # 新消息，加入缓存
-        self._seen_phashes.append((phash, text))
-        if len(self._seen_phashes) > self._max_phash_cache:
-            self._seen_phashes.pop(0)
-
+        # 新消息，加入精确缓存
+        self._seen_exact.add(text)
+        if len(self._seen_exact) > self._max_exact_cache:
+            for k in list(self._seen_exact)[:self._max_exact_cache // 2]:
+                self._seen_exact.discard(k)
         return False
 
     def _compute_phash(self, image):
@@ -305,6 +316,7 @@ class SmartMonitor:
         self._last_bottom_hash = None
         self._seen_phashes = []
         self._ocr_cache = {}
+        self._seen_exact = set()
 
     def get_stats(self):
         """获取统计信息"""

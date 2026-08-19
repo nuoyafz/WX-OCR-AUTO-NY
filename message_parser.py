@@ -3,6 +3,7 @@
 """
 import hashlib
 import logging
+import time
 from collections import deque
 
 logger = logging.getLogger(__name__)
@@ -18,14 +19,17 @@ class MessageParser:
     5. 只回复"对方"的消息，忽略自己的消息
     """
 
-    def __init__(self, stable_frames=2, context_size=10):
+    def __init__(self, stable_frames=2, context_size=10, stable_timeout=2.0):
         self.stable_frames = stable_frames
         self.context_size = context_size
+        # 稳定帧超时兜底：增量检测在画面静止时不再调用feed，
+        # 候选消息可能永远凑不够stable_frames帧 → 超时后强制确认
+        self.stable_timeout = stable_timeout
 
         # 已处理消息的hash集合（永久去重）
         self.processed_hashes = set()
 
-        # 候选消息：{text_hash: {"text": ..., "frames_seen": N}}
+        # 候选消息：{text_hash: {"text": ..., "frames_seen": N, "first_seen": ts}}
         self.candidate_pool = {}
 
         # 对话上下文：deque of {"role": "user"/"assistant", "content": "..."}
@@ -45,7 +49,8 @@ class MessageParser:
     def _group_by_bubble(self, ocr_results):
         """
         根据Y坐标将OCR结果分组为消息气泡。
-        气泡之间通常有间隔（>25px），同一气泡内文本Y坐标接近。
+        气泡之间通常有间隔（>40px），同一气泡内文本Y坐标接近。
+        放宽到40px以适应屏幕外截图的Y坐标波动。
         """
         if not ocr_results:
             return []
@@ -57,7 +62,7 @@ class MessageParser:
             prev = ocr_results[i - 1]
             curr = ocr_results[i]
             gap = curr["y_center"] - prev["y_center"]
-            if gap > 25:
+            if gap > 40:
                 groups.append(current_group)
                 current_group = [curr]
             else:
@@ -69,11 +74,31 @@ class MessageParser:
         return groups
 
     def _get_bubble_sender(self, bubble_items):
-        """确定气泡发送者：对气泡内所有文本的 sender 做多数投票"""
+        """确定气泡发送者：综合位置和颜色判断"""
         if not bubble_items:
             return "other"
+
+        # 统计 sender
         me_count = sum(1 for r in bubble_items if r.get("sender") == "me")
-        return "me" if me_count > len(bubble_items) // 2 else "other"
+        other_count = sum(1 for r in bubble_items if r.get("sender") == "other")
+
+        # 如果有不同判断，用多数投票
+        if me_count > other_count:
+            return "me"
+        if other_count > me_count:
+            return "other"
+
+        # 票数相同或都为0，用位置判断（取第一条的位置）
+        r = bubble_items[0]
+        bbox = r.get("bbox", [])
+        if len(bbox) >= 2:
+            left_x = min(p[0] for p in bbox)
+            right_x = max(p[0] for p in bbox)
+            # 如果气泡右边界接近窗口右侧 → me
+            # 如果气泡左边界在左侧1/3 → other
+            if left_x < 100:
+                return "other"
+        return "other"  # 默认当作对方消息，避免漏报
 
     def _get_bubble_text(self, bubble_items):
         """提取气泡的完整文本"""
@@ -142,17 +167,21 @@ class MessageParser:
         if self._is_my_reply(last_text):
             return {"new_messages": [], "context": list(self.conversation)}
 
-        # --- 稳定帧确认 ---
+        # --- 稳定帧确认（带超时兜底） ---
+        now_ts = time.time()
         if text_hash in self.candidate_pool:
             self.candidate_pool[text_hash]["frames_seen"] += 1
         else:
             self.candidate_pool[text_hash] = {
                 "text": last_text,
                 "frames_seen": 1,
+                "first_seen": now_ts,
             }
 
         candidate = self.candidate_pool[text_hash]
-        if candidate["frames_seen"] >= self.stable_frames:
+        waited = now_ts - candidate.get("first_seen", now_ts)
+        # stable_frames=1 时第一帧就确认；超时也确认
+        if candidate["frames_seen"] >= self.stable_frames or waited >= self.stable_timeout:
             self.processed_hashes.add(text_hash)
             if text_hash in self.candidate_pool:
                 del self.candidate_pool[text_hash]
@@ -165,7 +194,34 @@ class MessageParser:
         if len(self.candidate_pool) > 50:
             self.candidate_pool.clear()
 
+        # 诊断日志：为什么没确认
+        import logging
+        logging.getLogger(__name__).debug(
+            f"[parser] 候选未确认: frames={candidate['frames_seen']}/{self.stable_frames}, "
+            f"waited={waited:.1f}/{self.stable_timeout}, pool={len(self.candidate_pool)}, "
+            f"text={last_text[:30]}")
+
         return {"new_messages": [], "context": list(self.conversation)}
+
+    def flush_stable_timeout(self):
+        """
+        超时确认候选消息（主循环在画面静止、跳过OCR时调用）。
+        增量检测跳过帧 → feed不再被调用 → 候选永远凑不够stable_frames，
+        此方法把等待超过stable_timeout的候选强制确认为新消息。
+
+        Returns:
+            list of {"sender": "other", "content": "..."}
+        """
+        now_ts = time.time()
+        confirmed = []
+        for text_hash in list(self.candidate_pool.keys()):
+            cand = self.candidate_pool[text_hash]
+            waited = now_ts - cand.get("first_seen", now_ts)
+            if waited >= self.stable_timeout:
+                self.processed_hashes.add(text_hash)
+                del self.candidate_pool[text_hash]
+                confirmed.append({"sender": "other", "content": cand["text"]})
+        return confirmed
 
     def add_to_context(self, role, content):
         """添加消息到对话上下文"""
