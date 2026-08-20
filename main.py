@@ -23,9 +23,12 @@ from datetime import datetime
 from pathlib import Path
 import win32con
 
-from window_manager import find_wechat_window, setup_window_guide, focus_window, is_window_visible, get_contact_name
+from window_manager import (
+    find_wechat_window, setup_window_guide, focus_window, is_window_visible,
+    get_contact_name, analyze_chat_context,
+)
 from screenshot import capture_chat_bottom, is_image_blank
-from ocr_engine import recognize, identify_senders
+from ocr_engine import recognize, identify_senders, recognize_with_group_enhance, identify_senders_v4
 from message_parser import MessageParser
 from role_manager import RoleManager
 from llm_client import LLMClient
@@ -173,11 +176,14 @@ class WeChatEngine:
 
     def _send_ui_card(self, contact, sender, content, timestamp,
                       extracted=None, is_important=False,
-                      importance_reason="", msg_key=None, is_update=False):
+                      importance_reason="", msg_key=None, is_update=False,
+                      is_group=False, group_member=None,
+                      confidence=None, sender_confidence=None):
         """
         统一发送富信息消息卡片（附带 keywords/summary/category 供UI彩色展示）。
         - 首次发送：立即发基础卡（快速反馈）
         - 提取完成后：用同一 msg_key 发更新卡，UI 原位刷新，避免重复卡片
+        - V3 新增：is_group / group_member / confidence / sender_confidence
         """
         if not self._on_new_message:
             return
@@ -185,7 +191,9 @@ class WeChatEngine:
         if msg_key is None:
             try:
                 import hashlib
-                msg_key = hashlib.md5(f"{contact}|{content}|{timestamp}".encode("utf-8")).hexdigest()[:12]
+                # V3: 去重key包含群成员（同群不同成员发相同内容不是重复）
+                key_src = f"{contact}|{group_member or ''}|{sender}|{content}|{timestamp}"
+                msg_key = hashlib.md5(key_src.encode("utf-8")).hexdigest()[:14]
             except Exception:
                 msg_key = f"{contact}_{timestamp}"
 
@@ -198,6 +206,11 @@ class WeChatEngine:
             "importance_reason": importance_reason or "",
             "msg_key": msg_key,
             "is_update": bool(is_update),
+            # V3 新增字段
+            "is_group": bool(is_group),
+            "group_member": group_member,
+            "confidence": confidence,
+            "sender_confidence": sender_confidence,
         }
 
         # 富信息：提取结果中的关键词/摘要/分类/正则信息
@@ -205,6 +218,7 @@ class WeChatEngine:
             payload["keywords"] = extracted.get("matched_keywords", []) or []
             payload["categories"] = extracted.get("keyword_categories", []) or []
             payload["regex_extracts"] = extracted.get("regex_extracts", {}) or {}
+            payload["extracted_fields"] = extracted.get("extracted_fields") or extracted.get("fields") or {}
             llm_analysis = extracted.get("llm_analysis") or {}
             if isinstance(llm_analysis, dict):
                 payload["summary"] = llm_analysis.get("summary", "") or ""
@@ -215,10 +229,11 @@ class WeChatEngine:
                 if isinstance(action_items, list):
                     payload["action_items"] = action_items[:5]
             if not payload.get("summary") and not payload.get("keywords") and not payload.get("categories"):
-                # 无LLM信息时，也从关键词分类生成轻量摘要
                 cats = payload["categories"]
                 if cats:
                     payload["category"] = "、".join(cats)
+            # 补充提取器注入的群聊字段（万一上游没赋值）
+            payload.setdefault("chat_kind", extracted.get("chat_kind"))
 
         try:
             self._on_new_message(payload)
@@ -548,7 +563,13 @@ class WeChatEngine:
         send_delay = self.auto_reply_config.get("send_delay", 0.5)
 
         contact_name = get_contact_name(self.window)
-        self._log("info", f"当前聊天联系人: {contact_name}")
+        # V2: 初始群聊/私聊判断（基于窗口标题），后续每轮会结合OCR再精细裁决
+        ctx = analyze_chat_context(self.window)
+        contact_name = ctx["contact"] or contact_name
+        current_chat_kind = "group" if ctx["is_group"] is True else \
+            ("personal" if ctx["is_group"] is False else "unknown")
+        current_group_members = set()
+        self._log("info", f"当前聊天联系人: {contact_name} (标题判定类型: {current_chat_kind}, 来源: {ctx.get('source')})")
 
         while not self._stop_flag.is_set():
             try:
@@ -794,7 +815,7 @@ class WeChatEngine:
 
                     self._log("info", f"[增量] 检测到画面变化，区域数: {len(diff_regions)}")
 
-                    # 增量OCR：只对变化区域做OCR
+                    # V3 增量OCR：先用 recognize 逐区域做，再在全局做群聊增强 + senderV4
                     def _ocr_func(img):
                         return recognize(
                             img,
@@ -804,20 +825,63 @@ class WeChatEngine:
                             denoise=ocr_denoise,
                         )
 
-                    ocr_results = self.smart_monitor.incremental_ocr(image, diff_regions, _ocr_func)
+                    ocr_results_raw = self.smart_monitor.incremental_ocr(image, diff_regions, _ocr_func)
                     self.stats["ocr_calls"] += 1
+                    # 增量模式下做 sender 强化 + 群聊轻量增强（不做多策略完整识别）
+                    if ocr_results_raw:
+                        ocr_results_raw = identify_senders_v4(ocr_results_raw, image)
+                    # 最终：包装成统一格式
+                    from ocr_engine import (
+                        infer_chat_kind_by_title, _detect_chat_kind_hints,
+                        _group_detect_and_strip_member_name,
+                    )
+                    ih, iw = (0, 0) if image is None else image.shape[:2]
+                    title_kind = infer_chat_kind_by_title(contact_name)
+                    hint_res = _detect_chat_kind_hints(ocr_results_raw, ih, iw)
+                    ocr_results, has_member, members = _group_detect_and_strip_member_name(
+                        ocr_results_raw, image_h=ih,
+                    )
+                    # 简单融合：标题或结构命中 group 就算群聊
+                    vote_g = 0
+                    if title_kind == "group":
+                        vote_g += 0.85
+                    if hint_res["kind"] == "group":
+                        vote_g += hint_res["confidence"]
+                    if has_member:
+                        vote_g += min(0.95, 0.55 + 0.08 * len(members))
+                    final_kind = "group" if vote_g >= 0.5 else \
+                        ("personal" if title_kind == "personal" else "unknown")
+                    group_members = list(members)
+                    for r in ocr_results:
+                        r["chat_kind"] = final_kind
                 else:
-                    # 最小化模式 或 无增量检测：全量OCR
+                    # 最小化模式 或 无增量检测：使用V3完整识别（含群聊/成员+senderV4）
                     if _is_min:
-                        self._log("info", "[最小化] 跳过增量检测，直接全量OCR")
-                    ocr_results = recognize(
+                        self._log("info", "[最小化] 跳过增量检测，直接全量OCR(V3群聊增强)")
+                    enhanced = recognize_with_group_enhance(
                         image,
+                        contact_title=contact_name,
                         scale=ocr_scale,
                         min_confidence=ocr_min_conf,
-                        merge_bubble=ocr_merge,
                         denoise=ocr_denoise,
                     )
                     self.stats["ocr_calls"] += 1
+                    ocr_results = enhanced["lines"]
+                    final_kind = enhanced["chat_kind"]
+                    group_members = list(enhanced.get("group_members", []))
+                    # 日志：群聊判定过程
+                    if final_kind != getattr(self, "_last_reported_kind", None) or \
+                       (group_members and abs(time.time() - getattr(self, "_last_member_log_ts", 0)) > 30):
+                        self._last_reported_kind = final_kind
+                        self._last_member_log_ts = time.time()
+                        self._log("info", f"[V3] 会话类型={final_kind} "
+                                  f"(置信度={enhanced.get('chat_kind_confidence','?')}) "
+                                  f"成员数={len(group_members)}  成员样本={group_members[:6]}")
+                    if final_kind == "group":
+                        current_chat_kind = "group"
+                        current_group_members.update(group_members)
+                    elif final_kind == "personal":
+                        current_chat_kind = "personal"
 
                 if not ocr_results:
                     self._flush_stable_candidates(contact_name)
@@ -831,17 +895,26 @@ class WeChatEngine:
                     txt = r.get("text", "")[:30] if isinstance(r, dict) else str(r)[:30]
                     self._log("info", f"  [{i}] {txt}")
 
-                # === 诊断：OCR后sender分布（限频10秒） ===
+                # === 诊断：OCR后sender分布（限频10秒）+ 群聊字段 ===
                 _now_diag = time.time()
                 if _now_diag - getattr(self, "_last_ocr_diag", 0) > 10:
                     self._last_ocr_diag = _now_diag
                     _me_cnt = sum(1 for r in ocr_results if isinstance(r, dict) and r.get("sender") == "me")
                     _oth_cnt = len(ocr_results) - _me_cnt
-                    self._log("info", f"[诊断] OCR sender分布: me={_me_cnt}, other={_oth_cnt}, "
-                               f"图尺寸={image.shape[1]}x{image.shape[0]}")
+                    _gm_cnt = sum(1 for r in ocr_results if isinstance(r, dict) and r.get("group_member"))
+                    self._log("info", f"[诊断] OCR分布: me={_me_cnt}, other={_oth_cnt}, "
+                              f"带群成员字段={_gm_cnt}, 会话类型={current_chat_kind}, "
+                              f"图尺寸={image.shape[1]}x{image.shape[0]}")
 
-                # 3. 识别发送者
-                ocr_results = identify_senders(ocr_results, image)
+                # 3. 识别发送者 — 注意：V3 recognize_with_group_enhance / 增量分支 已跑过
+                # identify_senders_v4，且在 ocr_results 里带了 sender_confidence。
+                # 这里只在 sender 字段缺失时做兜底补一次 V3 判断。
+                need_backfill = any(r.get("sender") is None for r in ocr_results if isinstance(r, dict))
+                if need_backfill:
+                    try:
+                        ocr_results = identify_senders(ocr_results, image)
+                    except Exception:
+                        pass
 
                 # 4. 解析新消息
                 result = self.parser.feed(ocr_results)
@@ -864,11 +937,13 @@ class WeChatEngine:
                     self._log("info", f"[parser] OCR有{len(ocr_results)}条但新消息0条 "
                                f"(候选池={len(_last_grp)}, 已处理={_proc}, "
                                f"分组={_grp_cnt}, 末组发送者={_ls}, 末组文本={_lt})")
-                # pHash去重（比MD5更鲁棒）
+                # pHash去重（比MD5更鲁棒）—— V2: 包含群成员一起做 key
                 if self.smart_monitor:
                     deduped = []
                     for msg in new_messages:
-                        if not self.smart_monitor.deduplicate(str(msg["content"])):
+                        gm = msg.get("group_member") or ""
+                        dedup_key = f"{msg.get('sender','?')}|{gm}|{msg.get('content','')}"
+                        if not self.smart_monitor.deduplicate(dedup_key):
                             deduped.append(msg)
                     new_messages = deduped
                 context = result["context"]
@@ -877,45 +952,79 @@ class WeChatEngine:
                     content = str(msg.get("content", "")).strip()
                     if not content:
                         continue
-                    # 跳过自己发的消息
-                    if msg.get("sender") == "me":
+                    _sender = msg.get("sender", "other")
+                    _group_member = msg.get("group_member") or None
+                    _conf = msg.get("confidence")
+                    _sender_conf = msg.get("sender_confidence")
+
+                    # V2: 自己发的消息也要识别（进入 UI / 存储 / Obsidian），
+                    #    但是不触发自动回复。不再使用 "if sender==me: continue"。
+                    # 过滤自身UI窗口的OCR误识别内容（只过滤对方：自己的内容是真实消息）
+                    if _sender == "other" and any(skip in content for skip in
+                            ["助手v2.0", "AI助手", "微信 AI", "信息提取", "自动回复",
+                             "数据查看", "设置", "红点", "屏幕外", "保活", "截图",
+                             "预览", "诊断", "增量", "窗口坐标"]):
                         continue
-                    # 过滤自身UI窗口的OCR误识别内容
-                    if any(skip in content for skip in ["助手v2.0", "AI助手", "微信 AI", "信息提取", "自动回复", "数据查看", "设置", "红点", "屏幕外", "保活", "截图", "预览", "诊断", "增量", "窗口坐标"]):
-                        continue
-                    # 过滤过短的无效内容（单个字符或纯标点）
-                    if len(content) < 2:
-                        continue
-                    # 过滤纯时间戳
+                    # 过滤过短的无效内容（对方<2字跳过；自己的单字"嗯""哦"要保留）
                     import re
+                    if _sender == "other" and len(content) < 2:
+                        continue
+                    # 过滤纯时间戳/系统提示
                     if re.match(r'^\d{1,2}[:：]\d{2}$', content):
                         continue
                     if re.match(r'^(昨天|今天|明天|后天|星期[一二三四五六日天]|周[一二三四五六日天])$', content):
                         continue
-                    if re.match(r'^\d+$', content):
+                    if _sender == "other" and re.match(r'^\d+$', content):
                         continue
-                    system_words = ["以下是新消息", "收到红包", "撤回了一条消息", "拍了拍", "以上是打招呼", "添加了", "邀请你"]
+                    system_words = ["以下是新消息", "收到红包", "撤回了一条消息",
+                                    "拍了拍", "以上是打招呼", "添加了", "邀请你"]
                     if any(sw in content for sw in system_words):
                         continue
                     if re.match(r'^[\s\.\,\，\。\！\？\!\?\-\_\(\)\(\)]+$', content):
                         continue
+
+                    # 群聊场景：如果 group_member 为空，但会话类型是 group，
+                    # 则尝试 fallback：私聊 contact 作为 group_member（避免混淆）
+                    if current_chat_kind == "group" and not _group_member and _sender == "other":
+                        # 保持为空 — UI上显示为"未知成员"
+                        pass
+
                     self.stats["messages_detected"] += 1
-                    self._log("info", f"[新消息] {contact_name}: {content[:80]}")
+                    if current_chat_kind == "group" and _group_member:
+                        self._log("info",
+                            f"[新消息][群聊] {contact_name} > {_group_member}({_sender}): {content[:80]}")
+                    else:
+                        who = "我" if _sender == "me" else contact_name
+                        self._log("info", f"[新消息] {who}({_sender}): {content[:80]}")
 
-                    # 实时通知UI：先发基础卡（快速反馈），提取完成后用同一msg_key原位更新
+                    # 实时通知UI：V3 多传 chat_kind / group_member / 置信度
                     _ts = datetime.now().strftime("%H:%M:%S")
-                    _sender = msg.get("sender", "other")
-                    self._send_ui_card(contact_name, _sender, content, _ts)
-                    self._log("info", f"[主循环->UI] 发送: {contact_name}: {content[:40]}")
+                    self._send_ui_card(
+                        contact_name, _sender, content, _ts,
+                        is_group=(current_chat_kind == "group"),
+                        group_member=_group_member,
+                        confidence=_conf,
+                        sender_confidence=_sender_conf,
+                    )
+                    self._log("info", f"[主循环->UI] 发送: {contact_name} | sender={_sender}"
+                              f" | member={_group_member} | {content[:40]}")
 
-                    # === 信息提取 ===
+                    # === 信息提取（对方消息做"提取+重要判定"；自己消息也存但不做AI回复） ===
                     if self.extractor:
                         extracted = self.extractor.extract(
                             text=content,
                             sender=_sender,
                             contact_name=contact_name,
                             timestamp=datetime.now(),
+                            extra={"chat_kind": current_chat_kind,
+                                   "group_member": _group_member},
                         )
+                        # 覆盖/补充提取器没有赋值的结构化字段
+                        extracted["chat_kind"] = current_chat_kind
+                        extracted["group_member"] = _group_member
+                        extracted["sender_confidence"] = _sender_conf
+                        extracted["ocr_confidence"] = _conf
+
                         self.stats["extracted"] += 1
 
                         if extracted.get("is_important"):
@@ -929,30 +1038,40 @@ class WeChatEngine:
                             extracted=extracted,
                             is_important=extracted.get("is_important", False),
                             importance_reason=extracted.get("importance_reason", ""),
+                            is_group=(current_chat_kind == "group"),
+                            group_member=_group_member,
+                            confidence=_conf,
+                            sender_confidence=_sender_conf,
                             is_update=True,
                         )
 
                         if self.storage:
                             self.storage.save(extracted)
 
-                        # Obsidian同步
+                        # Obsidian同步（V3：最新消息在顶部 + 微信气泡Callout风格）
                         if self.obsidian and self.obsidian.enabled:
                             sync_data = {
                                 "contact": contact_name,
-                                "sender": extracted.get("sender", "other"),
-                                "content": extracted.get("raw_text", ""),
-                                "timestamp": extracted.get("timestamp", ""),
+                                "sender": extracted.get("sender", _sender),
+                                "content": extracted.get("raw_text", content),
+                                "timestamp": extracted.get("timestamp", datetime.now().strftime("%Y-%m-%d %H:%M:%S")),
                                 "is_important": extracted.get("is_important", False),
                                 "importance_reason": extracted.get("importance_reason", ""),
-                                "keywords": extracted.get("matched_keywords", []),
+                                "keywords": extracted.get("matched_keywords", []) or extracted.get("keywords", []),
                                 "summary": (extracted.get("llm_analysis", {}) or {}).get("summary", "") if isinstance(extracted.get("llm_analysis"), dict) else "",
+                                "is_group": (current_chat_kind == "group"),
+                                "group_member": _group_member,
+                                "chat_kind": current_chat_kind,
+                                "extracted_fields": extracted.get("extracted_fields") or extracted.get("fields"),
+                                "ocr_confidence": _conf,
+                                "sender_confidence": _sender_conf,
                             }
                             self.obsidian.sync_message(sync_data)
 
                         self._on_extract(extracted)
 
-                    # === 自动回复（可选） ===
-                    if self.auto_reply_enabled and self.llm_client:
+                    # === 自动回复（只对方消息触发；自己的绝对不回复，避免 AI 复读自己） ===
+                    if _sender != "me" and self.auto_reply_enabled and self.llm_client:
                         role = self.role_manager.get_role_for(contact_name)
                         self._log("info", f"[角色] {role['name']} ({role['reply_style']})")
 

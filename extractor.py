@@ -63,7 +63,7 @@ class InfoExtractor:
                 logger.warning(f"正则规则编译失败 {rule.get('name', '?')}: {e}")
         return compiled
 
-    def extract(self, text, sender="other", contact_name="", timestamp=None):
+    def extract(self, text, sender="other", contact_name="", timestamp=None, extra=None):
         if timestamp is None:
             timestamp = datetime.now()
 

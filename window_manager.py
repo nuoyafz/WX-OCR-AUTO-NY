@@ -180,15 +180,52 @@ def focus_window(window):
 def get_contact_name(window):
     """
     从微信窗口标题中提取联系人名称。
-    微信聊天窗口标题格式： "联系人名 - 微信" 或 "联系人名"
+    微信聊天窗口标题格式： "联系人名 - 微信" 或 "联系人名" 或 "群名(5) - 微信"
+
+    V2: 对群聊标题去掉人数括号，例如「项目讨论组(8) - 微信」→ 返回「项目讨论组」
+    V2: 也可通过 include_info=True 拿到 (contact, is_group) 元组
     """
-    title = window.title
+    title = getattr(window, "title", "") or ""
     # 去掉 " - 微信" 后缀
     if " - 微信" in title:
-        return title.split(" - 微信")[0].strip()
+        raw = title.split(" - 微信")[0].strip()
     elif "微信" in title:
-        return title.replace("微信", "").strip()
-    return title.strip()
+        raw = title.replace("微信", "").strip()
+    else:
+        raw = title.strip()
+
+    # 去掉结尾的 (8) / （8）人数括号
+    import re as _re
+    cleaned = _re.sub(r'\s*[（(]\s*\d+\s*[)）]\s*$', '', raw).strip()
+
+    return cleaned or raw or title
+
+
+def analyze_chat_context(window):
+    """
+    V2: 综合判断当前窗口是"群聊"还是"私聊"。
+    优先用标题特征（稳定廉价），回退到未知。
+    返回 dict:
+      {"contact": 联系人/群名, "is_group": True/False/None, "source": "title_pattern/unknown"}
+    """
+    contact = get_contact_name(window)
+    title = getattr(window, "title", "") or ""
+
+    import re as _re
+    # 1) 标题中出现括号+数字："开心一家人(56)" → 群聊
+    if _re.search(r'[（(]\s*\d+\s*[)）]', title):
+        return {"contact": contact, "is_group": True, "source": "title_bracket_num"}
+
+    # 2) 群名后缀关键词
+    group_suffix = ("群", "班", "组", "队", "家族", "家人", "部门",
+                    "办公室", "同事", "同学", "校友", "战友",
+                    "俱乐部", "商会", "协会", "支部")
+    if contact and any(suf in contact for suf in group_suffix):
+        return {"contact": contact, "is_group": True, "source": "title_suffix"}
+
+    # 3) 标题包含联系人 & 没有" - 微信"（或有微信后缀但联系人很像人名）→ 暂时标记 unknown，
+    #    交给 OCR recognize_with_group_enhance 最终裁决
+    return {"contact": contact, "is_group": None, "source": "unknown"}
 
 
 def is_window_visible(window):
