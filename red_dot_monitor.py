@@ -42,6 +42,7 @@ class RedDotMonitor:
         self._last_debug = ""
         # 侧边栏截图在客户区中的实际原点 + 客户区实际尺寸（PrintWindow实测，避免外框/DPI偏差）
         self._sidebar_client_origin = None  # (x, y) 截图左上角在客户区中的坐标
+        self._detected_sidebar_top = None  # 侧栏自适应：检测到的列表真实上边界（位图Y，None=未启用）
         self._last_client_width = 0
         self._last_client_height = 0
         self._last_sidebar_img = None  # 最近一次侧边栏截图（用于预览）
@@ -65,6 +66,33 @@ class RedDotMonitor:
         sidebar_height = int(h * (self.sidebar_bottom_ratio - self.sidebar_top_ratio))
         return (sidebar_left, sidebar_top, sidebar_width, sidebar_height)
 
+    def _detect_sidebar_list_top(self, full_img):
+        """
+        侧栏自适应：在 PrintWindow 全窗位图的侧边栏区域，检测联系人列表真实上边界。
+        在侧边栏中部竖列(x=12%宽)上，从顶部向下找第一个"明显非背景"且连续3行的位置。
+        仅当检测到的上边界比默认比例起点更靠上时采用（避免裁掉顶部联系人）；
+        检测失败或边界更靠下时返回 None，调用方回退 sidebar_top_ratio。
+        """
+        try:
+            import numpy as np
+            if full_img is None or full_img.ndim < 2:
+                return None
+            h, w = full_img.shape[:2]
+            x = int(w * 0.12)
+            col = full_img[:, x]
+            if col.ndim == 2:  # 灰度
+                col = np.stack([col] * 3, axis=-1)
+            col = col.astype(int)
+            bg = np.median(col[int(h * 0.02):int(h * 0.05), :], axis=0)
+            for y in range(int(h * 0.03), min(int(h * 0.28), h - 4)):
+                d = np.abs(col[y] - bg).sum()
+                if d > 120:
+                    if all(np.abs(col[y + k] - bg).sum() > 80 for k in range(3)):
+                        return y
+        except Exception:
+            pass
+        return None
+
     def capture_sidebar(self, window):
         from screenshot import capture_region, capture_via_printwindow
         region = self.get_sidebar_region(window)
@@ -81,6 +109,14 @@ class RedDotMonitor:
                     x = left - window.left
                     y = top - window.top
                     w, h = region[2], region[3]
+                    # ★ 侧栏自适应：若检测到列表上边界比默认比例起点更靠上，
+                    #   则上移裁剪起点（避免顶部联系人被裁掉/坐标偏移）；失败回退比例
+                    _det = self._detect_sidebar_list_top(full)
+                    if _det is not None and 0 <= _det < y:
+                        y = _det
+                        self._detected_sidebar_top = _det
+                        logger.info("[屏幕外] 侧栏自适应: 列表上边界 %dpx（默认 %dpx）→ 裁剪起点上移至 %d",
+                                    _det, int(h * self.sidebar_top_ratio), y)
                     # ★ 客户区原点修正（关键）：
                     #   实测证明 PrintWindow 位图内容为"全窗口"（含标题栏），位图第i行=窗口第i行，
                     #   因此 SendMessageW 点击用的客户区行 = 位图行 - client_top_offset。

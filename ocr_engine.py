@@ -1247,6 +1247,11 @@ def _bubble_right_bg_is_green(image, bubble_bbox, h, w):
     return green_votes * 2 >= total
 
 
+# ---- V4.5 历史一致性：跨帧位置桶缓存（同一位置连续>=2帧 sender 一致才采用，抑制单帧误判） ----
+_sender_history = {}      # (x桶,y桶) -> [sender, frames, last_frame]
+_sender_frame = 0         # 全局帧计数
+
+
 def identify_senders_v4(ocr_results, image):
     """
     V4: 发送者判断（强化自己消息识别）
@@ -1259,6 +1264,7 @@ def identify_senders_v4(ocr_results, image):
            → 保留 me，但降低 sender_confidence
       3. 对每条标注 sender_confidence 字段（UI/Obsidian展示用）
     """
+    global _sender_frame, _sender_history
     if not ocr_results or image is None:
         return ocr_results
 
@@ -1266,6 +1272,12 @@ def identify_senders_v4(ocr_results, image):
     ocr_results = identify_senders(ocr_results, image)
 
     h, w = image.shape[:2]
+    # 帧计数 + 过期清理（超过8帧未更新的位置桶视为失效：滚动/切换聊天后自然过期）
+    _sender_frame += 1
+    _cur_frame = _sender_frame
+    if _sender_history:
+        for _k in [k for k, v in _sender_history.items() if _cur_frame - v[2] > 8]:
+            del _sender_history[_k]
 
     for r in ocr_results:
         bbox = r.get("bbox")
@@ -1315,6 +1327,23 @@ def identify_senders_v4(ocr_results, image):
             else:
                 final_sender = base_sender
                 conf = 0.55
+
+        # V4.5 历史一致性：按位置桶跨帧投票（同一位置连续>=2帧判定一致 -> 采用并提置信）
+        bucket = (int(round(left_x / max(1, w) * 60)),
+                  int(round(r.get("y_center", 0) / max(1, h) * 60)))
+        entry = _sender_history.get(bucket)
+        if entry is None:
+            _sender_history[bucket] = [final_sender, 1, _cur_frame]
+        elif entry[0] == final_sender:
+            entry[1] += 1
+            entry[2] = _cur_frame
+            if entry[1] >= 2:
+                final_sender = entry[0]
+                conf = max(conf, 0.90)
+        else:
+            _sender_history[bucket] = [final_sender, 1, _cur_frame]
+        if len(_sender_history) > 400:
+            _sender_history = dict(list(_sender_history.items())[-200:])
 
         r["sender"] = final_sender
         r["sender_confidence"] = round(conf, 3)

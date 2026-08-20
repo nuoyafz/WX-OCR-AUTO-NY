@@ -433,12 +433,66 @@ class WeChatAIApp(ctk.CTk):
         self._active_contact = None
         # 按联系人划分的消息池：contact -> [msg_data, ...]，最新在前（索引0）。
         # 点击会话卡时据此重建右侧消息列表，避免 pack_forget 过滤导致的空白/顺序错乱。
+        # 持久化到 data/messages_history.json（防抖写盘），重启后保留历史。
+        self._history_path = os.path.join(
+            os.path.dirname(os.path.abspath(__file__)), "data", "messages_history.json")
+        self._history_save_job = None      # after() 句柄（防抖）
+        self._history_dirty = False
         self._messages_store = {}
         self._msg_seq = 0
+        self._load_history()
 
         # 初始占位会话卡（点击不会有效果，仅做引导）
         self._append_contact_card("会话名称", "启动监控后自动汇聚会话…",
                                   is_group=False, unread=0, active=False)
+
+    def _load_history(self):
+        """启动时加载消息历史（data/messages_history.json）"""
+        try:
+            if os.path.exists(self._history_path):
+                with open(self._history_path, "r", encoding="utf-8") as f:
+                    raw = json.load(f)
+                if isinstance(raw, dict):
+                    for contact, msgs in raw.items():
+                        if not isinstance(msgs, list) or not msgs:
+                            continue
+                        cleaned = []
+                        for m in msgs:
+                            if isinstance(m, dict) and m.get("content") is not None:
+                                cleaned.append(m)
+                        if cleaned:
+                            self._messages_store[str(contact)] = cleaned
+                    # 恢复 seq：取全局最大 _seq + 1
+                    max_seq = 0
+                    for msgs in self._messages_store.values():
+                        for m in msgs:
+                            if isinstance(m.get("_seq"), int):
+                                max_seq = max(max_seq, m["_seq"])
+                    self._msg_seq = max_seq + 1
+        except Exception:
+            pass
+
+    def _schedule_history_save(self):
+        """防抖写盘：800ms 内合并多次写入"""
+        self._history_dirty = True
+        if self._history_save_job is not None:
+            try:
+                self.after_cancel(self._history_save_job)
+            except Exception:
+                pass
+        self._history_save_job = self.after(800, self._flush_history)
+
+    def _flush_history(self):
+        """把消息池写盘（最新在前，按 JSON list 保存）"""
+        self._history_save_job = None
+        if not self._history_dirty:
+            return
+        self._history_dirty = False
+        try:
+            with open(self._history_path, "w", encoding="utf-8") as f:
+                json.dump(self._messages_store, f, ensure_ascii=False, indent=1)
+        except Exception:
+            pass
 
     def _append_contact_card(self, contact, preview_text, is_group=False,
                               unread=0, active=False):
@@ -592,34 +646,15 @@ class WeChatAIApp(ctk.CTk):
         text_col = ctk.CTkFrame(row, fg_color="transparent")
 
         if is_self:
-            # 右对齐：气泡列 - 头像
+            # 右对齐（微信风格）：头像最右，气泡贴右（靠头像），时间/分类在气泡左侧
             avatar.pack(side="right", padx=(6, 10))
             text_col.pack(side="right", fill="x", expand=True)
 
             bubble_bg = WC_COLORS["bubble_self"]
             bubble_text_color = "#111111"
 
-            if is_important:
-                star = ctk.CTkLabel(text_col, text="⭐",
-                                    font=ctk.CTkFont(size=11),
-                                    text_color=WC_COLORS["danger"], fg_color="transparent")
-                star.pack(side="left", padx=(0, 4))
-
-            time_lbl = ctk.CTkLabel(
-                text_col, text=timestamp,
-                font=ctk.CTkFont(size=9),
-                text_color=WC_COLORS["text_muted2"])
-            time_lbl.pack(side="left", padx=(0, 6), pady=(20, 0), anchor="s")
-
-            if cls:
-                cls_chip = ctk.CTkLabel(
-                    text_col, text=f"🗂 {cls}{(' P' + str(int(pri))) if pri else ''}",
-                    font=ctk.CTkFont(size=10, weight="bold"),
-                    text_color="#FFFFFF", fg_color=WC_COLORS["info"])
-                cls_chip.pack(side="left", padx=(0, 6), pady=(20, 0), anchor="s")
-
             wrap = ctk.CTkFrame(text_col, fg_color="transparent")
-            wrap.pack(side="left", fill="y")
+            wrap.pack(side="right")      # 先 pack → 最右（贴头像）
             outer_bubble = ctk.CTkFrame(wrap, fg_color=bubble_bg, corner_radius=4)
             outer_bubble.pack(side="right", anchor="e")
             content_lbl = ctk.CTkLabel(
@@ -630,6 +665,26 @@ class WeChatAIApp(ctk.CTk):
                 padx=10, pady=7,
             )
             content_lbl.pack(anchor="e")
+
+            # 元信息在气泡左侧（side="right" 从右往左依次排：气泡、星标、时间、分类chip）
+            if is_important:
+                star = ctk.CTkLabel(text_col, text="⭐",
+                                    font=ctk.CTkFont(size=11),
+                                    text_color=WC_COLORS["danger"], fg_color="transparent")
+                star.pack(side="right", padx=(4, 0), pady=(18, 0), anchor="s")
+
+            time_lbl = ctk.CTkLabel(
+                text_col, text=timestamp,
+                font=ctk.CTkFont(size=9),
+                text_color=WC_COLORS["text_muted2"])
+            time_lbl.pack(side="right", padx=(6, 0), pady=(20, 0), anchor="s")
+
+            if cls:
+                cls_chip = ctk.CTkLabel(
+                    text_col, text=f"🗂 {cls}{(' P' + str(int(pri))) if pri else ''}",
+                    font=ctk.CTkFont(size=10, weight="bold"),
+                    text_color="#FFFFFF", fg_color=WC_COLORS["info"])
+                cls_chip.pack(side="right", padx=(6, 0), pady=(20, 0), anchor="s")
         else:
             avatar.pack(side="left", padx=(10, 6))
             text_col.pack(side="left", fill="x", expand=True)
@@ -1652,6 +1707,7 @@ class WeChatAIApp(ctk.CTk):
                         self._update_detail_panel(merged)
                     except Exception:
                         pass
+                    self._schedule_history_save()
                     self._rebuild_message_list()
                     return
         self._msg_seq += 1
@@ -1660,6 +1716,7 @@ class WeChatAIApp(ctk.CTk):
         store.insert(0, stored)      # 最新置顶
         if len(store) > 80:
             del store[80:]
+        self._schedule_history_save()
 
         # —— 更新右侧详情面板
         try:
@@ -2702,6 +2759,13 @@ class WeChatAIApp(ctk.CTk):
         prefix = {"info": "", "warning": "⚠ ", "error": "✖ "}.get(level, "")
         self.log_text.configure(state="normal")
         self.log_text.insert("end", f"[{timestamp}] {prefix}{message}\n")
+        # 日志行数上限：仅保留最近 800 行，防止长期运行 UI 卡顿/内存膨胀
+        try:
+            line_count = int(self.log_text.index("end-1c").split(".")[0])
+            if line_count > 800:
+                self.log_text.delete("1.0", f"{line_count - 800}.0")
+        except Exception:
+            pass
         self.log_text.see("end")
         self.log_text.configure(state="disabled")
 

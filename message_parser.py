@@ -108,11 +108,20 @@ class MessageParser:
         return "\n".join(r["text"] for r in bubble_items)
 
     def _is_my_reply(self, text):
-        """检查文本是否可能是我刚发出的回复（OCR误读）"""
+        """检查文本是否可能是我刚发出的回复（OCR误读）。
+        收紧判定：只有"完全相同"或"前10字相同且长度接近"才跳过，
+        避免把用户手动发的、与回复相似或包含回复内容的消息误跳过。"""
+        if not text or not text.strip():
+            return False
         for reply in self.my_recent_replies:
-            if len(text) > 3 and len(reply) > 3:
-                if text[:10] == reply[:10] or reply in text or text in reply:
-                    return True
+            if not reply or not reply.strip():
+                continue
+            if text.strip() == reply.strip():
+                return True
+            # 前10字相同 + 长度差≤3（容忍OCR首尾抖动），且都≥8字才判重
+            if len(text) >= 8 and len(reply) >= 8 and \
+               abs(len(text) - len(reply)) <= 3 and text[:10] == reply[:10]:
+                return True
         return False
 
     def feed(self, ocr_results):

@@ -16,7 +16,9 @@ import sys
 import io
 import time
 import signal
+import os
 import hashlib
+import json
 import logging
 import argparse
 import threading
@@ -111,7 +113,10 @@ class WeChatEngine:
         self._last_mouse_pos = (0, 0)
         self._mouse_still_count = 0
         # 红点路径跨轮去重：{contact: set(md5(sender|content))}，防止冷却后重扫重复上报历史消息
-        self._reddot_msg_seen = {}
+        # 持久化到 data/reddot_seen.json，重启不丢失
+        self._reddot_seen_path = os.path.join(
+            os.path.dirname(os.path.abspath(__file__)), "data", "reddot_seen.json")
+        self._reddot_msg_seen = self._load_reddot_seen()
 
         self.stats = {
             "frames_captured": 0,
@@ -338,6 +343,27 @@ class WeChatEngine:
         if self.extractor and hasattr(self.extractor, "set_classification"):
             self.extractor.set_classification(categories)
             self._log("info", f"[分类] 已更新分类规则，共 {len(categories)} 类")
+
+    def _load_reddot_seen(self):
+        """加载红点跨轮去重历史（重启不丢）"""
+        try:
+            if os.path.exists(self._reddot_seen_path):
+                with open(self._reddot_seen_path, "r", encoding="utf-8") as f:
+                    raw = json.load(f)
+                return {k: set(v) for k, v in raw.items() if isinstance(v, list)}
+        except Exception as e:
+            self._log("warning", f"[红点] 加载去重历史失败: {e}")
+        return {}
+
+    def _save_reddot_seen(self):
+        """保存红点跨轮去重历史"""
+        try:
+            with open(self._reddot_seen_path, "w", encoding="utf-8") as f:
+                json.dump(
+                    {k: sorted(v) for k, v in self._reddot_msg_seen.items()},
+                    f, ensure_ascii=False, indent=1)
+        except Exception as e:
+            self._log("warning", f"[红点] 保存去重历史失败: {e}")
 
     def _get_valid_hwnd(self):
         """获取有效的微信窗口句柄（统一入口）"""
@@ -1725,6 +1751,12 @@ class WeChatEngine:
         if _was_offscreen:
             self._log("info", "[屏幕外] 后台监控完成，窗口保持屏幕外")
 
+        # 持久化红点去重历史（本轮新增的 key 落盘，重启后不重复上报）
+        try:
+            self._save_reddot_seen()
+        except Exception:
+            pass
+
     def reset_ai_training(self):
         """重置AI训练（微信更新UI后重新学习）"""
         if self.ai_trainer:
@@ -1744,15 +1776,16 @@ class WeChatEngine:
 
 
 def setup_logging(config):
-    """配置日志"""
+    """配置日志（文件自动轮转：1MB x 3 份，避免长期运行日志无限膨胀）"""
     log_config = config.get("logging", {})
     level = getattr(logging, log_config.get("level", "INFO"), logging.INFO)
     log_file = log_config.get("file", "wechat_ai_reply.log")
+    from logging.handlers import RotatingFileHandler
     logging.basicConfig(
         level=level,
         format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
         handlers=[
-            logging.FileHandler(log_file, encoding="utf-8"),
+            RotatingFileHandler(log_file, maxBytes=1024 * 1024, backupCount=3, encoding="utf-8"),
             logging.StreamHandler(sys.stdout),
         ],
     )
