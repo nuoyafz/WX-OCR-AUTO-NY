@@ -34,3 +34,9 @@
 ## 用户约定
 - **每次更新代码前/后都要先 git 提交**（用户明确要求）。
 - 用户沟通偏好：极简指令式（"重新""修改p0"），给结论+可执行改法，不要长篇铺垫。
+
+## 分类优先级规则系统（用户可自定义 工作/私事/群聊 等优先级）
+- 配置在 `config.yaml` 的 `extraction.classification`：`enabled` + `categories`（name/priority/important/keywords）。
+- 逻辑在 `extractor.py`：`_classify(text, extra)` 按 priority 降序返回命中类别；**无关键词的结构性类别（如"群聊"）在 `chat_kind=="group"` 时自动命中**。
+- UI（ui_app.py Settings Tab）可编辑/新增/删除/导入JSON/导出JSON，"保存并生效"调用 `engine.update_classification(cats)` 实时生效。
+- **保存实现坑**：整文件 `yaml.safe_dump` 会抹掉注释。已改为正则仅替换 `    categories:` 子段（`_save_classification_rules`），保留 classification 头/ enabled 行/注释。

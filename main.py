@@ -409,20 +409,27 @@ class WeChatEngine:
 
     def _monitor_thread(self):
         """监控线程：等待窗口 → 初始化 → 主循环（含自动重连）"""
-        # 阶段1：等待微信窗口出现（支持最小化）
-        if not self._wait_for_window():
-            self._running = False
-            self._on_status("stopped")
-            return
+        try:
+            # 阶段1：等待微信窗口出现（支持最小化）
+            if not self._wait_for_window():
+                self._running = False
+                self._on_status("stopped")
+                return
 
-        # 阶段2：初始化模块
-        if not self.initialize():
+            # 阶段2：初始化模块
+            if not self.initialize():
+                self._running = False
+                self._on_status("error")
+                return
+
+            # 阶段3：主循环（含窗口丢失自动重连）
+            self._main_loop()
+        except Exception as e:
+            import traceback as _tb
             self._running = False
+            self._log("error", f"[启动] 线程异常导致初始化中断: {e}")
+            self._log("error", "完整堆栈：\n" + _tb.format_exc()[-1800:])
             self._on_status("error")
-            return
-
-        # 阶段3：主循环（含窗口丢失自动重连）
-        self._main_loop()
 
     def _wait_for_window(self):
         """
