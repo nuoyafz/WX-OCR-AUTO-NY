@@ -428,6 +428,10 @@ class WeChatAIApp(ctk.CTk):
         # 会话卡片集合 {contact: (frame, title_lbl, preview_lbl, dot_lbl, badge_lbl)}
         self._contact_cards = {}
         self._active_contact = None
+        # 按联系人划分的消息池：contact -> [msg_data, ...]，最新在前（索引0）。
+        # 点击会话卡时据此重建右侧消息列表，避免 pack_forget 过滤导致的空白/顺序错乱。
+        self._messages_store = {}
+        self._msg_seq = 0
 
         # 初始占位会话卡（点击不会有效果，仅做引导）
         self._append_contact_card("会话名称", "启动监控后自动汇聚会话…",
@@ -526,8 +530,8 @@ class WeChatAIApp(ctk.CTk):
     def _set_active_contact(self, contact):
         """V3: 点击选中会话卡时，卡片背景变 #D6D6D6 模拟微信PC会话选中灰"""
         self._active_contact = contact
-        # 切换会话 → 重新按联系人过滤消息列表（只显示当前会话的消息）
-        self._refresh_message_visibility()
+        # 切换会话 → 按联系人重建消息列表（只显示当前会话的消息，避免过滤导致的空白）
+        self._rebuild_message_list()
         for name, info in self._contact_cards.items():
             is_active = (name == contact)
             bg = WC_COLORS["card_active"] if is_active else "#EBEBEB"
@@ -555,27 +559,138 @@ class WeChatAIApp(ctk.CTk):
         except Exception:
             pass
 
-    def _apply_message_visibility(self, row):
-        """
-        单条消息行的可见性裁决：只显示归属于当前选中联系人的消息。
-        未选中任何会话（None）时显示全部。
-        """
-        try:
-            if self._active_contact is None or getattr(row, "_contact", None) == self._active_contact:
-                if not row.winfo_viewable():
-                    row.pack_configure(side="top", fill="x", padx=6, pady=4)
-            else:
-                row.pack_forget()
-        except Exception:
-            pass
+    def _build_message_row(self, parent, m):
+        """构建单条消息气泡行（微信PC风格），返回行容器。供 _rebuild_message_list 复用。"""
+        contact = m.get("contact", "未知")
+        sender = m.get("sender", "other")
+        content = str(m.get("content", ""))
+        timestamp = m.get("timestamp", "—")
+        is_important = bool(m.get("is_important", False))
+        is_self = (sender == "me")
+        is_group = bool(m.get("is_group", False))
+        group_member = m.get("group_member") or None
 
-    def _refresh_message_visibility(self):
-        """切换会话时，批量刷新所有消息行的可见性（按联系人过滤）。"""
+        row = ctk.CTkFrame(parent, fg_color=WC_COLORS["bg"])
+
+        # 头像 40x40（微信PC风格：正方形圆角2；用户偏好也支持圆）
+        avatar_bg = WC_COLORS["avatar_me"] if is_self else WC_COLORS["avatar_other"]
+        avatar_text = "我" if is_self else (
+            str(group_member)[0] if (group_member and is_group)
+            else (str(contact)[0] if contact else "?"))
+        avatar = ctk.CTkLabel(
+            row, text=avatar_text, width=36, height=36, corner_radius=4,
+            fg_color=avatar_bg, text_color="#FFFFFF",
+            font=ctk.CTkFont(family="Microsoft YaHei", size=13, weight="bold"),
+        )
+
+        # 消息气泡 + 昵称/时间
+        text_col = ctk.CTkFrame(row, fg_color="transparent")
+
+        if is_self:
+            # 右对齐：气泡列 - 头像
+            avatar.pack(side="right", padx=(6, 10))
+            text_col.pack(side="right", fill="x", expand=True)
+
+            bubble_bg = WC_COLORS["bubble_self"]
+            bubble_text_color = "#111111"
+
+            if is_important:
+                star = ctk.CTkLabel(text_col, text="⭐",
+                                    font=ctk.CTkFont(size=11),
+                                    text_color=WC_COLORS["danger"], fg_color="transparent")
+                star.pack(side="left", padx=(0, 4))
+
+            time_lbl = ctk.CTkLabel(
+                text_col, text=timestamp,
+                font=ctk.CTkFont(size=9),
+                text_color=WC_COLORS["text_muted2"])
+            time_lbl.pack(side="left", padx=(0, 6), pady=(20, 0), anchor="s")
+
+            wrap = ctk.CTkFrame(text_col, fg_color="transparent")
+            wrap.pack(side="left", fill="y")
+            outer_bubble = ctk.CTkFrame(wrap, fg_color=bubble_bg, corner_radius=4)
+            outer_bubble.pack(side="right", anchor="e")
+            content_lbl = ctk.CTkLabel(
+                outer_bubble, text=content[:360] if len(content) <= 360 else content[:360] + "…",
+                font=ctk.CTkFont(family="Microsoft YaHei", size=12),
+                text_color=bubble_text_color, anchor="w", justify="left",
+                wraplength=380,
+                padx=10, pady=7,
+            )
+            content_lbl.pack(anchor="e")
+        else:
+            avatar.pack(side="left", padx=(10, 6))
+            text_col.pack(side="left", fill="x", expand=True)
+
+            if is_group and group_member:
+                member_lbl = ctk.CTkLabel(
+                    text_col, text=str(group_member),
+                    font=ctk.CTkFont(size=10),
+                    text_color=WC_COLORS["member_name"], anchor="w",
+                )
+                member_lbl.pack(side="top", anchor="w", padx=(2, 0), pady=(0, 2))
+
+            wrap = ctk.CTkFrame(text_col, fg_color="transparent")
+            wrap.pack(side="left", fill="x")
+
+            outer_bubble = ctk.CTkFrame(wrap, fg_color="#FFFFFF", corner_radius=4,
+                                        border_width=1, border_color=WC_COLORS["border_light"])
+            outer_bubble.pack(side="left", anchor="w")
+            content_lbl = ctk.CTkLabel(
+                outer_bubble, text=content[:360] if len(content) <= 360 else content[:360] + "…",
+                font=ctk.CTkFont(family="Microsoft YaHei", size=12),
+                text_color=WC_COLORS["text"], anchor="w", justify="left",
+                wraplength=380,
+                padx=10, pady=7,
+            )
+            content_lbl.pack(anchor="w")
+
+            time_lbl = ctk.CTkLabel(
+                text_col, text=timestamp,
+                font=ctk.CTkFont(size=9),
+                text_color=WC_COLORS["text_muted2"])
+            time_lbl.pack(side="left", padx=(6, 0), pady=(20, 0), anchor="s")
+
+            if is_important:
+                star = ctk.CTkLabel(text_col, text="⭐",
+                                    font=ctk.CTkFont(size=11),
+                                    text_color=WC_COLORS["danger"], fg_color="transparent")
+                star.pack(side="left", padx=(4, 0), pady=(18, 0), anchor="s")
+
+        # 顶部对齐（调用方按"最新在前"顺序逐条打包，实现最新置顶）
+        row.pack(side="top", fill="x", padx= 6, pady=4)
+        return row
+
+    def _rebuild_message_list(self):
+        """按当前选中联系人重建右侧消息列表：单联系人显示该会话，None 显示全部（最新置顶）。"""
         try:
-            kids = [c for c in self.msg_list_frame_inner.winfo_children()
-                    if c is not getattr(self, "msg_empty_label", None)]
-            for row in kids:
-                self._apply_message_visibility(row)
+            for c in list(self.msg_list_frame_inner.winfo_children()):
+                try:
+                    c.destroy()
+                except Exception:
+                    pass
+            self.msg_empty_label = None
+
+            active = self._active_contact
+            if active is None:
+                items = []
+                for msgs in self._messages_store.values():
+                    items.extend(msgs)
+                items.sort(key=lambda x: x.get("_seq", 0), reverse=True)
+            else:
+                items = list(self._messages_store.get(active, []))
+
+            if not items:
+                txt = "暂无聊天记录" if active is None else f"暂无与「{active}」的聊天记录"
+                self.msg_empty_label = ctk.CTkLabel(
+                    self.msg_list_frame_inner, text=txt,
+                    font=ctk.CTkFont(size=12), text_color=WC_COLORS["text_muted"])
+                self.msg_empty_label.pack(pady=30)
+                return
+
+            # items 已是最新在前（store.insert(0,...) / 全局倒序），逐条 pack 顶部即最新置顶
+            for m in items:
+                self._build_message_row(self.msg_list_frame_inner, m)
         except Exception:
             pass
 
@@ -1286,117 +1401,14 @@ class WeChatAIApp(ctk.CTk):
         except Exception:
             pass
 
-        # —— 新消息放顶部（before 首子节点）
-        try:
-            kids = [c for c in self.msg_list_frame_inner.winfo_children()
-                    if c is not getattr(self, "msg_empty_label", None)]
-            first_child = kids[0] if kids else None
-        except Exception:
-            first_child = None
-
-        # 消息行容器（每一条消息一行，背景=聊天页颜色）
-        row = ctk.CTkFrame(self.msg_list_frame_inner, fg_color=WC_COLORS["bg"])
-        # 记录该行归属的联系人，供点击会话卡时按联系人过滤显示
-        row._contact = contact
-        # 先 pack 到顶部（物理顺序=最新置顶），可见性稍后统一裁决
-        if first_child is not None:
-            row.pack(before=first_child, side="top", fill="x", padx=6, pady=4)
-        else:
-            row.pack(side="top", fill="x", padx=6, pady=4)
-        # 按当前选中的联系人过滤可见性
-        self._apply_message_visibility(row)
-
-        # 头像 40x40（微信PC风格：正方形圆角2；用户偏好也支持圆）
-        avatar_bg = WC_COLORS["avatar_me"] if is_self else WC_COLORS["avatar_other"]
-        avatar_text = "我" if is_self else (
-            str(group_member)[0] if (group_member and is_group)
-            else (str(contact)[0] if contact else "?"))
-        avatar = ctk.CTkLabel(
-            row, text=avatar_text, width=36, height=36, corner_radius=4,
-            fg_color=avatar_bg, text_color="#FFFFFF",
-            font=ctk.CTkFont(family="Microsoft YaHei", size=13, weight="bold"),
-        )
-
-        # 消息气泡 + 昵称/时间
-        text_col = ctk.CTkFrame(row, fg_color="transparent")
-
-        if is_self:
-            # 右对齐：气泡列 - 头像
-            avatar.pack(side="right", padx=(6, 10))
-            text_col.pack(side="right", fill="x", expand=True)
-
-            # 重要小徽章（星号右上，自己消息放气泡左侧）
-            bubble_bg = WC_COLORS["bubble_self"]
-            bubble_text_color = "#111111"
-
-            if is_important:
-                star = ctk.CTkLabel(text_col, text="⭐",
-                                    font=ctk.CTkFont(size=11),
-                                    text_color=WC_COLORS["danger"], fg_color="transparent")
-                star.pack(side="left", padx=(0, 4))
-
-            # 时间戳（自己气泡左侧显示）
-            time_lbl = ctk.CTkLabel(
-                text_col, text=timestamp,
-                font=ctk.CTkFont(size=9),
-                text_color=WC_COLORS["text_muted2"])
-            time_lbl.pack(side="left", padx=(0, 6), pady=(20, 0), anchor="s")
-
-            # 自己绿色气泡
-            wrap = ctk.CTkFrame(text_col, fg_color="transparent")
-            wrap.pack(side="left", fill="y")
-            outer_bubble = ctk.CTkFrame(wrap, fg_color=bubble_bg, corner_radius=4)
-            outer_bubble.pack(side="right", anchor="e")
-            content_lbl = ctk.CTkLabel(
-                outer_bubble, text=content[:360] if len(content) <= 360 else content[:360] + "…",
-                font=ctk.CTkFont(family="Microsoft YaHei", size=12),
-                text_color=bubble_text_color, anchor="w", justify="left",
-                wraplength=380,
-                padx=10, pady=7,
-            )
-            content_lbl.pack(anchor="e")
-        else:
-            # 左对齐：头像 - 气泡列
-            avatar.pack(side="left", padx=(10, 6))
-            text_col.pack(side="left", fill="x", expand=True)
-
-            # 群聊：对方气泡上方显示"群成员 昵称小字体灰"
-            if is_group and group_member:
-                member_lbl = ctk.CTkLabel(
-                    text_col, text=str(group_member),
-                    font=ctk.CTkFont(size=10),
-                    text_color=WC_COLORS["member_name"], anchor="w",
-                )
-                member_lbl.pack(side="top", anchor="w", padx=(2, 0), pady=(0, 2))
-
-            # 对方白色气泡
-            wrap = ctk.CTkFrame(text_col, fg_color="transparent")
-            wrap.pack(side="left", fill="x")
-
-            outer_bubble = ctk.CTkFrame(wrap, fg_color="#FFFFFF", corner_radius=4,
-                                        border_width=1, border_color=WC_COLORS["border_light"])
-            outer_bubble.pack(side="left", anchor="w")
-            content_lbl = ctk.CTkLabel(
-                outer_bubble, text=content[:360] if len(content) <= 360 else content[:360] + "…",
-                font=ctk.CTkFont(family="Microsoft YaHei", size=12),
-                text_color=WC_COLORS["text"], anchor="w", justify="left",
-                wraplength=380,
-                padx=10, pady=7,
-            )
-            content_lbl.pack(anchor="w")
-
-            # 时间 + 重要星
-            time_lbl = ctk.CTkLabel(
-                text_col, text=timestamp,
-                font=ctk.CTkFont(size=9),
-                text_color=WC_COLORS["text_muted2"])
-            time_lbl.pack(side="left", padx=(6, 0), pady=(20, 0), anchor="s")
-
-            if is_important:
-                star = ctk.CTkLabel(text_col, text="⭐",
-                                    font=ctk.CTkFont(size=11),
-                                    text_color=WC_COLORS["danger"], fg_color="transparent")
-                star.pack(side="left", padx=(4, 0), pady=(18, 0), anchor="s")
+        # —— 存入按联系人划分的消息池（最新在前，单联系人上限 80）——
+        self._msg_seq += 1
+        stored = dict(msg_data)
+        stored["_seq"] = self._msg_seq
+        store = self._messages_store.setdefault(contact, [])
+        store.insert(0, stored)      # 最新置顶
+        if len(store) > 80:
+            del store[80:]
 
         # —— 更新右侧详情面板
         try:
@@ -1413,19 +1425,9 @@ class WeChatAIApp(ctk.CTk):
                 text_color=status_color,
             )
 
-        # —— 限制数量（80 条，超出删除最老 5 条）
-        try:
-            children_all = [c for c in self.msg_list_frame_inner.winfo_children()
-                            if c is not getattr(self, "msg_empty_label", None)]
-            if len(children_all) > 80:
-                for old in children_all[-5:]:
-                    try:
-                        if old.winfo_exists():
-                            old.destroy()
-                    except Exception:
-                        pass
-        except Exception:
-            pass
+        # —— 按当前选中联系人重建右侧消息列表（修复：点击联系人空白 / 需两次点击）——
+        self._rebuild_message_list()
+
 
     # ==============================================================
     # V3: 详情面板内容更新
