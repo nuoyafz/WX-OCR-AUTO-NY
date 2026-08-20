@@ -16,6 +16,7 @@ import sys
 import io
 import time
 import signal
+import hashlib
 import logging
 import argparse
 import threading
@@ -109,6 +110,8 @@ class WeChatEngine:
         self._last_keyboard_time = 0
         self._last_mouse_pos = (0, 0)
         self._mouse_still_count = 0
+        # 红点路径跨轮去重：{contact: set(md5(sender|content))}，防止冷却后重扫重复上报历史消息
+        self._reddot_msg_seen = {}
 
         self.stats = {
             "frames_captured": 0,
@@ -1018,8 +1021,12 @@ class WeChatEngine:
 
                     # 实时通知UI：V3 多传 chat_kind / group_member / 置信度
                     _ts = datetime.now().strftime("%H:%M:%S")
+                    _mk = hashlib.md5(
+                        f"{contact_name}|{_group_member or ''}|{_sender}|{content}".encode("utf-8")
+                    ).hexdigest()[:14]
                     self._send_ui_card(
                         contact_name, _sender, content, _ts,
+                        msg_key=_mk,
                         is_group=(current_chat_kind == "group"),
                         group_member=_group_member,
                         confidence=_conf,
@@ -1062,6 +1069,7 @@ class WeChatEngine:
                             confidence=_conf,
                             sender_confidence=_sender_conf,
                             is_update=True,
+                            msg_key=_mk,
                         )
 
                         if self.storage:
@@ -1564,8 +1572,7 @@ class WeChatEngine:
                     if not text or len(text) < 1:
                         continue
                     sender = r.get("sender", "other")
-                    if sender == "me":
-                        continue
+                    # 自己消息也上报（与主循环一致：进UI/存储，但不触发自动回复）
                     new_messages.append({"sender": sender, "content": text})
                 self._log("info", f"[红点] {new_contact}: {len(new_messages)} 条新消息")
 
@@ -1573,20 +1580,21 @@ class WeChatEngine:
                 content = str(msg.get("content", "")).strip()
                 if not content:
                     continue
+                _sender = msg.get("sender", "other")
                 # 过滤自身UI窗口的OCR误识别内容
                 if any(skip in content for skip in ["助手v2.0", "AI助手", "微信 AI", "信息提取", "自动回复", "数据查看", "设置", "红点", "屏幕外", "保活", "截图", "预览", "诊断", "增量", "窗口坐标"]):
                     continue
-                # 过滤过短的无效内容（单个字符或纯标点）
-                if len(content) < 2:
+                # 过滤过短的无效内容（对方<2字跳过；自己的单字保留，与主循环一致）
+                import re
+                if _sender == "other" and len(content) < 2:
                     continue
                 # 过滤纯时间戳（如 12:30, 14:32, 昨天, 星期六等）
-                import re
                 if re.match(r'^\d{1,2}[:：]\d{2}$', content):
                     continue
                 if re.match(r'^(昨天|今天|明天|后天|星期[一二三四五六日天]|周[一二三四五六日天])$', content):
                     continue
-                # 过滤纯数字或单个词
-                if re.match(r'^\d+$', content):
+                # 过滤纯数字（仅对方）
+                if _sender == "other" and re.match(r'^\d+$', content):
                     continue
                 # 过滤系统提示
                 system_words = ["以下是新消息", "收到红包", "撤回了一条消息", "拍了拍", "以上是打招呼", "添加了", "邀请你"]
@@ -1595,12 +1603,27 @@ class WeChatEngine:
                 # 过滤无意义OCR碎片（纯标点或特殊字符）
                 if re.match(r'^[\s\.\,\，\。\！\？\!\?\-\_\(\)\(\)]+$', content):
                     continue
+
+                # ★ 跨轮去重：红点路径每次点击重扫会把历史消息再报一遍 → 按 联系人|发送者|内容 去重
+                try:
+                    _rk = hashlib.md5(
+                        f"{new_contact}|{_sender}|{content}".encode("utf-8")
+                    ).hexdigest()
+                    _seen_set = self._reddot_msg_seen.setdefault(new_contact, set())
+                    if _rk in _seen_set:
+                        self._log("info", f"[红点] 跨轮去重: {new_contact}: {content[:30]}")
+                        continue
+                    _seen_set.add(_rk)
+                    if len(_seen_set) > 200:
+                        self._reddot_msg_seen[new_contact] = set(list(_seen_set)[-100:])
+                except Exception:
+                    _rk = f"{new_contact}_{_sender}_{content}"
+
                 self.stats["messages_detected"] += 1
 
                 # 实时通知UI：先发基础卡（快速反馈），提取完成后用同一msg_key原位更新
                 _ts = datetime.now().strftime("%H:%M:%S")
-                _sender = msg.get("sender", "other")
-                self._send_ui_card(new_contact, _sender, content, _ts)
+                self._send_ui_card(new_contact, _sender, content, _ts, msg_key=_rk)
                 self._log("info", f"[红点->UI] 发送: {new_contact}: {content[:40]}")
 
                 # 信息提取
@@ -1625,6 +1648,7 @@ class WeChatEngine:
                         is_important=extracted.get("is_important", False),
                         importance_reason=extracted.get("importance_reason", ""),
                         is_update=True,
+                        msg_key=_rk,
                     )
 
                     if self.storage:

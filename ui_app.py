@@ -1638,10 +1638,25 @@ class WeChatAIApp(ctk.CTk):
             pass
 
         # —— 存入按联系人划分的消息池（最新在前，单联系人上限 80）——
+        # msg_key 去重：同一 msg_key（基础卡/更新卡、重复上报）原位更新，不新增
+        mk = msg_data.get("msg_key")
+        store = self._messages_store.setdefault(contact, [])
+        if mk:
+            for _i, _m in enumerate(store):
+                if _m.get("msg_key") == mk:
+                    merged = dict(_m)
+                    merged.update(msg_data)
+                    merged["_seq"] = _m.get("_seq")
+                    store[_i] = merged
+                    try:
+                        self._update_detail_panel(merged)
+                    except Exception:
+                        pass
+                    self._rebuild_message_list()
+                    return
         self._msg_seq += 1
         stored = dict(msg_data)
         stored["_seq"] = self._msg_seq
-        store = self._messages_store.setdefault(contact, [])
         store.insert(0, stored)      # 最新置顶
         if len(store) > 80:
             del store[80:]

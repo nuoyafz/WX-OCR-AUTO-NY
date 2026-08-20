@@ -35,6 +35,12 @@
 - **每次更新代码前/后都要先 git 提交**（用户明确要求）。
 - 用户沟通偏好：极简指令式（"重新""修改p0"），给结论+可执行改法，不要长篇铺垫。
 
+## 最小化时"点击未读消息不准确"——根因与修复（169e3f9）
+- **症状**：最小化模式下，处理未读联系人时第二个开始经常"点不准/切换不生效/识别内容错"。
+- **根因**：入口进入 _handle_unread 时没强制保证窗口可渲染。若窗口处于最小化/隐藏态，GPU 停渲染，**PrintWindow 截到全黑**（debug/preview/fail_*.png 206 字节黑图就是铁证）→ 无法验证 SendMessageW 是否真切到了正确联系人 → 后续 OCR 也失效 → 程序表现"不准"。**首次成功+后续黑图**的时序就是这条根因的指纹。
+- **修复**：offscreen 模式下，进 _handle_unread 入口前先 `ensure_window_rendering(hwnd, window)`（最小化→先设屏幕外位置→SW_SHOWNOACTIVATE→RedrawWindow）把窗口恢复到"屏幕外可见"的可渲染后台态，再重新判 `_was_offscreen`；同时用 `_acquire_interaction`/`_release_interaction` 暂停 keep_alive watcher 防竞态。
+- **debug 证据路径**：`debug/preview/capture_*.png`（截图）+ `fail_*.png`（~200 字节黑图）+ `red_dot_mask.png`（红点检测掩码），对比时间戳可直接复现"点→切→黑→重试仍黑"链路。
+
 ## 分类优先级规则系统（用户可自定义 工作/私事/群聊 等优先级）
 - 配置在 `config.yaml` 的 `extraction.classification`：`enabled` + `categories`（name/priority/important/keywords）。
 - 逻辑在 `extractor.py`：`_classify(text, extra)` 按 priority 降序返回命中类别；**无关键词的结构性类别（如"群聊"）在 `chat_kind=="group"` 时自动命中**。
