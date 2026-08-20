@@ -1270,6 +1270,37 @@ class WeChatEngine:
             except Exception:
                 pass
 
+        # ★ 最小化时点击未读"不准确"根因：最小化窗口 GPU 停渲染 → PrintWindow 全黑
+        #   → 即使 SendMessageW 命中也看不出是否切到了正确联系人。
+        #   修复：offscreen 模式下，处理未读前先把窗口自愈到"屏幕外可见"可渲染后台态，
+        #   然后重新判断 _was_offscreen（后续点击分支据此选 SendMessageW 或物理点击）。
+        if self.minimize_mode == "offscreen":
+            hwnd_pre = getattr(self.window, "_hWnd", None)
+            if hwnd_pre:
+                try:
+                    from window_manager import (
+                        _acquire_interaction, _release_interaction,
+                        is_window_offscreen,
+                    )
+                    from screenshot import ensure_window_rendering
+                    _acquire_interaction()
+                    _rect = ensure_window_rendering(hwnd_pre, self.window)
+                    if _rect is not None:
+                        self.window.left, self.window.top = _rect[0], _rect[1]
+                        self.window.width, self.window.height = _rect[2], _rect[3]
+                    _was_offscreen = is_window_offscreen(self.window)
+                    if _was_offscreen:
+                        self._log("info", "[红点] 入口自愈完成，窗口在屏幕外 → 后台点击")
+                    else:
+                        self._log("warning", "[红点] 入口自愈后窗口仍在屏幕内")
+                except Exception as e:
+                    self._log("warning", f"[红点] 入口窗口自愈异常: {e}")
+                finally:
+                    try:
+                        _release_interaction(self.window)
+                    except Exception:
+                        pass
+
         for item in unread_contacts:
             if self._stop_flag.is_set():
                 break
