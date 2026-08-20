@@ -344,6 +344,32 @@ class WeChatEngine:
             self.extractor.set_classification(categories)
             self._log("info", f"[分类] 已更新分类规则，共 {len(categories)} 类")
 
+    def _dedup_ocr_by_position(self, ocr_results):
+        """位置桶去抖：同位置桶+文本相似度>=0.9 的 OCR 行合并为一条（保留置信高者）。
+        抑制同一消息每帧 OCR 抖动产生的近似重复；不同文本同桶（滚动后新内容）保留。"""
+        if not ocr_results or len(ocr_results) < 2:
+            return ocr_results
+        from difflib import SequenceMatcher
+        final = []
+        for r in ocr_results:
+            bx = int(r.get("x_center", 0) // 60)
+            by = int(r.get("y_center", 0) // 60)
+            # 统一打桶标：替换进 final 时自动携带桶号，后续同桶比对才能命中
+            r["_bk_x"], r["_bk_y"] = bx, by
+            merged = False
+            for i, kept in enumerate(final):
+                if kept.get("_bk_x") == bx and kept.get("_bk_y") == by:
+                    t1 = str(kept.get("text", ""))
+                    t2 = str(r.get("text", ""))
+                    if t1 and t2 and SequenceMatcher(None, t1, t2).ratio() >= 0.90:
+                        if (r.get("confidence", 0) or 0) > (kept.get("confidence", 0) or 0):
+                            final[i] = r
+                        merged = True
+                        break
+            if not merged:
+                final.append(r)
+        return final
+
     def _load_reddot_seen(self):
         """加载红点跨轮去重历史（重启不丢）"""
         try:
@@ -815,6 +841,19 @@ class WeChatEngine:
                 # 保存当前截图为上一张成功的预览图
                 self._last_good_preview = image
 
+                # ★ ③ 截图质量评分：模糊帧（渲染中/过渡动画）跳过本轮OCR，防误识别
+                try:
+                    import cv2 as _cv2
+                    _gray = _cv2.cvtColor(image, _cv2.COLOR_BGR2GRAY)
+                    _blur_var = _cv2.Laplacian(_gray, _cv2.CV_64F).var()
+                    _blur_min = self.wechat_config.get("blur_min_var", 25)
+                    if _blur_var < _blur_min:
+                        self._log("info", f"[质量] 截图模糊(Laplacian={_blur_var:.0f}<{_blur_min})，跳过本轮OCR")
+                        time.sleep(poll_interval)
+                        continue
+                except Exception:
+                    pass
+
                 # === 截图预览：实时更新预览窗口（立即发送，不等OCR） ===
                 try:
                     # 优先使用全窗图（offscreen模式），否则使用OCR裁剪图
@@ -840,13 +879,14 @@ class WeChatEngine:
                         self._last_preview_err_log = _now
                         self._log("warning", f"[预览] ❌ 发送失败: {e}")
 
-                # 检查是否最小化模式（跳过增量检测，直接做全量OCR）
+                # 检查是否最小化模式
                 from window_manager import is_window_minimized
                 _is_min = is_window_minimized(self.window)
 
-                # 2. 增量检测：判断是否需要做OCR
-                # 最小化模式下跳过增量检测（因为PrintWindow截图可能不稳定）
-                if self.smart_monitor and not _is_min:
+                # 2. 帧变化检测：判断是否需要做OCR
+                # ★ 最小化/后台模式同样启用帧变化检测（省CPU）：
+                #   画面无变化 -> 跳过整轮OCR；有变化 -> 仍走全量OCR（防漏，不用增量区域）
+                if self.smart_monitor:
                     need_ocr, diff_regions = self.smart_monitor.should_run_ocr(image)
                     if not need_ocr:
                         # 画面无变化：先确认稳定帧超时候选（防新消息漏报），再跳过
@@ -854,7 +894,11 @@ class WeChatEngine:
                         time.sleep(poll_interval)
                         continue
 
-                    self._log("info", f"[增量] 检测到画面变化，区域数: {len(diff_regions)}")
+                    if _is_min:
+                        diff_regions = []  # 最小化：变化只用于"要不要OCR"，区域仍全量（防漏）
+                        self._log("info", "[帧检测] 画面有变化 -> 全量OCR")
+                    else:
+                        self._log("info", f"[增量] 检测到画面变化，区域数: {len(diff_regions)}")
 
                     # V3 增量OCR：先用 recognize 逐区域做，再在全局做群聊增强 + senderV4
                     def _ocr_func(img):
@@ -963,6 +1007,10 @@ class WeChatEngine:
                         ocr_results = identify_senders(ocr_results, image)
                     except Exception:
                         pass
+
+                # ★ ② 位置桶去抖：同位置桶+文本相似度>=0.9 的 OCR 行合并（保留置信高者），
+                #   抑制"同一消息每帧OCR抖动->近似重复"（dedup 的补充，按位置维度更准）
+                ocr_results = self._dedup_ocr_by_position(ocr_results)
 
                 # 4. 解析新消息
                 result = self.parser.feed(ocr_results)

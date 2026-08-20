@@ -214,6 +214,8 @@ wechat:
   dnd_pause_after_typing: 5
   do_not_disturb: true
   fast_mode: true
+  # 模糊帧质量评分阈值（Laplacian方差），低于此值的截图跳过OCR（渲染中/过渡帧）
+  blur_min_var: 25
   # 最小化监控模式：
   #   normal    = 仅前台监控（窗口最小化时跳过）
   #   minimized = 支持最小化后台截图（PrintWindow + 屏幕外恢复）
