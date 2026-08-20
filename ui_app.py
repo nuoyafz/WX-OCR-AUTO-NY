@@ -7,7 +7,7 @@ except Exception:
     except Exception:
         pass
 """
-微信 AI 助手 — UI主界面
+NOYA Chat 微信助手 — UI主界面
 ========================
 基于 customtkinter 的现代化桌面界面，适合小白使用。
 功能：信息提取监控 / 自动回复开关 / 数据查看 / 设置
@@ -106,7 +106,7 @@ class WeChatAIApp(ctk.CTk):
         import queue
         self._capture_queue = queue.Queue(maxsize=2)
 
-        self.title("微信 AI 助手")
+        self.title("NOYA Chat 微信助手")
         self.geometry("1100x720")
         self.minsize(1000, 650)
         self.configure(fg_color=WC_COLORS["bg"])
@@ -118,8 +118,8 @@ class WeChatAIApp(ctk.CTk):
         self.after(100, self._poll_capture)
 
         # 快捷键 Ctrl+T 切换开始/停止
-        self.bind("<Control-t>", lambda e: self._toggle_monitoring())
-        self.bind("<Control-T>", lambda e: self._toggle_monitoring())
+        self.bind_all("<Control-t>", lambda e: self._toggle_monitoring())
+        self.bind_all("<Control-T>", lambda e: self._toggle_monitoring())
 
     def _load_config(self):
         import yaml
@@ -446,9 +446,24 @@ class WeChatAIApp(ctk.CTk):
         self._msg_seq = 0
         self._load_history()
 
-        # 初始占位会话卡（点击不会有效果，仅做引导）
-        self._append_contact_card("会话名称", "启动监控后自动汇聚会话…",
-                                  is_group=False, unread=0, active=False)
+        # 从历史记录重建联系人卡片
+        if self._messages_store:
+            for contact, msgs in self._messages_store.items():
+                if msgs:
+                    latest = msgs[0]
+                    preview = str(latest.get("content", ""))[:26]
+                    is_group = bool(latest.get("is_group", False))
+                    self._append_contact_card(
+                        contact, preview,
+                        is_group=is_group,
+                        unread=0, active=False
+                    )
+            self.after(200, self._rebuild_message_list)
+
+        # 初始占位会话卡（仅在无历史时显示）
+        if not self._messages_store:
+            self._append_contact_card("会话名称", "启动监控后自动汇聚会话…",
+                                      is_group=False, unread=0, active=False)
 
     def _load_history(self):
         """启动时加载消息历史（data/messages_history.json）"""
@@ -766,9 +781,14 @@ class WeChatAIApp(ctk.CTk):
                 self.msg_empty_label.pack(pady=30)
                 return
 
-            # items 已是最新在前（store.insert(0,...) / 全局倒序），逐条 pack 顶部即最新置顶
-            for m in items:
+            # 倒序排列：最新在底部（微信风格）
+            for m in reversed(items):
                 self._build_message_row(self.msg_list_frame_inner, m)
+            # 滚动到底部（最新消息可见）
+            try:
+                self.msg_list_frame_inner.after(50, lambda: self.msg_list_frame._parent_canvas.yview_moveto(1.0))
+            except Exception:
+                pass
         except Exception:
             pass
 
@@ -797,7 +817,17 @@ class WeChatAIApp(ctk.CTk):
         )
         auto_reply_cfg = self.config_data.get("auto_reply", {})
         self.reply_switch.select() if auto_reply_cfg.get("enabled") else self.reply_switch.deselect()
-        self.reply_switch.grid(row=2, column=0, padx=15, pady=(0, 15), sticky="w")
+        self.reply_switch.grid(row=2, column=0, padx=15, pady=(0, 5), sticky="w")
+
+        # 预览确认模式开关
+        self.preview_mode_switch = ctk.CTkSwitch(
+            switch_frame, text="预览确认模式（生成回复后需手动确认才发送）",
+            font=ctk.CTkFont(size=12),
+            command=self.on_preview_mode_switch,
+            fg_color=WC_COLORS["accent"],
+        )
+        self.preview_mode_switch.select() if auto_reply_cfg.get("preview_mode") else self.preview_mode_switch.deselect()
+        self.preview_mode_switch.grid(row=3, column=0, padx=15, pady=(0, 15), sticky="w")
 
         # 角色说明
         roles_frame = ctk.CTkFrame(tab, fg_color=WC_COLORS["card"], corner_radius=10)
@@ -1759,8 +1789,12 @@ class WeChatAIApp(ctk.CTk):
                 text_color=status_color,
             )
 
-        # —— 按当前选中联系人重建右侧消息列表（修复：点击联系人空白 / 需两次点击）——
+        # —— 按当前选中联系人重建右侧消息列表 + 滚动到底部 ——
         self._rebuild_message_list()
+        try:
+            self.after(80, lambda: self.msg_list_frame._parent_canvas.yview_moveto(1.0))
+        except Exception:
+            pass
 
 
     # ==============================================================
@@ -1908,72 +1942,190 @@ class WeChatAIApp(ctk.CTk):
                 ctk.CTkLabel(self.search_results_frame, text="未找到匹配消息").pack(pady=10)
 
     def _create_stats_panel(self, parent):
-        """创建统计面板"""
+        """创建统计面板（增强版：多维度 + 详情文本框）"""
         stats_frame = ctk.CTkFrame(parent)
         stats_frame.pack(fill="x", padx=10, pady=5)
 
-        ctk.CTkLabel(stats_frame, text="📊 统计", font=ctk.CTkFont(size=14, weight="bold")).pack(pady=5)
+        ctk.CTkLabel(stats_frame, text="📊 数据统计",
+                     font=ctk.CTkFont(size=14, weight="bold")).pack(pady=5)
 
         self.stats_labels = {}
-        for label in ["总消息", "重要消息", "联系人数", "提取信息", "今日消息"]:
+        stat_items = [
+            ("总消息", "💬"),
+            ("重要消息", "⭐"),
+            ("联系人数", "👤"),
+            ("提取信息", "📋"),
+            ("今日消息", "📅"),
+            ("本周消息", "📆"),
+            ("已回复", "✉️"),
+            ("OCR次数", "🔤"),
+        ]
+        for label, icon in stat_items:
             row = ctk.CTkFrame(stats_frame, fg_color="transparent")
             row.pack(fill="x", padx=10, pady=2)
-            ctk.CTkLabel(row, text=label+":", width=80, anchor="w").pack(side="left")
-            val_label = ctk.CTkLabel(row, text="0", font=ctk.CTkFont(size=14, weight="bold"), text_color="#2196F3")
+            ctk.CTkLabel(row, text=f"{icon} {label}:", width=90, anchor="w").pack(side="left")
+            val_label = ctk.CTkLabel(row, text="—", font=ctk.CTkFont(size=14, weight="bold"),
+                                     text_color="#2196F3")
             val_label.pack(side="right")
             self.stats_labels[label] = val_label
 
-        refresh_btn = ctk.CTkButton(stats_frame, text="刷新统计", width=80, command=self._refresh_stats)
-        refresh_btn.pack(pady=5)
+        # 发送者分布下拉
+        row2 = ctk.CTkFrame(stats_frame, fg_color="transparent")
+        row2.pack(fill="x", padx=10, pady=2)
+        ctk.CTkLabel(row2, text="👥 发送者分布:", width=90, anchor="w").pack(side="left")
+        self.stats_sender_label = ctk.CTkLabel(row2, text="—",
+                                                font=ctk.CTkFont(size=11),
+                                                text_color=WC_COLORS["text_muted"],
+                                                wraplength=260)
+        self.stats_sender_label.pack(side="right", fill="x", expand=True)
+
+        # 按钮行
+        btn_row = ctk.CTkFrame(stats_frame, fg_color="transparent")
+        btn_row.pack(fill="x", padx=10, pady=5)
+        refresh_btn = ctk.CTkButton(btn_row, text="🔄 刷新统计", width=90,
+                                    command=self._refresh_stats)
+        refresh_btn.pack(side="left", padx=2)
+        ctk.CTkButton(btn_row, text="📋 今日报告", width=90,
+                      command=self._generate_today_report).pack(side="left", padx=2)
+
+        # 详情文本框（滚动显示详细信息）
+        self.stats_detail = ctk.CTkTextbox(stats_frame, height=100, font=ctk.CTkFont(size=11),
+                                           wrap="word", fg_color=WC_COLORS["bg"])
+        self.stats_detail.pack(fill="x", padx=10, pady=(5, 10))
+        self.stats_detail.insert("1.0", "点击「刷新统计」查看详细数据...")
+        self.stats_detail.configure(state="disabled")
 
     def _refresh_stats(self):
-        """刷新数据统计面板（修复版：增强容错和多维度显示）"""
+        """刷新数据统计面板（增强版：多维度 + 详情 + 容错）"""
         try:
             if not hasattr(self, 'engine') or not self.engine:
-                self._on_log("warning", "[统计] 引擎未初始化")
+                self._set_stats_default()
+                self._append_stats_detail("⚠️ 引擎未初始化，请先启动监控")
                 return
 
-            # 存储统计
-            if self.engine.get_storage():
+            # 默认为0
+            for k in self.stats_labels:
+                self.stats_labels[k].configure(text="0")
+
+            detail_lines = []
+
+            # 1. 存储统计（SQLite数据库）
+            storage = self.engine.get_storage()
+            if storage:
                 try:
-                    stats = self.engine.get_storage().get_stats()
-                    self.stats_labels["总消息"].configure(text=str(stats.get("total_messages", 0)))
-                    self.stats_labels["重要消息"].configure(text=str(stats.get("important_messages", 0)))
-                    self.stats_labels["联系人数"].configure(text=str(stats.get("total_contacts", 0)))
-
-                    # 显示额外的统计信息
-                    today_msg = stats.get("today_messages", 0)
-                    week_msg = stats.get("week_messages", 0)
-                    last_update = stats.get("last_updated", "未知")
-
-                    self._on_log("info", f"[统计] 总: {stats.get('total_messages', 0)}, "
-                                       f"今日: {today_msg}, 本周: {week_msg}, 更新: {last_update}")
-
+                    s = storage.get_stats()
+                    if s and s.get("total_messages", 0) > 0:
+                        self.stats_labels["总消息"].configure(text=str(s.get("total_messages", 0)))
+                        self.stats_labels["重要消息"].configure(text=str(s.get("important_messages", 0)))
+                        self.stats_labels["联系人数"].configure(text=str(s.get("total_contacts", 0)))
+                        self.stats_labels["今日消息"].configure(text=str(s.get("today_messages", 0)))
+                        self.stats_labels["本周消息"].configure(text=str(s.get("week_messages", 0)))
+                        detail_lines.append(f"📊 数据库统计 (更新: {s.get('last_updated', '—')})")
+                        detail_lines.append(f"  总消息: {s['total_messages']}  重要: {s['important_messages']}")
+                        detail_lines.append(f"  联系人: {s['total_contacts']}  今日: {s['today_messages']}  本周: {s['week_messages']}")
+                        # 发送者分布
+                        senders = s.get("sender_distribution", {})
+                        if senders:
+                            top = sorted(senders.items(), key=lambda x: x[1], reverse=True)[:5]
+                            sender_text = ", ".join([f"{k}:{v}" for k, v in top])
+                            self.stats_sender_label.configure(text=sender_text[:60])
+                            detail_lines.append(f"  发送者Top5: {sender_text}")
+                        else:
+                            self.stats_sender_label.configure(text="—")
+                        detail_lines.append("")
+                    else:
+                        detail_lines.append("📊 数据库: 暂无消息记录")
+                        detail_lines.append("")
                 except Exception as e:
-                    self._on_log("warning", f"[统计] 存储统计获取失败: {e}")
+                    detail_lines.append(f"⚠️ 数据库统计异常: {e}")
+                    detail_lines.append("")
+            else:
+                detail_lines.append("⚠️ 存储模块未初始化")
+                detail_lines.append("")
 
-            # 引擎统计
+            # 2. 引擎运行时统计（实时数据）
             try:
-                eng_stats = self.engine.get_stats()
-                self.stats_labels["提取信息"].configure(text=str(eng_stats.get("extracted", 0)))
-                self.stats_labels["今日消息"].configure(text=str(eng_stats.get("messages_detected", 0)))
+                e = self.engine.get_stats()
+                self.stats_labels["提取信息"].configure(text=str(e.get("extracted", 0)))
+                self.stats_labels["已回复"].configure(text=str(e.get("replies_sent", 0)))
+                self.stats_labels["OCR次数"].configure(text=str(e.get("ocr_calls", 0)))
+                detail_lines.append("⚡ 引擎实时统计")
+                detail_lines.append(f"  截图帧数: {e.get('frames_captured', 0)}  OCR调用: {e.get('ocr_calls', 0)}")
+                detail_lines.append(f"  检测消息: {e.get('messages_detected', 0)}  提取信息: {e.get('extracted', 0)}")
+                detail_lines.append(f"  重要消息: {e.get('important', 0)}  已回复: {e.get('replies_sent', 0)}")
+                detail_lines.append("")
+            except Exception as e2:
+                detail_lines.append(f"⚠️ 引擎统计异常: {e2}")
+                detail_lines.append("")
 
-                # 显示额外的引擎统计
-                replies = eng_stats.get("replies_sent", 0)
-                ocr_calls = eng_stats.get("ocr_calls", 0)
-                frames = eng_stats.get("frames_captured", 0)
+            # 3. UI消息池统计
+            if hasattr(self, '_messages_store'):
+                total_msgs = sum(len(v) for v in self._messages_store.values())
+                total_contacts = len(self._messages_store)
+                detail_lines.append(f"💾 内存消息池: {total_msgs} 条消息, {total_contacts} 个联系人")
+                if total_contacts > 0:
+                    top_contacts = sorted(self._messages_store.items(),
+                                         key=lambda x: len(x[1]), reverse=True)[:8]
+                    detail_lines.append("  会话Top8:")
+                    for name, msgs in top_contacts:
+                        detail_lines.append(f"    {name}: {len(msgs)}条")
 
-                if replies > 0:
-                    self._on_log("info", f"[统计] 已回复: {replies}, OCR: {ocr_calls}, 帧: {frames}")
-
-            except Exception as e:
-                self._on_log("warning", f"[统计] 引擎统计获取失败: {e}")
+            self._set_stats_detail("\n".join(detail_lines) if detail_lines else "暂无统计数据")
 
         except Exception as e:
-            self._on_log("error", f"[统计] 刷新异常: {e}")
+            self._set_stats_default()
             import traceback
-            self._on_log("error", traceback.format_exc()[-200:])
+            self._set_stats_detail(f"❌ 统计刷新异常:\n{traceback.format_exc()[-300:]}")
+            try:
+                self._on_log("error", f"[统计] 刷新异常: {e}")
+            except Exception:
+                pass
 
+    def _set_stats_default(self):
+        """将所有统计标签重置为默认值"""
+        for k in self.stats_labels:
+            try:
+                self.stats_labels[k].configure(text="—")
+            except Exception:
+                pass
+        try:
+            self.stats_sender_label.configure(text="—")
+        except Exception:
+            pass
+
+    def _set_stats_detail(self, text):
+        """更新统计详情文本框"""
+        try:
+            self.stats_detail.configure(state="normal")
+            self.stats_detail.delete("1.0", "end")
+            self.stats_detail.insert("1.0", text)
+            self.stats_detail.configure(state="disabled")
+        except Exception:
+            pass
+
+    def _append_stats_detail(self, text):
+        """追加统计详情"""
+        try:
+            self.stats_detail.configure(state="normal")
+            current = self.stats_detail.get("1.0", "end-1c")
+            self.stats_detail.delete("1.0", "end")
+            self.stats_detail.insert("1.0", text if current.strip() in ("点击「刷新统计」查看详细数据...", "—", "")
+                                    else current + "\n" + text)
+            self.stats_detail.configure(state="disabled")
+        except Exception:
+            pass
+    def _run_diagnosis_async(self):
+        """后台诊断，不阻塞UI"""
+        try:
+            diagnosis_ok = self._diagnose_system()
+            if not diagnosis_ok:
+                self.after(0, lambda: self._on_log("warning", "⚠️ 诊断发现问题，建议修复后再启动"))
+                self.after(0, lambda: ctk.messagebox.showwarning(
+                    "诊断结果",
+                    "系统诊断发现一些问题，可能影响使用体验。"
+                ))
+        except Exception as e:
+            self.after(0, lambda: self._on_log("error", f"诊断异常: {e}"))
     def _diagnose_system(self):
         """系统诊断（修复启动问题的辅助工具）"""
         self._on_log("info", "🔍 开始系统诊断...")
@@ -2081,20 +2233,9 @@ class WeChatAIApp(ctk.CTk):
             self.btn_start.configure(state="disabled")
             self._on_log("info", "━━━ 正在启动监控，请稍候 ━━━")
 
-            # 首先运行系统诊断
-            self._on_log("info", "🔍 运行启动前诊断...")
-            diagnosis_ok = self._diagnose_system()
-
-            if not diagnosis_ok:
-                self._on_log("warning", "⚠️ 诊断发现问题，建议修复后再启动")
-                response = ctk.messagebox.askyesno(
-                    "诊断结果",
-                    "系统诊断发现一些问题，是否仍要尝试启动？\n\n建议先修复问题以获得更好体验。",
-                    icon="warning"
-                )
-                if not response:
-                    self.btn_start.configure(state="normal")
-                    return
+            # 诊断放到后台线程，避免阻塞UI
+            self._on_log("info", "🔍 后台运行启动前诊断...")
+            threading.Thread(target=self._run_diagnosis_async, daemon=True).start()
 
             # 检查微信窗口是否已打开
             from window_manager import find_wechat_window
@@ -2495,6 +2636,25 @@ class WeChatAIApp(ctk.CTk):
         except Exception as e:
             self._on_log("warning", f"自动回复状态保存失败: {e}")
 
+
+    def on_preview_mode_switch(self):
+        """预览确认模式开关"""
+        enabled = self.preview_mode_switch.get()
+        self.config_data.setdefault("auto_reply", {})["preview_mode"] = enabled
+        if self.engine:
+            self.engine.auto_reply_config["preview_mode"] = enabled
+        self._on_log("info", f"预览确认模式: {'开启' if enabled else '关闭'}（生成回复后{'需手动确认' if enabled else '自动发送'}）")
+        try:
+            import yaml
+            config_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), self.config_path)
+            with open(config_path, "r", encoding="utf-8") as f:
+                raw = yaml.safe_load(f) or {}
+            raw.setdefault("auto_reply", {})["preview_mode"] = enabled
+            with open(config_path, "w", encoding="utf-8") as f:
+                yaml.dump(raw, f, allow_unicode=True, default_flow_style=False)
+        except Exception as e:
+            self._on_log("warning", f"预览模式状态保存失败: {e}")
+
     def _test_llm_connection(self):
         base_url = self.entry_url.get().strip()
         api_key = self.entry_key.get().strip()
@@ -2892,7 +3052,7 @@ class WeChatAIApp(ctk.CTk):
             return
 
         self.preview_win = tk.Toplevel(self)
-        self.preview_win.title("微信 AI 助手 - 监控预览")
+        self.preview_win.title("NOYA Chat 微信助手 - 监控预览")
         self.preview_win.geometry("960x680")
         self.preview_win.configure(bg="#EDEDED")
         self.preview_win.minsize(860, 580)
@@ -2902,7 +3062,7 @@ class WeChatAIApp(ctk.CTk):
         title_bar.pack(fill="x", side="top")
         title_bar.pack_propagate(False)
 
-        tk.Label(title_bar, text="🤖 微信 AI 助手",
+        tk.Label(title_bar, text="🤖 NOYA Chat 微信助手",
                  bg="#2E2E2E", fg="#07C160",
                  font=("Microsoft YaHei", 12, "bold")).pack(side="left", padx=15, pady=6)
 

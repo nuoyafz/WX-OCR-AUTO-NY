@@ -256,45 +256,35 @@ class WeChatEngine:
         self._log("info", "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
         self._log("info", "开始初始化系统模块...")
         self._log("info", "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-        time.sleep(0.4)
 
         # 步骤1：消息解析器
         self._log("info", "[1/6] 正在初始化消息解析器...")
-        time.sleep(0.3)
         stable_frames = self.wechat_config.get("stable_frames", 1)
         context_size = self.wechat_config.get("context_size", 20)
         self.parser = MessageParser(stable_frames=stable_frames, context_size=context_size)
         self._log("info", f"  ✔ 消息解析器就绪 (稳定帧={stable_frames}, 上下文={context_size})")
-        time.sleep(0.4)
 
         # 步骤2：LLM客户端
         self._log("info", "[2/6] 正在初始化LLM客户端...")
-        time.sleep(0.3)
         api_key = self.llm_config.get("api_key", "")
         if api_key and api_key not in ("", "your-api-key-here"):
             self.llm_client = LLMClient(self.llm_config)
             self._log("info", f"  ✔ LLM客户端就绪: {self.llm_config.get('model', '?')}")
         else:
             self._log("info", "  ✔ 未配置API Key，跳过LLM客户端")
-        time.sleep(0.4)
 
         # 步骤3：信息提取引擎
         self._log("info", "[3/6] 正在初始化信息提取引擎...")
-        time.sleep(0.3)
         self.extractor = InfoExtractor(self.extraction_config, self.llm_config)
         self._log("info", "  ✔ 信息提取引擎就绪")
-        time.sleep(0.4)
 
         # 步骤4：数据存储
         self._log("info", "[4/6] 正在初始化数据存储...")
-        time.sleep(0.3)
         self.storage = MessageStorage(self.storage_config)
         self._log("info", f"  ✔ 数据存储就绪: {self.storage_config.get('type', 'sqlite')}")
-        time.sleep(0.4)
 
         # 步骤5：联系人扫描器 + 红点监控
         self._log("info", "[5/6] 正在初始化联系人监控...")
-        time.sleep(0.3)
         if self.scanner_config.get("enabled"):
             import window_manager as wm_module
             self.scanner = ContactScanner(self.scanner_config, wm_module)
@@ -309,16 +299,13 @@ class WeChatEngine:
             self._log("info", "  ✔ 红点监控器已启用（自动检测未读红点）")
         else:
             self._log("info", "  ✔ 红点监控器未启用")
-        time.sleep(0.4)
 
         # 步骤6：AI训练引擎
         self._log("info", "[6/6] 正在初始化AI训练引擎...")
-        time.sleep(0.3)
         ai_threshold = self.wechat_config.get("ai_training_threshold", 10)
         self.ai_trainer = AITrainer(self.llm_config, training_threshold=ai_threshold)
         progress = self.ai_trainer.get_progress()
         self._log("info", f"  ✔ AI训练引擎就绪 (学习进度 {progress['current']}/{ai_threshold})")
-        time.sleep(0.4)
 
         self._log("info", "===== 全部模块初始化完成，准备开始监控 =====")
 
@@ -390,6 +377,10 @@ class WeChatEngine:
             if not context:
                 context = []
 
+            # 停止检查
+            if self._stop_flag.is_set():
+                return
+
             # 生成回复
             self._log("info", f"[自动回复] 正在生成回复...")
             reply = self.llm_client.generate_reply(contact, content, role, context)
@@ -398,6 +389,34 @@ class WeChatEngine:
                 return
 
             self._log("info", f"[生成回复] {reply[:80]}...")
+
+            # 停止检查：LLM生成完后如果已停止，不再发送
+            if self._stop_flag.is_set():
+                return
+
+            # 预览确认模式：粘贴到输入框但不发送，等待用户手动确认
+            preview_mode = self.auto_reply_config.get("preview_mode", False)
+            if preview_mode:
+                self._log("info", f"[自动回复·预览] 待确认: {reply[:50]}")
+                if self._on_reply:
+                    self._on_reply(contact, reply)
+                # 粘贴到微信输入框但不发送
+                try:
+                    from window_manager import focus_window
+                    from sender import click_input_box, clear_input_box, paste_text
+                    focus_window(self.window)
+                    time.sleep(0.2)
+                    click_input_box(self.window)
+                    time.sleep(0.1)
+                    clear_input_box()
+                    paste_text(reply)
+                    self._log("info", "[自动回复·预览] 已粘贴到输入框，请手动确认发送")
+                except Exception as e:
+                    self._log("error", f"[自动回复·预览] 粘贴失败: {e}")
+                # 标记已处理，防止重复触发LLM
+                self.parser.add_to_context("assistant", reply)
+                self.parser.mark_reply_sent(reply)
+                return
 
             # 发送延迟
             send_delay = self.auto_reply_config.get("send_delay", 1.0)
