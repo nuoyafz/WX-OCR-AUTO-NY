@@ -309,26 +309,74 @@ class MessageStorage:
             return []
 
     def get_stats(self):
-        """获取统计信息"""
+        """获取统计信息（修复版：增强容错和多维度统计）"""
         if self.storage_type != "sqlite":
+            logger.warning("查询功能仅支持SQLite模式")
             return {}
+
         try:
             conn = sqlite3.connect(self.db_path)
+            conn.row_factory = sqlite3.Row
+
+            # 基础统计
             total = conn.execute("SELECT COUNT(*) FROM messages").fetchone()[0]
-            important = conn.execute(
-                "SELECT COUNT(*) FROM messages WHERE is_important=1"
+            important = conn.execute("SELECT COUNT(*) FROM messages WHERE is_important=1").fetchone()[0]
+            contacts = conn.execute("SELECT COUNT(DISTINCT contact) FROM messages").fetchone()[0]
+
+            # 今日统计
+            from datetime import datetime
+            today = datetime.now().strftime("%Y-%m-%d")
+            today_count = conn.execute(
+                "SELECT COUNT(*) FROM messages WHERE timestamp LIKE ?",
+                (f"{today}%",)
             ).fetchone()[0]
-            contacts = conn.execute(
-                "SELECT COUNT(DISTINCT contact) FROM messages"
+
+            # 本周统计
+            from datetime import timedelta
+            week_ago = (datetime.now() - timedelta(days=7)).strftime("%Y-%m-%d")
+            week_count = conn.execute(
+                "SELECT COUNT(*) FROM messages WHERE timestamp >= ?",
+                (week_ago,)
             ).fetchone()[0]
+
+            # 发送者统计
+            sender_stats = conn.execute("""
+                SELECT sender, COUNT(*) as count
+                FROM messages
+                GROUP BY sender
+            """).fetchall()
+            sender_counts = {row["sender"]: row["count"] for row in sender_stats}
+
             conn.close()
-            return {
+
+            stats = {
                 "total_messages": total,
                 "important_messages": important,
                 "total_contacts": contacts,
+                "today_messages": today_count,
+                "week_messages": week_count,
+                "sender_distribution": sender_counts,
+                "last_updated": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             }
-        except Exception:
-            return {}
+
+            logger.info(f"[统计] 计算完成 - 总: {total}, 联系人: {contacts}, 今日: {today_count}")
+            return stats
+
+        except Exception as e:
+            logger.error(f"[统计] 计算失败: {e}")
+            import traceback
+            logger.error(traceback.format_exc()[-200:])
+            # 返回默认值防止UI崩溃
+            return {
+                "total_messages": 0,
+                "important_messages": 0,
+                "total_contacts": 0,
+                "today_messages": 0,
+                "week_messages": 0,
+                "sender_distribution": {},
+                "last_updated": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                "error": str(e)
+            }
 
     # ------------------------------------------------------------------
     # 按联系人分组导出 CSV （所有join均使用安全版，杜绝dict导致的崩溃）

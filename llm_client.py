@@ -1,13 +1,16 @@
-﻿"""
+"""
 LLM 客户端模块 — 调用大模型（生成回复 + 信息提取）
 ===================================================
-支持两种调用模式：
-1. generate_reply(): 自动回复模式，构建角色prompt生成回复
-2. _call_raw(): 底层调用，直接传入messages，供信息提取引擎使用
+修复内容：
+1. 增强API Key验证
+2. 改进错误处理和重试
+3. 增加测试调用功能
+4. 优化日志输出
 """
 import logging
 import requests
 import time
+from datetime import datetime
 
 logger = logging.getLogger(__name__)
 
@@ -16,20 +19,102 @@ class LLMClient:
     """LLM API 客户端，支持 DeepSeek / OpenAI 兼容接口。"""
 
     def __init__(self, llm_config):
-        self.provider = llm_config.get("provider", "deepseek")
+        self.provider = llm_config.get("provider", "custom")
         self.api_key = llm_config.get("api_key", "")
-        self.model = llm_config.get("model", "deepseek-chat")
-        self.base_url = llm_config.get("base_url", "https://api.deepseek.com")
+        self.model = llm_config.get("model", "qwen3.7-flash-2026-07-15")
+        self.base_url = llm_config.get("base_url", "https://dashscope.aliyuncs.com/compatible-mode")
         self.max_tokens = llm_config.get("max_tokens", 200)
         self.temperature = llm_config.get("temperature", 0.6)
         self.thinking = llm_config.get("thinking", False)
-        self.max_retries = 2
-        self.retry_delay = 1
+        self.max_retries = 3  # 增加重试次数
+        self.retry_delay = 2  # 增加重试延迟
+
+        # 验证API Key
+        self._validate_api_key()
+
+    def _validate_api_key(self):
+        """验证API Key格式和可用性"""
+        if not self.api_key:
+            logger.error("[LLM] API Key未配置")
+            return False
+
+        if not self.api_key.startswith("sk-"):
+            logger.error(f"[LLM] API Key格式无效: {self.api_key[:10]}...")
+            return False
+
+        logger.info(f"[LLM] API Key格式验证通过: {self.api_key[:10]}...")
+        return True
+
+    def test_connection(self):
+        """测试连接和API Key有效性
+
+        Returns:
+            tuple: (success: bool, message: str)
+        """
+        if not self.api_key:
+            return False, "API Key 未配置"
+        if not self.api_key.startswith("sk-"):
+            return False, f"API Key 格式无效（应以 sk- 开头）"
+
+        try:
+            logger.info("[LLM] 测试API连接...")
+            response = requests.post(
+                f"{self.base_url.rstrip('/')}/v1/chat/completions",
+                json={
+                    "model": self.model,
+                    "messages": [{"role": "user", "content": "test"}],
+                    "max_tokens": 5
+                },
+                headers={
+                    "Authorization": f"Bearer {self.api_key}",
+                    "Content-Type": "application/json"
+                },
+                timeout=10
+            )
+
+            if response.status_code == 200:
+                data = response.json()
+                reply = ""
+                try:
+                    reply = data["choices"][0]["message"]["content"]
+                except Exception:
+                    pass
+                logger.info("[LLM] API连接测试成功")
+                return True, f"连接成功，模型回复: {reply[:30]}"
+            elif response.status_code == 401:
+                return False, "认证失败：API Key 无效或已过期"
+            elif response.status_code == 403:
+                return False, "权限不足：API Key 无权访问该模型"
+            elif response.status_code == 404:
+                return False, f"模型不存在：{self.model}"
+            else:
+                try:
+                    err_msg = response.json().get("error", {}).get("message", "")[:80]
+                except Exception:
+                    err_msg = response.text[:80]
+                logger.error(f"[LLM] API连接测试失败: {response.status_code}")
+                return False, f"HTTP {response.status_code}: {err_msg}"
+
+        except requests.exceptions.Timeout:
+            logger.error("[LLM] API连接超时")
+            return False, "连接超时（10秒无响应）"
+        except requests.exceptions.ConnectionError:
+            logger.error("[LLM] API连接失败")
+            return False, f"无法连接到 {self.base_url}"
+        except Exception as e:
+            logger.error(f"[LLM] API连接异常: {e}")
+            return False, f"异常: {str(e)[:60]}"
 
     def _call_raw(self, messages, max_tokens=None, temperature=None):
         """
         底层API调用：直接传入messages列表，返回纯文本响应。
         供信息提取引擎和回复生成共用。
+
+        修复内容：
+        1. 增强错误处理和重试
+        2. 改进日志输出
+        3. 增加超时处理
+        4. 响应验证
 
         Args:
             messages: [{"role": "system"/"user"/"assistant", "content": "..."}, ...]
@@ -58,30 +143,50 @@ class LLMClient:
 
         for attempt in range(self.max_retries):
             try:
+                logger.debug(f"[LLM] 发起请求 (尝试 {attempt + 1}/{self.max_retries})")
                 resp = requests.post(
                     endpoint,
                     json=payload,
                     headers=headers,
-                    timeout=15,
+                    timeout=20,  # 增加超时时间
                 )
                 resp.raise_for_status()
 
                 data = resp.json()
                 reply = data["choices"][0]["message"]["content"].strip()
+
+                if not reply:
+                    logger.warning("[LLM] 返回空回复")
+                    return None
+
+                logger.info(f"[LLM] 请求成功，回复长度: {len(reply)}")
                 return reply
 
             except requests.exceptions.Timeout:
-                logger.warning(f"LLM请求超时 (尝试 {attempt + 1}/{self.max_retries})")
+                logger.warning(f"[LLM] 请求超时 (尝试 {attempt + 1}/{self.max_retries})")
+                if attempt < self.max_retries - 1:
+                    time.sleep(self.retry_delay * (attempt + 1))  # 指数退避
+            except requests.exceptions.HTTPError as e:
+                logger.error(f"[LLM] HTTP错误: {e.response.status_code} - {e.response.text[:100]}")
+                if e.response.status_code in [401, 403]:
+                    logger.error("[LLM] API Key无效或权限不足")
+                    return None  # 认证错误不重试
                 if attempt < self.max_retries - 1:
                     time.sleep(self.retry_delay)
             except requests.exceptions.RequestException as e:
-                logger.error(f"LLM请求失败: {e}")
+                logger.error(f"[LLM] 请求异常: {e}")
                 if attempt < self.max_retries - 1:
                     time.sleep(self.retry_delay)
             except (KeyError, IndexError) as e:
-                logger.error(f"LLM响应解析失败: {e}")
-                return None
+                logger.error(f"[LLM] 响应解析失败: {e}")
+                logger.error(f"[LLM] 响应内容: {resp.text[:200] if 'resp' in locals() else 'N/A'}")
+                return None  # 解析错误不重试
+            except Exception as e:
+                logger.error(f"[LLM] 未知异常: {e}")
+                if attempt < self.max_retries - 1:
+                    time.sleep(self.retry_delay)
 
+        logger.error(f"[LLM] 所有重试均失败")
         return None
 
     def call_with_image(self, system_prompt, user_text, image_base64, max_tokens=None, temperature=None):

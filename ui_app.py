@@ -117,6 +117,10 @@ class WeChatAIApp(ctk.CTk):
         # 启动预览队列轮询（必须在主线程，跨线程安全）
         self.after(100, self._poll_capture)
 
+        # 快捷键 Ctrl+T 切换开始/停止
+        self.bind("<Control-t>", lambda e: self._toggle_monitoring())
+        self.bind("<Control-T>", lambda e: self._toggle_monitoring())
+
     def _load_config(self):
         import yaml
         config_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), self.config_path)
@@ -1253,11 +1257,33 @@ class WeChatAIApp(ctk.CTk):
         self.entry_key.insert(0, llm_cfg.get("api_key", ""))
         self.entry_key.grid(row=2, column=1, padx=15, pady=5, sticky="ew")
 
+        # 测试连接按钮
+        self.btn_test_llm = ctk.CTkButton(
+            llm_frame,
+            text="🔗 测试连接",
+            font=ctk.CTkFont(size=11),
+            fg_color=WC_COLORS["info"],
+            hover_color="#0D7DD8",
+            command=self._test_llm_connection,
+            width=100,
+            height=28
+        )
+        self.btn_test_llm.grid(row=2, column=2, padx=(5, 15), pady=5, sticky="e")
+
+        # 连接状态标签
+        self.llm_status_label = ctk.CTkLabel(
+            llm_frame,
+            text="",
+            font=ctk.CTkFont(size=10),
+            text_color=WC_COLORS["text_muted"]
+        )
+        self.llm_status_label.grid(row=3, column=0, columnspan=3, padx=15, pady=(0, 5), sticky="w")
+
         ctk.CTkLabel(llm_frame, text="模型", font=ctk.CTkFont(size=12),
-                     text_color=WC_COLORS["text_muted"]).grid(row=3, column=0, padx=15, pady=5, sticky="w")
+                     text_color=WC_COLORS["text_muted"]).grid(row=4, column=0, padx=15, pady=5, sticky="w")
         self.entry_model = ctk.CTkEntry(llm_frame, font=ctk.CTkFont(size=12))
         self.entry_model.insert(0, llm_cfg.get("model", ""))
-        self.entry_model.grid(row=3, column=1, padx=15, pady=5, sticky="ew")
+        self.entry_model.grid(row=4, column=1, padx=15, pady=5, sticky="ew")
 
         # 高级设置（默认隐藏）
         self.advanced_frame = ctk.CTkFrame(scroll, fg_color="transparent")
@@ -1901,19 +1927,144 @@ class WeChatAIApp(ctk.CTk):
         refresh_btn.pack(pady=5)
 
     def _refresh_stats(self):
-        """刷新数据统计面板（5 行：总消息/重要/联系人/提取信息/今日消息）"""
+        """刷新数据统计面板（修复版：增强容错和多维度显示）"""
         try:
-            if hasattr(self, 'engine') and self.engine:
-                if self.engine.get_storage():
+            if not hasattr(self, 'engine') or not self.engine:
+                self._on_log("warning", "[统计] 引擎未初始化")
+                return
+
+            # 存储统计
+            if self.engine.get_storage():
+                try:
                     stats = self.engine.get_storage().get_stats()
                     self.stats_labels["总消息"].configure(text=str(stats.get("total_messages", 0)))
                     self.stats_labels["重要消息"].configure(text=str(stats.get("important_messages", 0)))
                     self.stats_labels["联系人数"].configure(text=str(stats.get("total_contacts", 0)))
+
+                    # 显示额外的统计信息
+                    today_msg = stats.get("today_messages", 0)
+                    week_msg = stats.get("week_messages", 0)
+                    last_update = stats.get("last_updated", "未知")
+
+                    self._on_log("info", f"[统计] 总: {stats.get('total_messages', 0)}, "
+                                       f"今日: {today_msg}, 本周: {week_msg}, 更新: {last_update}")
+
+                except Exception as e:
+                    self._on_log("warning", f"[统计] 存储统计获取失败: {e}")
+
+            # 引擎统计
+            try:
                 eng_stats = self.engine.get_stats()
                 self.stats_labels["提取信息"].configure(text=str(eng_stats.get("extracted", 0)))
                 self.stats_labels["今日消息"].configure(text=str(eng_stats.get("messages_detected", 0)))
+
+                # 显示额外的引擎统计
+                replies = eng_stats.get("replies_sent", 0)
+                ocr_calls = eng_stats.get("ocr_calls", 0)
+                frames = eng_stats.get("frames_captured", 0)
+
+                if replies > 0:
+                    self._on_log("info", f"[统计] 已回复: {replies}, OCR: {ocr_calls}, 帧: {frames}")
+
+            except Exception as e:
+                self._on_log("warning", f"[统计] 引擎统计获取失败: {e}")
+
         except Exception as e:
-            self._on_log("warning", f"[统计] 刷新失败: {e}")
+            self._on_log("error", f"[统计] 刷新异常: {e}")
+            import traceback
+            self._on_log("error", traceback.format_exc()[-200:])
+
+    def _diagnose_system(self):
+        """系统诊断（修复启动问题的辅助工具）"""
+        self._on_log("info", "🔍 开始系统诊断...")
+
+        issues = []
+
+        # 1. 检查微信窗口
+        try:
+            from window_manager import find_wechat_window
+            window = find_wechat_window()
+            if window:
+                self._on_log("info", f"✅ 微信窗口检测正常: {window.title}")
+            else:
+                issues.append("未找到微信窗口，请确保微信已打开并登录")
+                self._on_log("warning", "❌ 微信窗口未找到")
+        except Exception as e:
+            issues.append(f"微信窗口检测失败: {e}")
+            self._on_log("error", f"❌ 微信窗口检测异常: {e}")
+
+        # 2. 检查配置文件
+        try:
+            if os.path.exists(self.config_path):
+                self._on_log("info", f"✅ 配置文件存在: {self.config_path}")
+            else:
+                issues.append("配置文件不存在")
+                self._on_log("error", f"❌ 配置文件不存在: {self.config_path}")
+        except Exception as e:
+            issues.append(f"配置文件检查失败: {e}")
+            self._on_log("error", f"❌ 配置文件检查异常: {e}")
+
+        # 3. 检查依赖模块
+        required_modules = [
+            ("PaddleOCR", "paddleocr"),
+            ("OpenCV", "cv2"),
+            ("customtkinter", "customtkinter"),
+            ("requests", "requests"),
+            ("yaml", "yaml"),
+        ]
+
+        for module_name, import_name in required_modules:
+            try:
+                __import__(import_name)
+                self._on_log("info", f"✅ {module_name} 模块正常")
+            except ImportError:
+                issues.append(f"{module_name} 模块缺失")
+                self._on_log("error", f"❌ {module_name} 模块缺失")
+
+        # 4. 检查数据目录
+        try:
+            data_dir = "data"
+            if os.path.exists(data_dir):
+                self._on_log("info", f"✅ 数据目录存在: {data_dir}")
+            else:
+                os.makedirs(data_dir, exist_ok=True)
+                self._on_log("info", f"✅ 数据目录已创建: {data_dir}")
+        except Exception as e:
+            issues.append(f"数据目录操作失败: {e}")
+            self._on_log("error", f"❌ 数据目录操作异常: {e}")
+
+        # 5. 检查API Key配置
+        try:
+            api_key = self.config_data.get("llm", {}).get("api_key", "")
+            if api_key and api_key.startswith("sk-"):
+                self._on_log("info", f"✅ API Key配置正常: {api_key[:10]}...")
+            else:
+                issues.append("API Key配置无效或缺失")
+                self._on_log("warning", "⚠️ API Key配置无效或缺失（自动回复功能将不可用）")
+        except Exception as e:
+            issues.append(f"API Key检查失败: {e}")
+            self._on_log("error", f"❌ API Key检查异常: {e}")
+
+        # 诊断结果
+        if issues:
+            self._on_log("warning", f"🔧 发现 {len(issues)} 个问题:")
+            for i, issue in enumerate(issues, 1):
+                self._on_log("warning", f"  {i}. {issue}")
+            self._on_log("info", "💡 建议修复上述问题后再启动监控")
+        else:
+            self._on_log("info", "✅ 系统诊断通过，所有检查项正常")
+
+        return len(issues) == 0
+
+    def _auto_refresh_stats(self):
+        """自动刷新统计（每10秒）"""
+        try:
+            if hasattr(self, 'engine') and self.engine and self._running:
+                self._refresh_stats()
+                # 10秒后再次刷新
+                self.after(10000, self._auto_refresh_stats)
+        except Exception as e:
+            self._on_log("warning", f"[统计] 自动刷新异常: {e}")
 
     def _toggle_advanced_settings(self):
         if self.advanced_settings_var.get():
@@ -1924,47 +2075,144 @@ class WeChatAIApp(ctk.CTk):
     # ========== 事件处理 ==========
 
     def start_monitoring(self):
-        from main import WeChatEngine
+        """开始监控（修复版：增强错误处理和用户反馈）"""
+        try:
+            # 按钮点击反馈
+            self.btn_start.configure(state="disabled")
+            self._on_log("info", "━━━ 正在启动监控，请稍候 ━━━")
 
-        self.engine = WeChatEngine(self.config_path, callbacks={
-            "on_log": self._on_log,
-            "on_extract": self._on_extract,
-            "on_reply": self._on_reply,
-            "on_stats": self._on_stats,
-            "on_status": self._on_status,
-            "on_new_message": self._on_new_message,
-            "on_capture": self._on_capture,
-        })
+            # 首先运行系统诊断
+            self._on_log("info", "🔍 运行启动前诊断...")
+            diagnosis_ok = self._diagnose_system()
 
-        auto_reply = self.config_data.get("auto_reply", {}).get("enabled", False)
-        self.engine.auto_reply_enabled = auto_reply
+            if not diagnosis_ok:
+                self._on_log("warning", "⚠️ 诊断发现问题，建议修复后再启动")
+                response = ctk.messagebox.askyesno(
+                    "诊断结果",
+                    "系统诊断发现一些问题，是否仍要尝试启动？\n\n建议先修复问题以获得更好体验。",
+                    icon="warning"
+                )
+                if not response:
+                    self.btn_start.configure(state="normal")
+                    return
 
-        # 后台线程执行启动流程，分步加载避免UI卡顿
-        self.btn_start.configure(state="disabled")
-        self._on_log("info", "━━━ 正在启动监控，请稍候 ━━━")
-        threading.Thread(target=self._start_engine_thread, daemon=True).start()
+            # 检查微信窗口是否已打开
+            from window_manager import find_wechat_window
+            test_window = find_wechat_window()
+            if not test_window:
+                self._on_log("warning", "⚠️ 未找到微信窗口")
+                self._on_log("info", "💡 请确保微信已打开并登录")
+                self.btn_start.configure(state="normal")
+                ctk.messagebox.showwarning(
+                    "微信未找到",
+                    "未找到微信窗口，请确保：\n1. 微信已打开\n2. 已登录账号\n3. 窗口标题不包含'AI'或'助手'"
+                )
+                return
+
+            self._on_log("info", f"✅ 检测到微信窗口: {test_window.title}")
+
+            # 导入主模块
+            try:
+                from main import WeChatEngine
+                self._on_log("info", "📦 正在加载监控引擎...")
+            except ImportError as e:
+                self._on_log("error", f"❌ 模块导入失败: {e}")
+                self._on_log("error", "💡 请检查依赖是否完整安装")
+                self.btn_start.configure(state="normal")
+                ctk.messagebox.showerror(
+                    "模块导入失败",
+                    f"无法导入必要模块: {e}\n\n请运行: pip install -r requirements.txt"
+                )
+                return
+
+            # 创建引擎实例
+            try:
+                self.engine = WeChatEngine(self.config_path, callbacks={
+                    "on_log": self._on_log,
+                    "on_extract": self._on_extract,
+                    "on_reply": self._on_reply,
+                    "on_stats": self._on_stats,
+                    "on_status": self._on_status,
+                    "on_new_message": self._on_new_message,
+                    "on_capture": self._on_capture,
+                })
+                self._on_log("info", "✅ 监控引擎创建成功")
+            except Exception as e:
+                self._on_log("error", f"❌ 引擎创建失败: {e}")
+                import traceback
+                self._on_log("error", traceback.format_exc()[-300:])
+                self.btn_start.configure(state="normal")
+                ctk.messagebox.showerror(
+                    "引擎创建失败",
+                    f"创建监控引擎失败: {e}\n\n请查看日志了解详情"
+                )
+                return
+
+            # 设置自动回复
+            auto_reply = self.config_data.get("auto_reply", {}).get("enabled", False)
+            self.engine.auto_reply_enabled = auto_reply
+            self._on_log("info", f"📢 自动回复: {'启用' if auto_reply else '禁用'}")
+
+            # 后台线程执行启动流程
+            self._on_log("info", "🚀 正在启动后台监控线程...")
+            threading.Thread(target=self._start_engine_thread, daemon=True).start()
+
+        except Exception as e:
+            self._on_log("error", f"❌ 启动过程异常: {e}")
+            import traceback
+            self._on_log("error", traceback.format_exc()[-500:])
+            self.btn_start.configure(state="normal")
+            ctk.messagebox.showerror(
+                "启动异常",
+                f"启动过程发生异常: {e}\n\n请查看日志了解详情"
+            )
 
     def _start_engine_thread(self):
-        """后台执行engine.start()，分步加载避免UI卡顿"""
+        """后台执行engine.start()，分步加载避免UI卡顿（修复版：增强错误处理）"""
         try:
+            self._on_log("info", "🔧 正在启动引擎...")
             self.engine.start()
+
+            # 启动成功后的处理
+            if self.engine.is_running():
+                self.after(0, lambda: [
+                    self.btn_stop.configure(state="normal"),
+                    self._on_log("info", "✅ 监控已成功启动！")
+                ])
+                # 启动自动统计刷新
+                self.after(1000, self._auto_refresh_stats)
+                self._on_log("info", "📊 自动刷新已启动（每10秒更新）")
+            else:
+                self.after(0, lambda: [
+                    self.btn_start.configure(state="normal"),
+                    self._on_log("error", "❌ 启动未成功，引擎状态异常")
+                ])
+
         except Exception as e:
-            self._on_log("error", f"启动失败: {e}")
-            self.after(0, lambda: self.btn_start.configure(state="normal"))
-            return
-        # start()内部失败会设置status=error但不抛异常，用is_running判断
-        if self.engine.is_running():
-            self.after(0, lambda: self.btn_stop.configure(state="normal"))
-        else:
-            self._on_log("error", "启动未成功，请检查日志中的错误信息")
-            self.after(0, lambda: self.btn_start.configure(state="normal"))
+            error_msg = f"启动异常: {e}"
+            self._on_log("error", f"❌ {error_msg}")
+            import traceback
+            self._on_log("error", f"完整堆栈：\n{traceback.format_exc()[-500:]}")
+
+            self.after(0, lambda: [
+                self.btn_start.configure(state="normal"),
+                self._on_log("warning", "💡 请检查：1.微信是否打开 2.配置是否正确 3.依赖是否完整")
+            ])
 
     def stop_monitoring(self):
         if self.engine:
-            self.engine.stop()
+            eng = self.engine
             self.engine = None
+            threading.Thread(target=eng.stop, daemon=True).start()
         self.btn_start.configure(state="normal")
         self.btn_stop.configure(state="disabled")
+        self._on_log("info", "已发送停止信号")
+
+    def _toggle_monitoring(self):
+        if self.engine and self.engine.is_running():
+            self.stop_monitoring()
+        else:
+            self.start_monitoring()
 
     def _show_wechat_window(self):
         """把屏幕外的微信恢复到桌面（窗口被隐藏后的一键找回）"""
@@ -2235,6 +2483,72 @@ class WeChatAIApp(ctk.CTk):
         if self.engine:
             self.engine.set_auto_reply(enabled)
         self._on_log("info", f"自动回复已{'开启' if enabled else '关闭'}")
+        try:
+            import yaml
+            config_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), self.config_path)
+            with open(config_path, "r", encoding="utf-8") as f:
+                raw = yaml.safe_load(f) or {}
+            raw.setdefault("auto_reply", {})["enabled"] = enabled
+            with open(config_path, "w", encoding="utf-8") as f:
+                yaml.dump(raw, f, allow_unicode=True, default_flow_style=False)
+            self._on_log("info", "自动回复状态已保存到配置文件")
+        except Exception as e:
+            self._on_log("warning", f"自动回复状态保存失败: {e}")
+
+    def _test_llm_connection(self):
+        base_url = self.entry_url.get().strip()
+        api_key = self.entry_key.get().strip()
+        model = self.entry_model.get().strip()
+
+        if not base_url:
+            self.llm_status_label.configure(text="❌ 请填写 API 地址", text_color=WC_COLORS["danger"])
+            return
+        if not api_key:
+            self.llm_status_label.configure(text="❌ 请填写 API Key", text_color=WC_COLORS["danger"])
+            return
+        if not model:
+            self.llm_status_label.configure(text="❌ 请填写模型名称", text_color=WC_COLORS["danger"])
+            return
+
+        self.llm_status_label.configure(text="⏳ 正在测试连接...", text_color=WC_COLORS["info"])
+        self.btn_test_llm.configure(state="disabled", text="测试中...")
+
+        def _do_test():
+            try:
+                from llm_client import LLMClient
+                llm_cfg = {
+                    "base_url": base_url,
+                    "api_key": api_key,
+                    "model": model,
+                    "max_tokens": 10,
+                    "temperature": 0.1,
+                    "provider": "custom",
+                    "thinking": False,
+                }
+                client = LLMClient(llm_cfg)
+                ok, msg = client.test_connection()
+                if ok:
+                    status_text = f"✅ {msg}"
+                    status_color = WC_COLORS["accent"]
+                else:
+                    status_text = f"❌ {msg}"
+                    status_color = WC_COLORS["danger"]
+            except Exception as e:
+                status_text = f"❌ 异常: {str(e)[:60]}"
+                status_color = WC_COLORS["danger"]
+
+            def _update_ui():
+                try:
+                    self.llm_status_label.configure(text=status_text, text_color=status_color)
+                    self.btn_test_llm.configure(state="normal", text="🔗 测试连接")
+                except Exception:
+                    pass
+            try:
+                self.after(0, _update_ui)
+            except Exception:
+                pass
+
+        threading.Thread(target=_do_test, daemon=True).start()
 
     def refresh_data(self):
         try:

@@ -346,38 +346,153 @@ class WeChatEngine:
 
     def _maybe_auto_reply(self, contact, content, sender, context=None):
         """自动回复（仅对方消息触发；自己的消息绝不回复）。
-        主循环轮询路径与红点路径共用——此前红点路径无回复逻辑，最小化模式下消息从不回复。"""
-        if sender == "me" or not self.auto_reply_enabled or not self.llm_client:
+        主循环轮询路径与红点路径共用——此前红点路径无回复逻辑，最小化模式下消息从不回复。
+
+        修复内容：
+        1. LLM客户端初始化检查和重试
+        2. API Key有效性验证
+        3. 多种发送模式自动切换
+        4. 增强错误处理和日志
+        """
+        # 增强调试日志
+        self._log("info", f"[自动回复检查] 联系人: {contact}, 发送者: {sender}, 内容: {content[:30]}...")
+        self._log("info", f"[自动回复检查] auto_reply_enabled: {self.auto_reply_enabled}, llm_client: {self.llm_client is not None}")
+
+        # 基础检查
+        if sender == "me":
+            self._log("debug", "[自动回复跳过] 发送者是本人")
             return
+        if not self.auto_reply_enabled:
+            self._log("debug", "[自动回复跳过] 自动回复未启用")
+            return
+
+        # LLM客户端检查和初始化
+        if not self.llm_client:
+            try:
+                self._log("warning", "[自动回复] LLM客户端未初始化，尝试重新初始化...")
+                self.llm_client = LLMClient(self.llm_config)
+
+                # 测试调用
+                test_role = {"name": "测试", "system_prompt": "测试", "reply_style": "简洁"}
+                test_reply = self.llm_client.generate_reply("测试", "你好", test_role, [])
+                if not test_reply:
+                    self._log("error", "[自动回复] LLM客户端测试失败，请检查API Key配置")
+                    return
+                self._log("info", "[自动回复] LLM客户端重新初始化成功")
+            except Exception as e:
+                self._log("error", f"[自动回复] LLM客户端初始化失败: {e}")
+                return
+
         try:
             role = self.role_manager.get_role_for(contact)
             self._log("info", f"[角色] {role['name']} ({role['reply_style']})")
+
             if not context:
                 context = []
+
+            # 生成回复
+            self._log("info", f"[自动回复] 正在生成回复...")
             reply = self.llm_client.generate_reply(contact, content, role, context)
             if not reply:
+                self._log("warning", "[自动回复] LLM未生成回复")
                 return
-            send_delay = self.auto_reply_config.get("send_delay", 0.5)
+
+            self._log("info", f"[生成回复] {reply[:80]}...")
+
+            # 发送延迟
+            send_delay = self.auto_reply_config.get("send_delay", 1.0)
+            self._log("info", f"[自动回复] 等待 {send_delay} 秒后发送...")
             time.sleep(send_delay)
-            from window_manager import is_window_offscreen
-            _is_offscreen = is_window_offscreen(self.window)
-            if _is_offscreen:
-                from sender import send_text_offscreen
-                success = send_text_offscreen(self.window, reply)
-            else:
-                focus_window(self.window)
-                time.sleep(0.2)
-                success = send_text(self.window, reply)
+
+            # 智能发送：尝试多种发送模式
+            self._log("info", f"[自动回复] 开始智能发送...")
+            success = self._smart_send_reply(reply)
             if success:
                 self.stats["replies_sent"] += 1
                 self.parser.add_to_context("assistant", reply)
                 self.parser.mark_reply_sent(reply)
                 self._log("info", f"[已回复] {reply[:50]}")
-                self._on_reply(contact, reply)
+                if self._on_reply:
+                    self._on_reply(contact, reply)
             else:
-                self._log("error", "[发送失败]")
+                self._log("error", "[发送失败] 所有发送方法均失败")
+
         except Exception as e:
             self._log("error", f"[自动回复] 异常: {e}")
+            import traceback
+            self._log("error", traceback.format_exc()[-200:])
+
+    def _smart_send_reply(self, reply: str) -> bool:
+        """智能发送回复 - 自动切换发送模式"""
+        if not reply or not reply.strip():
+            self._log("warning", "[智能发送] 回复内容为空")
+            return False
+
+        # 定义发送方法优先级
+        send_methods = [
+            ("clipboard", self._send_by_clipboard),
+            ("typing", self._send_by_typing),
+            ("offscreen", self._send_offscreen),
+        ]
+
+        methods_tried = []
+        for method_name, send_func in send_methods:
+            methods_tried.append(method_name)
+            self._log("info", f"[智能发送] 尝试方法: {method_name}")
+
+            try:
+                success = send_func(reply)
+                if success:
+                    self._log("info", f"[智能发送] 成功，使用方法: {method_name}")
+                    return True
+                else:
+                    self._log("warning", f"[智能发送] 方法 {method_name} 失败")
+            except Exception as e:
+                self._log("error", f"[智能发送] 方法 {method_name} 异常: {e}")
+
+        self._log("error", f"[智能发送] 所有方法均失败，已尝试: {methods_tried}")
+        return False
+
+    def _send_by_clipboard(self, reply: str) -> bool:
+        """剪贴板方式发送"""
+        try:
+            from window_manager import focus_window
+            from sender import send_text
+
+            focus_window(self.window)
+            time.sleep(0.2)
+            return send_text(self.window, reply)
+        except Exception as e:
+            self._log("error", f"[剪贴板发送] 失败: {e}")
+            return False
+
+    def _send_by_typing(self, reply: str) -> bool:
+        """打字方式发送（更慢但更可靠）"""
+        try:
+            from window_manager import focus_window
+            from sender import send_text_type_mode
+
+            focus_window(self.window)
+            time.sleep(0.2)
+            return send_text_type_mode(self.window, reply)
+        except Exception as e:
+            self._log("error", f"[打字发送] 失败: {e}")
+            return False
+
+    def _send_offscreen(self, reply: str) -> bool:
+        """屏幕外发送"""
+        try:
+            from window_manager import is_window_offscreen
+            from sender import send_text_offscreen
+
+            if is_window_offscreen(self.window):
+                return send_text_offscreen(self.window, reply)
+            else:
+                self._log("warning", "[屏幕外发送] 窗口不在屏幕外模式")
+                return False
+        except Exception as e:
+            self._log("error", f"[屏幕外发送] 失败: {e}")
+            return False
 
     def _dedup_ocr_by_position(self, ocr_results):
         """位置桶去抖：同位置桶+文本相似度>=0.9 的 OCR 行合并为一条（保留置信高者）。
@@ -581,9 +696,6 @@ class WeChatEngine:
                 self._log("info", "[屏幕外] 停止监控：窗口已恢复到原始位置")
         except Exception:
             pass
-
-        if self._thread and self._thread.is_alive():
-            self._thread.join(timeout=3)
 
         if self.storage and self.storage_config.get("export_on_exit"):
             try:
@@ -1402,9 +1514,7 @@ class WeChatEngine:
             whitelist = self.role_manager.config.get("contacts_filter", {}).get("whitelist", [])
             blacklist = self.role_manager.config.get("contacts_filter", {}).get("blacklist", [])
 
-            # 默认黑名单：服务号、订阅号等
-            default_blacklist = ["拼多多", "瑞幸咖啡", "美团", "饿了么", "滴滴", "抖音", "快手", "京东", "淘宝", "天猫"]
-            all_blacklist = list(set(blacklist + default_blacklist))
+            all_blacklist = list(blacklist)
 
             # 检查黑名单（支持通配符*）
             skip = False
@@ -1633,6 +1743,16 @@ class WeChatEngine:
             self._log("info", f"[红点] {new_contact}: 共识别 {len(unique_results)} 条文本")
 
             # AI训练引擎辅助识别新消息
+             # 二次黑名单检查：侧边栏OCR可能只提取部分联系人名，用聊天内容再检查
+            all_text = " ".join(str(r.get("text", "")) for r in unique_results)
+            for bl in all_blacklist:
+                if bl in all_text:
+                    self._log("info", f"[红点] 二次黑名单命中 '{bl}'，跳过: {new_contact}")
+                    self.red_dot_monitor.mark_processed(contact)
+                    skip = True
+                    break
+            if skip:
+                continue
             # 前10次：AI看截图+OCR判断哪些是新消息；10次后：纯规则判断
             if self.ai_trainer:
                 ai_result = self.ai_trainer.analyze(
@@ -1740,21 +1860,21 @@ class WeChatEngine:
                     # 自动回复（红点路径原本缺失 → 最小化模式下消息从不回复；己方消息上层自动拦截）
                     self._maybe_auto_reply(new_contact, content, _sender)
 
-                        # Obsidian同步
-                        if self.obsidian and self.obsidian.enabled:
-                            sync_data = {
-                                "contact": new_contact,
-                                "sender": extracted.get("sender", "other"),
-                                "content": extracted.get("raw_text", ""),
-                                "timestamp": extracted.get("timestamp", ""),
-                                "is_important": extracted.get("is_important", False),
-                                "importance_reason": extracted.get("importance_reason", ""),
-                                "keywords": extracted.get("matched_keywords", []),
-                                "summary": (extracted.get("llm_analysis", {}) or {}).get("summary", "") if isinstance(extracted.get("llm_analysis"), dict) else "",
-                            }
-                            self.obsidian.sync_message(sync_data)
+                # Obsidian同步
+                if self.obsidian and self.obsidian.enabled:
+                    sync_data = {
+                        "contact": new_contact,
+                        "sender": extracted.get("sender", "other"),
+                        "content": extracted.get("raw_text", ""),
+                        "timestamp": extracted.get("timestamp", ""),
+                        "is_important": extracted.get("is_important", False),
+                        "importance_reason": extracted.get("importance_reason", ""),
+                        "keywords": extracted.get("matched_keywords", []),
+                        "summary": (extracted.get("llm_analysis", {}) or {}).get("summary", "") if isinstance(extracted.get("llm_analysis"), dict) else "",
+                    }
+                    self.obsidian.sync_message(sync_data)
 
-                    self._on_extract(extracted)
+                self._on_extract(extracted)
 
             # 标记已处理（真正处理成功才进冷却，并清零重试计数）
             self.red_dot_monitor.mark_processed(contact)
