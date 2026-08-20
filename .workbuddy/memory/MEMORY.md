@@ -30,3 +30,7 @@
 - 微信有多个 `Qt51514QWindowIcon` 窗口，查找主窗要用 GetWindowPlacement 还原尺寸过滤（辅助小窗仅 ~237x56）。
 - `window_manager.find_wechat_window` 可能误匹配标题含"wechat/微信"的浏览器标签页（Edge/Chrome_WidgetWin_1）。
 - 改完代码必须重启 `ui_app.py` 才生效（旧进程缓存旧模块）。
+
+## 用户约定
+- **每次更新代码前/后都要先 git 提交**（用户明确要求）。
+- 用户沟通偏好：极简指令式（"重新""修改p0"），给结论+可执行改法，不要长篇铺垫。

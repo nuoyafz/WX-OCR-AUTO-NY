@@ -854,6 +854,13 @@ class WeChatEngine:
                     group_members = list(members)
                     for r in ocr_results:
                         r["chat_kind"] = final_kind
+                    # P1 修复：增量（前台）路径算出的群聊类型必须回写全局状态，
+                    # 否则 current_chat_kind 永远是初始标题判定值，前台模式群聊判定不生效
+                    if final_kind == "group":
+                        current_chat_kind = "group"
+                        current_group_members.update(group_members)
+                    elif final_kind == "personal":
+                        current_chat_kind = "personal"
                 else:
                     # 最小化模式 或 无增量检测：使用V3完整识别（含群聊/成员+senderV4）
                     if _is_min:
@@ -1138,7 +1145,7 @@ class WeChatEngine:
                                                   min_confidence=ocr_min_conf,
                                                   merge_bubble=False, denoise=False)
                             if scan_ocr:
-                                scan_ocr = identify_senders(scan_ocr, scan_image)
+                                scan_ocr = identify_senders_v4(scan_ocr, scan_image)
                                 scan_result = self.parser.feed(scan_ocr)
                                 scan_msgs = scan_result["new_messages"]
                                 self._log("info", f"[轮询] {contact_name}: 识别到 {len(scan_msgs)} 条新消息")
@@ -1465,8 +1472,8 @@ class WeChatEngine:
                     self._click_retry_counts[contact] = 0
                 continue
 
-            # 发送者判断（identify_senders 已做位置+颜色综合判断）
-            all_ocr_results = identify_senders(all_ocr_results, image)
+            # 发送者判断（P2：升级为 V4，强化自己消息识别，避免自己发的消息被当成对方新消息）
+            all_ocr_results = identify_senders_v4(all_ocr_results, image)
 
             # 保守兜底：只在极端位置强制修正（屏幕外截图比例正常）
             img_w = image.shape[1] if image is not None else 800
