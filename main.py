@@ -234,6 +234,9 @@ class WeChatEngine:
                     payload["category"] = "、".join(cats)
             # 补充提取器注入的群聊字段（万一上游没赋值）
             payload.setdefault("chat_kind", extracted.get("chat_kind"))
+            # 分类优先级规则结果（classification / priority）
+            payload["classification"] = extracted.get("classification", "") or ""
+            payload["priority"] = extracted.get("priority", 0) or 0
 
         try:
             self._on_new_message(payload)
@@ -272,6 +275,12 @@ class WeChatEngine:
         time.sleep(0.3)
         self.extractor = InfoExtractor(self.extraction_config, self.llm_config)
         self._log("info", "  ✔ 信息提取引擎就绪")
+
+    def update_classification(self, categories):
+        """UI 分类规则编辑后，实时更新 extractor 的分类优先级（无需重启）"""
+        if self.extractor and hasattr(self.extractor, "set_classification"):
+            self.extractor.set_classification(categories)
+            self._log("info", f"[分类] 已更新分类规则，共 {len(categories)} 类")
         time.sleep(0.4)
 
         # 步骤4：数据存储

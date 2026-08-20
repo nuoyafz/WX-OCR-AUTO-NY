@@ -13,8 +13,11 @@ except Exception:
 功能：信息提取监控 / 自动回复开关 / 数据查看 / 设置
 """
 import os
+import re
+import json
 import threading
 import time
+import yaml
 import customtkinter as ctk
 from tkinter import messagebox, filedialog
 from datetime import datetime
@@ -569,6 +572,8 @@ class WeChatAIApp(ctk.CTk):
         is_self = (sender == "me")
         is_group = bool(m.get("is_group", False))
         group_member = m.get("group_member") or None
+        cls = m.get("classification", "") or ""
+        pri = m.get("priority", 0) or 0
 
         row = ctk.CTkFrame(parent, fg_color=WC_COLORS["bg"])
 
@@ -605,6 +610,13 @@ class WeChatAIApp(ctk.CTk):
                 font=ctk.CTkFont(size=9),
                 text_color=WC_COLORS["text_muted2"])
             time_lbl.pack(side="left", padx=(0, 6), pady=(20, 0), anchor="s")
+
+            if cls:
+                cls_chip = ctk.CTkLabel(
+                    text_col, text=f"🗂 {cls}{(' P' + str(int(pri))) if pri else ''}",
+                    font=ctk.CTkFont(size=10, weight="bold"),
+                    text_color="#FFFFFF", fg_color=WC_COLORS["info"])
+                cls_chip.pack(side="left", padx=(0, 6), pady=(20, 0), anchor="s")
 
             wrap = ctk.CTkFrame(text_col, fg_color="transparent")
             wrap.pack(side="left", fill="y")
@@ -650,6 +662,13 @@ class WeChatAIApp(ctk.CTk):
                 font=ctk.CTkFont(size=9),
                 text_color=WC_COLORS["text_muted2"])
             time_lbl.pack(side="left", padx=(6, 0), pady=(20, 0), anchor="s")
+
+            if cls:
+                cls_chip = ctk.CTkLabel(
+                    text_col, text=f"🗂 {cls}{(' P' + str(int(pri))) if pri else ''}",
+                    font=ctk.CTkFont(size=10, weight="bold"),
+                    text_color="#FFFFFF", fg_color=WC_COLORS["info"])
+                cls_chip.pack(side="left", padx=(6, 0), pady=(20, 0), anchor="s")
 
             if is_important:
                 star = ctk.CTkLabel(text_col, text="⭐",
@@ -819,6 +838,190 @@ class WeChatAIApp(ctk.CTk):
         )
         self.data_text.grid(row=0, column=0, sticky="nsew", padx=8, pady=8)
 
+    # ==============================================================
+    # 分类优先级规则编辑
+    # ==============================================================
+    def _load_classification_cats(self):
+        """读取分类规则（优先引擎实例，否则 config），转为编辑用结构。"""
+        cats = []
+        src = None
+        if getattr(self, "engine", None) and getattr(self.engine, "extractor", None):
+            src = self.engine.extractor.classification_categories
+        if not src:
+            src = (((self.config_data or {}).get("extraction", {}) or {})
+                   .get("classification", {}) or {}).get("categories", [])
+        for c in src or []:
+            kws = c.get("keywords", [])
+            if isinstance(kws, list):
+                kws = ", ".join(kws)
+            cats.append({
+                "name": str(c.get("name", "")),
+                "priority": int(c.get("priority", 0)),
+                "important": bool(c.get("important", False)),
+                "keywords": str(kws),
+            })
+        if not cats:
+            cats = [{"name": "工作", "priority": 3, "important": True, "keywords": ""},
+                    {"name": "私事", "priority": 2, "important": False, "keywords": ""},
+                    {"name": "群聊", "priority": 1, "important": False, "keywords": ""}]
+        return cats
+
+    def _render_classification_rows(self):
+        for w in self.cls_list_frame.winfo_children():
+            try:
+                w.destroy()
+            except Exception:
+                pass
+        for idx, cat in enumerate(self._classification_cats):
+            row = ctk.CTkFrame(self.cls_list_frame, fg_color="transparent")
+            row.pack(fill="x", pady=3)
+            name_e = ctk.CTkEntry(row, width=90, font=ctk.CTkFont(size=12))
+            name_e.insert(0, cat["name"])
+            name_e.pack(side="left", padx=4)
+            pri_e = ctk.CTkEntry(row, width=50, font=ctk.CTkFont(size=12))
+            pri_e.insert(0, str(cat["priority"]))
+            pri_e.pack(side="left", padx=4)
+            imp_var = ctk.BooleanVar(value=bool(cat["important"]))
+            imp_sw = ctk.CTkSwitch(row, text="重要", variable=imp_var, width=64)
+            if cat["important"]:
+                imp_sw.select()
+            imp_sw.pack(side="left", padx=4)
+            kw_e = ctk.CTkEntry(row, width=300, font=ctk.CTkFont(size=12))
+            kw_e.insert(0, str(cat["keywords"]))
+            kw_e.pack(side="left", padx=4, fill="x", expand=True)
+            del_btn = ctk.CTkButton(
+                row, text="✕", width=30, fg_color=WC_COLORS["danger"],
+                command=lambda i=idx: self._del_classification_cat(i))
+            del_btn.pack(side="left", padx=4)
+            cat["_widgets"] = (name_e, pri_e, imp_var, imp_sw, kw_e)
+
+    def _add_classification_cat(self):
+        self._classification_cats.append(
+            {"name": "新分类", "priority": 1, "important": False, "keywords": ""})
+        self._render_classification_rows()
+
+    def _del_classification_cat(self, i):
+        if 0 <= i < len(self._classification_cats):
+            self._classification_cats.pop(i)
+            self._render_classification_rows()
+
+    def _collect_classification_cats(self):
+        cats = []
+        for cat in self._classification_cats:
+            w = cat.get("_widgets")
+            if not w:
+                continue
+            name_e, pri_e, imp_var, imp_sw, kw_e = w
+            name = name_e.get().strip()
+            if not name:
+                continue
+            try:
+                pri = int(pri_e.get().strip() or "0")
+            except ValueError:
+                pri = 0
+            kws_raw = kw_e.get().strip()
+            kws = [k.strip() for k in kws_raw.replace("，", ",").split(",") if k.strip()]
+            cats.append({
+                "name": name, "priority": pri,
+                "important": bool(imp_var.get()), "keywords": kws,
+            })
+        return cats
+
+    def _save_classification_rules(self):
+        try:
+            cats = self._collect_classification_cats()
+            cfg_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "config.yaml")
+            with open(cfg_path, "r", encoding="utf-8") as f:
+                text = f.read()
+            # 保留原有的 enabled 开关；若不存在则默认 true
+            current_enabled = True
+            cls_re = re.compile(
+                r"(?m)^  classification:.*?(?=\n  [a-zA-Z_][a-zA-Z0-9_]*:|\Z)", re.DOTALL)
+            cls_m = cls_re.search(text)
+            if cls_m:
+                em = re.search(r"(?m)^    enabled:\s*(\w+)", cls_m.group(0))
+                if em:
+                    current_enabled = em.group(1).strip().lower() == "true"
+            # 仅替换 categories 列表，保留 classification: 头、enabled 行及注释
+            cat_lines = ["    categories:"]
+            for c in cats:
+                kws = c.get("keywords") or []
+                if isinstance(kws, list):
+                    kws_repr = "[" + ", ".join(kws) + "]" if kws else "[]"
+                else:
+                    kws_repr = str(kws)
+                cat_lines.append(f"    - name: {c.get('name', '')}")
+                cat_lines.append(f"      priority: {int(c.get('priority', 0))}")
+                cat_lines.append(f"      important: {'true' if c.get('important') else 'false'}")
+                cat_lines.append(f"      keywords: {kws_repr}")
+            new_cats = "\n".join(cat_lines)
+            cat_re = re.compile(
+                r"(?m)^    categories:.*?(?=\n  [a-zA-Z_][a-zA-Z0-9_]*:|\Z)", re.DOTALL)
+            m = cat_re.search(text)
+            if m:
+                text = text[:m.start()] + new_cats + text[m.end():]
+            elif cls_m:
+                # 无 categories 子键但存在 classification 段：在其后插入
+                text = (text[:cls_m.end()].rstrip("\n") + "\n" + new_cats + "\n"
+                        + text[cls_m.end():])
+            else:
+                # classification 段完全缺失：追加到文件末尾
+                text = text.rstrip("\n") + "\n  classification:\n    enabled: true\n" + new_cats + "\n"
+            with open(cfg_path, "w", encoding="utf-8") as f:
+                f.write(text)
+            self.config_data.setdefault("extraction", {})["classification"] = {
+                "enabled": current_enabled, "categories": cats}
+            if getattr(self, "engine", None) and hasattr(self.engine, "update_classification"):
+                self.engine.update_classification(cats)
+            self._on_log("info", f"[分类] 已保存 {len(cats)} 条分类规则并生效")
+            messagebox.showinfo("分类规则", "已保存并生效")
+        except Exception as e:
+            self._on_log("error", f"[分类] 保存失败: {e}")
+            messagebox.showerror("保存失败", str(e))
+
+    def _import_classification_rules(self):
+        filepath = filedialog.askopenfilename(
+            title="导入分类规则", filetypes=[("JSON", "*.json"), ("ALL", "*.*")])
+        if not filepath:
+            return
+        try:
+            with open(filepath, encoding="utf-8") as f:
+                data = json.load(f)
+            if isinstance(data, dict):
+                data = data.get("categories", [])
+            if not isinstance(data, list):
+                raise ValueError("格式应为分类数组")
+            cats = []
+            for c in data:
+                kws = c.get("keywords", [])
+                if isinstance(kws, list):
+                    kws = ", ".join(kws)
+                cats.append({
+                    "name": str(c.get("name", "")),
+                    "priority": int(c.get("priority", 0)),
+                    "important": bool(c.get("important", False)),
+                    "keywords": str(kws),
+                })
+            self._classification_cats = cats
+            self._render_classification_rows()
+            self._on_log("info", f"[分类] 已导入 {len(cats)} 条规则（点“保存并生效”才会应用）")
+        except Exception as e:
+            messagebox.showerror("导入失败", str(e))
+
+    def _export_classification_rules(self):
+        try:
+            cats = self._collect_classification_cats()
+            filepath = filedialog.asksaveasfilename(
+                title="导出分类规则", defaultextension=".json",
+                filetypes=[("JSON", "*.json")])
+            if not filepath:
+                return
+            with open(filepath, "w", encoding="utf-8") as f:
+                json.dump({"categories": cats}, f, ensure_ascii=False, indent=2)
+            self._on_log("info", f"[分类] 已导出 {len(cats)} 条规则到 {filepath}")
+        except Exception as e:
+            messagebox.showerror("导出失败", str(e))
+
     def _build_settings_tab(self):
         tab = self.tab_settings
         tab.grid_columnconfigure(0, weight=1)
@@ -947,6 +1150,31 @@ class WeChatAIApp(ctk.CTk):
 
         ctk.CTkButton(report_btn_frame, text="打开报告目录",
                       command=self._open_report_dir).pack(side="left", padx=5)
+
+        # 分类优先级规则
+        cls_frame = ctk.CTkFrame(scroll, fg_color=WC_COLORS["card"], corner_radius=8)
+        cls_frame.pack(fill="x", padx=20, pady=10)
+        ctk.CTkLabel(cls_frame, text="📑 分类优先级规则",
+                     font=ctk.CTkFont(size=14, weight="bold"),
+                     text_color=WC_COLORS["text"]).pack(anchor="w", padx=15, pady=(10, 2))
+        ctk.CTkLabel(cls_frame, text="为消息归类并设定优先级（工作/私事/群聊…）。命中 important 的类即标记为重要消息；群聊无需关键词，按会话类型自动归类。",
+                     font=ctk.CTkFont(size=11), text_color="gray").pack(anchor="w", padx=15)
+
+        self._classification_cats = self._load_classification_cats()
+        self.cls_list_frame = ctk.CTkFrame(cls_frame, fg_color="transparent")
+        self.cls_list_frame.pack(fill="x", padx=10, pady=5)
+        self._render_classification_rows()
+
+        cls_btn_frame = ctk.CTkFrame(cls_frame, fg_color="transparent")
+        cls_btn_frame.pack(fill="x", padx=15, pady=(5, 12))
+        ctk.CTkButton(cls_btn_frame, text="＋ 新增分类", width=110,
+                      command=self._add_classification_cat).pack(side="left", padx=5)
+        ctk.CTkButton(cls_btn_frame, text="保存并生效", width=110,
+                      command=self._save_classification_rules).pack(side="left", padx=5)
+        ctk.CTkButton(cls_btn_frame, text="导入规则", width=110,
+                      command=self._import_classification_rules).pack(side="left", padx=5)
+        ctk.CTkButton(cls_btn_frame, text="导出规则", width=110,
+                      command=self._export_classification_rules).pack(side="left", padx=5)
 
         # LLM设置
         llm_frame = ctk.CTkFrame(scroll, fg_color=WC_COLORS["card"], corner_radius=8)
@@ -1338,6 +1566,14 @@ class WeChatAIApp(ctk.CTk):
             if len(cats) > 3:
                 cat_text += f"+{len(cats)-3}"
             tags.append((f"🏷 {cat_text}", WC_COLORS["keyword"], "#FFFFFF"))
+        # 分类优先级规则（蓝色）：classification + priority
+        cls = msg_data.get("classification") or ""
+        if cls:
+            pri = msg_data.get("priority", 0) or 0
+            cls_text = f"🗂 {cls}"
+            if pri:
+                cls_text += f" P{int(pri)}"
+            tags.append((cls_text, WC_COLORS["info"], "#FFFFFF"))
         # 提取信息（蓝色）
         extracted = msg_data.get("extracted_fields") or msg_data.get("extracted")
         if extracted and isinstance(extracted, dict):

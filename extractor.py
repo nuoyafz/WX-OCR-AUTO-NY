@@ -47,7 +47,24 @@ class InfoExtractor:
                 })
             except Exception as e:
                 logger.warning(f"自定义正则编译失败: {rx_rule.get('name', '?')} - {e}")
-        
+
+        # 加载分类优先级规则（classification）
+        self.classification_enabled = True
+        self.classification_categories = []
+        cls_cfg = extraction_config.get("classification", {}) if extraction_config else {}
+        if cls_cfg:
+            self.classification_enabled = bool(cls_cfg.get("enabled", True))
+            for c in cls_cfg.get("categories", []):
+                kws = c.get("keywords", [])
+                if isinstance(kws, str):
+                    kws = [k.strip() for k in kws.split(",") if k.strip()]
+                self.classification_categories.append({
+                    "name": c.get("name", "未命名"),
+                    "priority": int(c.get("priority", 0)),
+                    "important": bool(c.get("important", False)),
+                    "keywords": kws or [],
+                })
+
         if self.custom_keywords or self.custom_regex:
             logger.info(f"已加载 {len(self.custom_keywords)} 组自定义关键词, {len(self.custom_regex)} 个自定义正则")
     def _compile_regex_rules(self, rules):
@@ -63,6 +80,41 @@ class InfoExtractor:
                 logger.warning(f"正则规则编译失败 {rule.get('name', '?')}: {e}")
         return compiled
 
+    def set_classification(self, categories):
+        """UI 实时更新分类优先级规则（不重建 extractor）"""
+        self.classification_categories = []
+        for c in categories or []:
+            kws = c.get("keywords", [])
+            if isinstance(kws, str):
+                kws = [k.strip() for k in kws.split(",") if k.strip()]
+            self.classification_categories.append({
+                "name": c.get("name", "未命名"),
+                "priority": int(c.get("priority", 0)),
+                "important": bool(c.get("important", False)),
+                "keywords": kws or [],
+            })
+
+    def _classify(self, text, extra=None):
+        """按分类优先级规则归类，返回按 priority 降序的命中类别列表（最高优先级在前）。"""
+        if not self.classification_enabled or not self.classification_categories:
+            return []
+        chat_kind = (extra or {}).get("chat_kind")
+        matched = []
+        for cat in self.classification_categories:
+            kws = cat.get("keywords") or []
+            hit = any(kw and kw in text for kw in kws) if kws else False
+            # 无关键词的结构性类别（如“群聊”）：会话为群聊时自动命中（无需关键词）
+            if not hit and not kws and chat_kind == "group":
+                hit = True
+            if hit:
+                matched.append({
+                    "name": cat.get("name", "未命名"),
+                    "priority": int(cat.get("priority", 0)),
+                    "important": bool(cat.get("important", False)),
+                })
+        matched.sort(key=lambda c: c["priority"], reverse=True)
+        return matched
+
     def extract(self, text, sender="other", contact_name="", timestamp=None, extra=None):
         if timestamp is None:
             timestamp = datetime.now()
@@ -77,6 +129,8 @@ class InfoExtractor:
             "regex_extracts": {},
             "is_important": False,
             "importance_reason": "",
+            "classification": "",
+            "priority": 0,
         }
 
         matched_cats, matched_kws = self._match_keywords(text)
@@ -109,6 +163,20 @@ class InfoExtractor:
                     if rule["important"]:
                         result["is_important"] = True
                         result["importance_reason"] = result["importance_reason"] or f"自定义关键词: {word}"
+
+        # —— 分类优先级（classification）：归类 + 优先级 + 重要判定 ——
+        cls_hits = self._classify(text, extra)
+        if cls_hits:
+            for c in cls_hits:
+                if c["name"] not in result["keyword_categories"]:
+                    result["keyword_categories"].append(c["name"])
+            top = cls_hits[0]  # 已按 priority 降序，取最高优先级
+            result["classification"] = top["name"]
+            result["priority"] = top["priority"]
+            if top["important"]:
+                if not result["is_important"]:
+                    result["is_important"] = True
+                    result["importance_reason"] = f"分类命中: {top['name']}"
 
         # 自定义正则提取
         for rx in self.custom_regex:
