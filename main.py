@@ -275,12 +275,6 @@ class WeChatEngine:
         time.sleep(0.3)
         self.extractor = InfoExtractor(self.extraction_config, self.llm_config)
         self._log("info", "  ✔ 信息提取引擎就绪")
-
-    def update_classification(self, categories):
-        """UI 分类规则编辑后，实时更新 extractor 的分类优先级（无需重启）"""
-        if self.extractor and hasattr(self.extractor, "set_classification"):
-            self.extractor.set_classification(categories)
-            self._log("info", f"[分类] 已更新分类规则，共 {len(categories)} 类")
         time.sleep(0.4)
 
         # 步骤4：数据存储
@@ -309,7 +303,7 @@ class WeChatEngine:
             self._log("info", "  ✔ 红点监控器未启用")
         time.sleep(0.4)
 
-        # 步骤6：AI训练引擎（前10次AI辅助学习，之后纯规则模式）
+        # 步骤6：AI训练引擎
         self._log("info", "[6/6] 正在初始化AI训练引擎...")
         time.sleep(0.3)
         ai_threshold = self.wechat_config.get("ai_training_threshold", 10)
@@ -318,27 +312,29 @@ class WeChatEngine:
         self._log("info", f"  ✔ AI训练引擎就绪 (学习进度 {progress['current']}/{ai_threshold})")
         time.sleep(0.4)
 
-        self._log("info", "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-        self._log("info", "✔ 全部模块初始化完成，准备开始监控")
-        self._log("info", "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+        self._log("info", "===== 全部模块初始化完成，准备开始监控 =====")
 
-        # ★ 根据微信状态自适应（尊重用户选择）：
-        #   - 微信在桌面(非最小化) → 保持原位，监控用PrintWindow后台截图，不打扰用户
-        #   - 微信已最小化 → 移到屏幕外，后台监控（桌面消失，点任务栏图标可恢复）
+        # 根据微信状态自适应
         if self.minimize_mode == "offscreen" and self.window is not None:
             try:
                 from window_manager import is_window_minimized, move_window_offscreen
                 if is_window_minimized(self.window):
                     if move_window_offscreen(self.window):
-                        self._log("info", "[屏幕外] 微信已最小化 → 移到屏幕外后台监控（点任务栏图标可恢复）")
+                        self._log("info", "[屏幕外] 微信已最小化 -> 移到屏幕外后台监控")
                     else:
-                        self._log("warning", "[屏幕外] 移出屏幕失败，微信保持当前状态")
+                        self._log("warning", "[屏幕外] 移出屏幕失败")
                 else:
-                    self._log("info", "[监控] 微信在桌面(未最小化)，保持原位监控，不移动窗口")
+                    self._log("info", "[监控] 微信在桌面，保持原位监控")
             except Exception as e:
                 self._log("warning", f"[屏幕外] 初始化移屏异常: {e}")
 
         return True
+
+    def update_classification(self, categories):
+        """UI 分类规则编辑后，实时更新 extractor 的分类优先级（无需重启）"""
+        if self.extractor and hasattr(self.extractor, "set_classification"):
+            self.extractor.set_classification(categories)
+            self._log("info", f"[分类] 已更新分类规则，共 {len(categories)} 类")
 
     def _get_valid_hwnd(self):
         """获取有效的微信窗口句柄（统一入口）"""
