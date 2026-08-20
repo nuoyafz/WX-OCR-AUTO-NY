@@ -506,12 +506,12 @@ OCR识别结果：
             else:
                 sender = "other"
 
-            if sender == "other":
-                new_messages.append({
-                    "text": text,
-                    "sender": sender,
-                    "reason": f"规则判断(x={x_ratio:.1%})"
-                })
+            # 自己消息也保留上报（与主循环一致：进UI/存储，自动回复由上层按 sender 拦截）
+            new_messages.append({
+                "text": text,
+                "sender": sender,
+                "reason": f"规则判断(x={x_ratio:.1%})"
+            })
 
         return {"new_messages": new_messages, "rules_learned": {}}
 

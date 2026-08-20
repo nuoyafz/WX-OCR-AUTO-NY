@@ -344,6 +344,41 @@ class WeChatEngine:
             self.extractor.set_classification(categories)
             self._log("info", f"[分类] 已更新分类规则，共 {len(categories)} 类")
 
+    def _maybe_auto_reply(self, contact, content, sender, context=None):
+        """自动回复（仅对方消息触发；自己的消息绝不回复）。
+        主循环轮询路径与红点路径共用——此前红点路径无回复逻辑，最小化模式下消息从不回复。"""
+        if sender == "me" or not self.auto_reply_enabled or not self.llm_client:
+            return
+        try:
+            role = self.role_manager.get_role_for(contact)
+            self._log("info", f"[角色] {role['name']} ({role['reply_style']})")
+            if not context:
+                context = []
+            reply = self.llm_client.generate_reply(contact, content, role, context)
+            if not reply:
+                return
+            send_delay = self.auto_reply_config.get("send_delay", 0.5)
+            time.sleep(send_delay)
+            from window_manager import is_window_offscreen
+            _is_offscreen = is_window_offscreen(self.window)
+            if _is_offscreen:
+                from sender import send_text_offscreen
+                success = send_text_offscreen(self.window, reply)
+            else:
+                focus_window(self.window)
+                time.sleep(0.2)
+                success = send_text(self.window, reply)
+            if success:
+                self.stats["replies_sent"] += 1
+                self.parser.add_to_context("assistant", reply)
+                self.parser.mark_reply_sent(reply)
+                self._log("info", f"[已回复] {reply[:50]}")
+                self._on_reply(contact, reply)
+            else:
+                self._log("error", "[发送失败]")
+        except Exception as e:
+            self._log("error", f"[自动回复] 异常: {e}")
+
     def _dedup_ocr_by_position(self, ocr_results):
         """位置桶去抖：同位置桶+文本相似度>=0.9 的 OCR 行合并为一条（保留置信高者）。
         抑制同一消息每帧 OCR 抖动产生的近似重复；不同文本同桶（滚动后新内容）保留。"""
@@ -1172,33 +1207,7 @@ class WeChatEngine:
                         self._on_extract(extracted)
 
                     # === 自动回复（只对方消息触发；自己的绝对不回复，避免 AI 复读自己） ===
-                    if _sender != "me" and self.auto_reply_enabled and self.llm_client:
-                        role = self.role_manager.get_role_for(contact_name)
-                        self._log("info", f"[角色] {role['name']} ({role['reply_style']})")
-
-                        reply = self.llm_client.generate_reply(
-                            contact_name, content, role, context
-                        )
-                        if reply:
-                            time.sleep(send_delay)
-
-                            from window_manager import is_window_offscreen
-                            _is_offscreen = is_window_offscreen(self.window)
-                            if _is_offscreen:
-                                from sender import send_text_offscreen
-                                success = send_text_offscreen(self.window, reply)
-                            else:
-                                focus_window(self.window)
-                                time.sleep(0.2)
-                                success = send_text(self.window, reply)
-                            if success:
-                                self.stats["replies_sent"] += 1
-                                self.parser.add_to_context("assistant", reply)
-                                self.parser.mark_reply_sent(reply)
-                                self._log("info", f"[已回复] {reply[:50]}")
-                                self._on_reply(contact_name, reply)
-                            else:
-                                self._log("error", "[发送失败]")
+                    self._maybe_auto_reply(contact_name, content, _sender, context)
 
                 self._on_stats()
 
@@ -1727,6 +1736,9 @@ class WeChatEngine:
 
                     if self.storage:
                         self.storage.save(extracted)
+
+                    # 自动回复（红点路径原本缺失 → 最小化模式下消息从不回复；己方消息上层自动拦截）
+                    self._maybe_auto_reply(new_contact, content, _sender)
 
                         # Obsidian同步
                         if self.obsidian and self.obsidian.enabled:

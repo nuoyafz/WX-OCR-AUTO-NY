@@ -1901,11 +1901,19 @@ class WeChatAIApp(ctk.CTk):
         refresh_btn.pack(pady=5)
 
     def _refresh_stats(self):
-        if hasattr(self, 'engine') and self.engine and self.engine.get_storage():
-            stats = self.engine.get_storage().get_stats()
-            self.stats_labels["总消息"].configure(text=str(stats.get("total", 0)))
-            self.stats_labels["重要消息"].configure(text=str(stats.get("important", 0)))
-            self.stats_labels["联系人数"].configure(text=str(stats.get("contacts", 0)))
+        """刷新数据统计面板（5 行：总消息/重要/联系人/提取信息/今日消息）"""
+        try:
+            if hasattr(self, 'engine') and self.engine:
+                if self.engine.get_storage():
+                    stats = self.engine.get_storage().get_stats()
+                    self.stats_labels["总消息"].configure(text=str(stats.get("total_messages", 0)))
+                    self.stats_labels["重要消息"].configure(text=str(stats.get("important_messages", 0)))
+                    self.stats_labels["联系人数"].configure(text=str(stats.get("total_contacts", 0)))
+                eng_stats = self.engine.get_stats()
+                self.stats_labels["提取信息"].configure(text=str(eng_stats.get("extracted", 0)))
+                self.stats_labels["今日消息"].configure(text=str(eng_stats.get("messages_detected", 0)))
+        except Exception as e:
+            self._on_log("warning", f"[统计] 刷新失败: {e}")
 
     def _toggle_advanced_settings(self):
         if self.advanced_settings_var.get():
