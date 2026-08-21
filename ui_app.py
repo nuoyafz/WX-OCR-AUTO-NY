@@ -2310,6 +2310,51 @@ class WeChatAIApp(ctk.CTk):
                     "API模式需要在Obsidian中安装'Local REST API'插件。",
                     font=ctk.CTkFont(size=11)).pack(anchor="w", padx=15, pady=(0, 10))
 
+        # ===== V4 高级功能开关 =====
+        adv = self.config_data.get("obsidian", {}).get("advanced", {})
+        filt = self.config_data.get("obsidian", {}).get("filter", {})
+
+        self.obs_adv_vars = {}
+        adv_items = [
+            ("enable_bidirectional_links", "双向内部链接 ([[联系人]]/[[日期]])"),
+            ("enable_tags", "元标签自动生成 (#微信-广告 等)"),
+            ("enable_read", "读取Obsidian知识库作为AI回复上下文"),
+            ("enable_tasks", "Tasks 待办聚合块"),
+            ("enable_profile", "联系人画像独立笔记"),
+            ("enable_summary", "AI 会话摘要"),
+            ("enable_dataview", "笔记底部附 Dataview 查询片段"),
+            ("enable_canvas", "自动维护社交图谱 Canvas"),
+            ("enable_webhook", "写入后触发 webhook 回调"),
+        ]
+        ctk.CTkLabel(obsidian_frame, text="高级联动功能:",
+                     font=ctk.CTkFont(size=12, weight="bold")).pack(anchor="w", padx=15, pady=(8, 2))
+        for key, label in adv_items:
+            var = ctk.BooleanVar(value=adv.get(key, True if key not in ("enable_read", "enable_canvas", "enable_webhook") else False))
+            ctk.CTkSwitch(obsidian_frame, text=label, variable=var).pack(anchor="w", padx=25, pady=1)
+            self.obs_adv_vars[key] = var
+
+        # webhook URL
+        ctk.CTkLabel(obsidian_frame, text="Webhook URL:").pack(anchor="w", padx=15, pady=(6, 0))
+        self.obs_webhook_entry = ctk.CTkEntry(obsidian_frame, width=400,
+                                              placeholder_text="https://your-n8n-or-script-endpoint")
+        self.obs_webhook_entry.pack(fill="x", padx=15, pady=2)
+        if adv.get("webhook_url"):
+            self.obs_webhook_entry.insert(0, adv.get("webhook_url"))
+
+        # 过滤规则
+        ctk.CTkLabel(obsidian_frame, text="同步过滤规则:",
+                     font=ctk.CTkFont(size=12, weight="bold")).pack(anchor="w", padx=15, pady=(10, 2))
+        self.obs_filter_vars = {}
+        filt_items = [
+            ("skip_ads", "跳过广告消息"),
+            ("skip_low_priority", "低优先级(urgency<=1)不入库"),
+            ("only_tasks_or_urgent", "只同步待办/紧急消息"),
+        ]
+        for key, label in filt_items:
+            var = ctk.BooleanVar(value=filt.get(key, False))
+            ctk.CTkSwitch(obsidian_frame, text=label, variable=var).pack(anchor="w", padx=25, pady=1)
+            self.obs_filter_vars[key] = var
+
         # 保存按钮
         ctk.CTkButton(scroll, text="保存设置", width=120, height=36,
                       font=ctk.CTkFont(size=14, weight="bold"),
@@ -3457,6 +3502,11 @@ class WeChatAIApp(ctk.CTk):
                     self._on_log("info", "[上下文] 已挂载到自动回复引擎 (最近%d轮)" % self._context_max_turns)
                 except Exception as _e:
                     self._on_log("warning", "[上下文] 挂载到引擎失败: %s" % _e)
+                # V4: 绑定 Obsidian 写入失败弹窗告警
+                try:
+                    self.engine._on_obsidian_error_cb = self._on_obsidian_write_error
+                except Exception:
+                    pass
                 self._on_log("info", "✅ 监控引擎创建成功")
             except Exception as e:
                 self._on_log("error", f"❌ 引擎创建失败: {e}")
@@ -4002,6 +4052,18 @@ class WeChatAIApp(ctk.CTk):
         else:
             self._on_log("warning", f"[Obsidian] {msg}")
 
+    def _on_obsidian_write_error(self, msg):
+        """V4: Obsidian 写入失败 UI 弹窗告警（不静默吞掉）"""
+        try:
+            self._on_log("error", f"[Obsidian] 写入异常: {msg}")
+            ctk.messagebox.showwarning(
+                "Obsidian 同步失败",
+                f"写入 Obsidian 失败，消息可能未同步：\n\n{msg}\n\n"
+                f"请检查 Vault 路径是否正确、磁盘空间、或 Obsidian 是否被占用。"
+            )
+        except Exception:
+            pass
+
     def _rebuild_obsidian_vault(self):
         """重建Obsidian vault笔记"""
         if not self.engine or not self.engine.storage:
@@ -4076,6 +4138,14 @@ class WeChatAIApp(ctk.CTk):
             obsidian_cfg["auto_sync"] = self.obsidian_enabled_var.get()
             obsidian_cfg["api_url"] = self.obsidian_api_url_entry.get().strip()
             obsidian_cfg["api_key"] = self.obsidian_api_key_entry.get().strip()
+            # V4: 高级功能开关 + 过滤规则
+            _adv = obsidian_cfg.setdefault("advanced", {})
+            for k, v in self.obs_adv_vars.items():
+                _adv[k] = v.get()
+            _adv["webhook_url"] = self.obs_webhook_entry.get().strip()
+            _filt = obsidian_cfg.setdefault("filter", {})
+            for k, v in self.obs_filter_vars.items():
+                _filt[k] = v.get()
             self.config_data["obsidian"] = obsidian_cfg
 
             config_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), self.config_path)

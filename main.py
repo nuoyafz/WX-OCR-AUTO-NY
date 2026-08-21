@@ -92,9 +92,9 @@ class WeChatEngine:
         if self.smart_monitor:
             logger.info("增量检测引擎已启用（4层优化：帧间差异+区域裁剪+pHash去重+底部检测）")
 
-        # Obsidian同步
+        # Obsidian同步（V4：传入写入失败回调，供UI弹窗告警）
         obsidian_cfg = self.role_manager.config.get("obsidian", {})
-        self.obsidian = ObsidianSync(obsidian_cfg)
+        self.obsidian = ObsidianSync(obsidian_cfg, on_write_error=self._on_obsidian_error)
         if self.obsidian.enabled:
             self._log("info", "[Obsidian] 同步已启用")
 
@@ -188,6 +188,16 @@ class WeChatEngine:
                 self._on_new_message(message)
             except Exception as e:
                 logger.warning("[UI回调] on_new_message失败: %s", e)
+
+    def _on_obsidian_error(self, msg):
+        """V4: Obsidian 写入失败回调 —— 转发给 UI 弹窗告警（不静默吞掉）。"""
+        self._log("error", f"[Obsidian] {msg}")
+        cb = getattr(self, "_on_obsidian_error_cb", None)
+        if cb:
+            try:
+                cb(msg)
+            except Exception:
+                pass
 
     def _send_ui_card(self, contact, sender, content, timestamp,
                       extracted=None, is_important=False,
@@ -488,6 +498,18 @@ class WeChatEngine:
             if isinstance(context, dict):
                 context = dict(context)
                 context["__is_group__"] = True
+        # V4 P1: 读取 Obsidian 知识库作为 AI 回复上下文（个人记忆）
+        if self.obsidian and self.obsidian.enabled and self.obsidian.enable_read:
+            try:
+                kb_ctx = self.obsidian.read_contact_context(contact)
+                if kb_ctx:
+                    if context is None:
+                        context = {}
+                    if isinstance(context, dict):
+                        context = dict(context)
+                    context["__obsidian_kb__"] = kb_ctx
+            except Exception as _e:
+                self._log("debug", f"[Obsidian] 读取知识库失败: {_e}")
         threading.Thread(target=self._run_auto_reply_async,
                          args=(contact, content, sender, context),
                          daemon=True, name="auto-reply").start()
@@ -998,6 +1020,14 @@ class WeChatEngine:
                 self._log("info", "数据已自动导出CSV")
             except Exception as e:
                 self._log("error", f"导出CSV失败: {e}")
+
+        # V4: 退出前强制 flush Obsidian 写缓冲（避免丢消息）
+        if self.obsidian and self.obsidian.enabled:
+            try:
+                self.obsidian.flush_all()
+                self._log("info", "[Obsidian] 写缓冲已强制落盘")
+            except Exception as e:
+                self._log("error", f"[Obsidian] flush失败: {e}")
 
     def is_running(self):
         return self._running
@@ -1711,8 +1741,10 @@ class WeChatEngine:
 
                         self._store_extracted(extracted)
 
-                        # Obsidian同步（V3：最新消息在顶部 + 微信气泡Callout风格）
+                        # Obsidian同步（V4：结构化 Frontmatter + 双向链接 + 缓冲写入）
                         if self.obsidian and self.obsidian.enabled:
+                            _llm = extracted.get("llm_analysis", {}) or {}
+                            _llm = _llm if isinstance(_llm, dict) else {}
                             sync_data = {
                                 "contact": contact_name,
                                 "sender": extracted.get("sender", _sender),
@@ -1721,11 +1753,22 @@ class WeChatEngine:
                                 "is_important": extracted.get("is_important", False),
                                 "importance_reason": extracted.get("importance_reason", ""),
                                 "keywords": extracted.get("matched_keywords", []) or extracted.get("keywords", []),
-                                "summary": (extracted.get("llm_analysis", {}) or {}).get("summary", "") if isinstance(extracted.get("llm_analysis"), dict) else "",
+                                "summary": _llm.get("summary", ""),
                                 "is_group": (current_chat_kind == "group"),
                                 "group_member": _group_member,
                                 "chat_kind": current_chat_kind,
-                                "extracted_fields": extracted.get("extracted_fields") or extracted.get("fields"),
+                                "emotion": _llm.get("emotion", ""),
+                                "category": _llm.get("category", "") or extracted.get("classification", ""),
+                                "urgency": _llm.get("urgency", 0),
+                                "extracted_tasks": _llm.get("tasks", []) or extracted.get("extracted_tasks", []),
+                                "extracted_fields": {
+                                    "emotion": _llm.get("emotion", ""),
+                                    "category": _llm.get("category", "") or extracted.get("classification", ""),
+                                    "urgency": _llm.get("urgency", 0),
+                                    "is_ad": _llm.get("is_ad", False),
+                                    "negative_emotion": _llm.get("negative_emotion", False),
+                                    "tags": _llm.get("tags", []),
+                                },
                                 "ocr_confidence": _conf,
                                 "sender_confidence": _sender_conf,
                             }
@@ -2300,8 +2343,10 @@ class WeChatEngine:
                     self._maybe_auto_reply(new_contact, content, _sender,
                                            is_group=(_rk_kind == "group"))
 
-                    # Obsidian同步
+                    # Obsidian同步（V4）
                     if self.obsidian and self.obsidian.enabled:
+                        _llm = extracted.get("llm_analysis", {}) or {}
+                        _llm = _llm if isinstance(_llm, dict) else {}
                         sync_data = {
                             "contact": new_contact,
                             "sender": extracted.get("sender", "other"),
@@ -2310,7 +2355,19 @@ class WeChatEngine:
                             "is_important": extracted.get("is_important", False),
                             "importance_reason": extracted.get("importance_reason", ""),
                             "keywords": extracted.get("matched_keywords", []),
-                            "summary": (extracted.get("llm_analysis", {}) or {}).get("summary", "") if isinstance(extracted.get("llm_analysis"), dict) else "",
+                            "summary": _llm.get("summary", ""),
+                            "emotion": _llm.get("emotion", ""),
+                            "category": _llm.get("category", "") or extracted.get("classification", ""),
+                            "urgency": _llm.get("urgency", 0),
+                            "extracted_tasks": _llm.get("tasks", []) or extracted.get("extracted_tasks", []),
+                            "extracted_fields": {
+                                "emotion": _llm.get("emotion", ""),
+                                "category": _llm.get("category", "") or extracted.get("classification", ""),
+                                "urgency": _llm.get("urgency", 0),
+                                "is_ad": _llm.get("is_ad", False),
+                                "negative_emotion": _llm.get("negative_emotion", False),
+                                "tags": _llm.get("tags", []),
+                            },
                         }
                         self.obsidian.sync_message(sync_data)
 
