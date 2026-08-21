@@ -399,7 +399,20 @@ class WeChatEngine:
             if preview_mode:
                 self._log("info", f"[自动回复·预览] 待确认: {reply[:50]}")
                 if self._on_reply:
-                    self._on_reply(contact, reply)
+                    # V3 P0-5: 回调扩展为 dict payload（含状态/send_method/时间/上下文）
+                    try:
+                        self._on_reply({
+                            "contact": contact,
+                            "reply": reply,
+                            "status": "preview",
+                            "method": "preview_clipboard",
+                            "sent_ok": False,
+                            "timestamp": datetime.now().strftime("%H:%M"),
+                            "role": role or "",
+                        })
+                    except TypeError:
+                        # 兼容老签名：cb(contact, reply)
+                        self._on_reply(contact, reply)
                 # 粘贴到微信输入框但不发送
                 try:
                     from window_manager import focus_window
@@ -426,15 +439,41 @@ class WeChatEngine:
             # 智能发送：尝试多种发送模式
             self._log("info", f"[自动回复] 开始智能发送...")
             success = self._smart_send_reply(reply)
+            last_method = getattr(self, "_last_send_method", "unknown")
             if success:
                 self.stats["replies_sent"] += 1
                 self.parser.add_to_context("assistant", reply)
                 self.parser.mark_reply_sent(reply)
                 self._log("info", f"[已回复] {reply[:50]}")
                 if self._on_reply:
-                    self._on_reply(contact, reply)
+                    # V3 P0-5: 发送成功回执（UI气泡+Obsidian同步）
+                    try:
+                        self._on_reply({
+                            "contact": contact,
+                            "reply": reply,
+                            "status": "sent",
+                            "method": last_method,
+                            "sent_ok": True,
+                            "timestamp": datetime.now().strftime("%H:%M"),
+                            "role": role or "",
+                        })
+                    except TypeError:
+                        self._on_reply(contact, reply)
             else:
                 self._log("error", "[发送失败] 所有发送方法均失败")
+                if self._on_reply:
+                    try:
+                        self._on_reply({
+                            "contact": contact,
+                            "reply": reply,
+                            "status": "failed",
+                            "method": "all_failed",
+                            "sent_ok": False,
+                            "timestamp": datetime.now().strftime("%H:%M"),
+                            "role": role or "",
+                        })
+                    except TypeError:
+                        pass
 
         except Exception as e:
             self._log("error", f"[自动回复] 异常: {e}")
@@ -462,6 +501,7 @@ class WeChatEngine:
             try:
                 success = send_func(reply)
                 if success:
+                    self._last_send_method = method_name
                     self._log("info", f"[智能发送] 成功，使用方法: {method_name}")
                     return True
                 else:

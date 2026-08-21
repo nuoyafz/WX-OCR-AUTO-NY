@@ -1,4 +1,4 @@
-# === 敏感文件（绝对不能上传）===
+﻿# === 敏感文件（绝对不能上传）===
 config.yaml
 *.env
 .env
@@ -59,3 +59,11 @@ red_dot_template.png
 debug_no_reddot.png
 
 debug/preview/
+
+
+# === 备份文件（防止泄露）===
+config.yaml.*
+*.bak
+*.bak2
+*.bak3
+*.backup.*

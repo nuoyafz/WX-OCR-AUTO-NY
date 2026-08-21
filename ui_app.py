@@ -106,6 +106,16 @@ class WeChatAIApp(ctk.CTk):
         import queue
         self._capture_queue = queue.Queue(maxsize=2)
 
+        # ======================================================================
+        # V3 P0-1: 三栏会话切换 + 按会话过滤
+        #   _msg_rows_by_contact:   {contact: [(row_CTkFrame, msg_data), ...]}  最新在前
+        #   _contact_filter_all:    特殊键 "📋 全部会话"，显示所有
+        #   _active_contact:        当前过滤的 contact 或 _contact_filter_all
+        # ======================================================================
+        self._contact_filter_all = "📋 全部会话"
+        self._msg_rows_by_contact = {}           # contact -> list[(row_frame, msg_data)]（最新在前）
+        self._all_filtered = False                # 内部保护：避免循环调用
+
         self.title("NOYA Chat 微信助手")
         self.geometry("1100x720")
         self.minsize(1000, 650)
@@ -432,7 +442,7 @@ class WeChatAIApp(ctk.CTk):
         )
         self.contact_list_frame.grid(row=1, column=0, sticky="nsew", padx=0, pady=(4, 0))
 
-        # 会话卡片集合 {contact: (frame, title_lbl, preview_lbl, dot_lbl, badge_lbl)}
+        # 会话卡片集合 {contact: info_dict}
         self._contact_cards = {}
         self._active_contact = None
         # 按联系人划分的消息池：contact -> [msg_data, ...]，最新在前（索引0）。
@@ -458,12 +468,88 @@ class WeChatAIApp(ctk.CTk):
                         is_group=is_group,
                         unread=0, active=False
                     )
-            self.after(200, self._rebuild_message_list)
 
-        # 初始占位会话卡（仅在无历史时显示）
-        if not self._messages_store:
-            self._append_contact_card("会话名称", "启动监控后自动汇聚会话…",
-                                      is_group=False, unread=0, active=False)
+        # V3 P0-1: 顶部系统卡"📋 全部会话"（永远存在，点击显示所有会话混排）
+        #   系统卡放在 contact_list_frame 最顶部（before 第一个孩子）
+        try:
+            kids = self.contact_list_frame.winfo_children()
+            before = kids[0] if kids else None
+        except Exception:
+            before = None
+
+        sys_wrap = ctk.CTkFrame(self.contact_list_frame, fg_color="#EBEBEB", height=56)
+        if before:
+            sys_wrap.pack(before=before, side="top", fill="x")
+        else:
+            sys_wrap.pack(side="top", fill="x")
+        sys_wrap.pack_propagate(False)
+
+        sys_avatar = ctk.CTkLabel(sys_wrap, text="📋", width=36, height=36, corner_radius=4,
+                                   fg_color="#5B6BE7", text_color="#FFFFFF",
+                                   font=ctk.CTkFont(size=15))
+        sys_avatar.pack(side="left", padx=(10, 8), pady=10)
+
+        sys_text = ctk.CTkFrame(sys_wrap, fg_color="#EBEBEB")
+        sys_text.pack(side="left", fill="both", expand=True, pady=9)
+        sys_title = ctk.CTkLabel(sys_text, text=self._contact_filter_all,
+                                  text_color=WC_COLORS["text"],
+                                  font=ctk.CTkFont(family="Microsoft YaHei", size=12, weight="bold"),
+                                  anchor="w")
+        sys_title.pack(fill="x", side="top")
+        sys_preview = ctk.CTkLabel(sys_text, text="默认视图：显示所有会话最新消息",
+                                    text_color=WC_COLORS["text_muted2"],
+                                    font=ctk.CTkFont(size=10), anchor="w")
+        sys_preview.pack(fill="x", side="top")
+        # 系统卡信息登记（供 active 切换用）
+        self._contact_cards[self._contact_filter_all] = {
+            "frame": sys_wrap, "title": sys_title, "preview": sys_preview,
+            "badge": None, "is_group": False, "unread": 0, "avatar": sys_avatar,
+            "_is_system_all": True,
+        }
+
+        # 绑定系统卡点击事件
+        def _sys_enter(_e):
+            for w in (sys_wrap, sys_avatar, sys_title.master, sys_title.master.master):
+                try:
+                    w.configure(fg_color=WC_COLORS["card_hover"]) if hasattr(w, "configure") else None
+                except Exception:
+                    pass
+            try:
+                sys_wrap.configure(fg_color=WC_COLORS["card_hover"])
+                sys_title.master.configure(fg_color=WC_COLORS["card_hover"])
+            except Exception:
+                pass
+
+        def _sys_leave(_e):
+            bg = WC_COLORS["card_active"] if self._active_contact == self._contact_filter_all else "#EBEBEB"
+            try:
+                sys_wrap.configure(fg_color=bg)
+                sys_title.master.configure(fg_color=bg)
+            except Exception:
+                pass
+
+        def _sys_click(_e):
+            self._set_active_contact(self._contact_filter_all)
+
+        for w in (sys_wrap, sys_avatar, sys_title, sys_preview):
+            try:
+                w.bind("<Enter>", _sys_enter)
+                w.bind("<Leave>", _sys_leave)
+                w.bind("<Button-1>", _sys_click)
+            except Exception:
+                pass
+
+        # V3 P0-1 + P1-1: 搜索框 实时过滤会话卡（按名字/预览匹配）
+        try:
+            self.contact_search_entry.bind("<KeyRelease>", self._on_contact_search)
+            self.contact_search_entry.bind("<FocusOut>", self._on_contact_search)
+        except Exception:
+            pass
+
+        # 默认选中"📋 全部会话"
+        self.after(250, lambda: self._set_active_contact(self._contact_filter_all))
+        if self._messages_store:
+            self.after(300, self._rebuild_message_list)
 
     def _load_history(self):
         """启动时加载消息历史（data/messages_history.json）"""
@@ -589,11 +675,42 @@ class WeChatAIApp(ctk.CTk):
             w.bind("<Leave>", _on_leave)
             w.bind("<Button-1>", _on_click)
 
+        # V3 P2-2: 会话卡右键菜单（📤 导出会话为 .md + 📌 设为当前会话）
+        _ctx_menu = None
+        try:
+            import tkinter as tk
+            _ctx_menu = tk.Menu(self, tearoff=0)
+            _ctx_menu.add_command(label="📌 设为当前会话（查看气泡）",
+                                   command=lambda c=contact: self._set_active_contact(c))
+            _ctx_menu.add_separator()
+            _ctx_menu.add_command(label="📤 导出该会话为 Markdown (.md)",
+                                   command=lambda c=contact: self._export_contact_md(c))
+
+            def _on_right_click(e, __m=_ctx_menu):
+                try:
+                    __m.tk_popup(e.x_root, e.y_root)
+                finally:
+                    try:
+                        __m.grab_release()
+                    except Exception:
+                        pass
+
+            for w in (card, avatar, text_wrap, header_row, title_lbl, preview):
+                try:
+                    w.bind("<Button-3>", _on_right_click)        # Windows 右键
+                    w.bind("<Control-Button-1>", _on_right_click) # macOS 兼容
+                except Exception:
+                    pass
+        except Exception:
+            _ctx_menu = None
+
         self._contact_cards[contact] = {
             "frame": card, "title": title_lbl, "preview": preview,
             "badge": badge, "is_group": is_group, "unread": unread,
             "avatar": avatar,
+            "_menu_ref": _ctx_menu,
         }
+        info = self._contact_cards[contact]
 
         if active:
             self._set_active_contact(contact)
@@ -604,36 +721,228 @@ class WeChatAIApp(ctk.CTk):
         return card
 
     def _set_active_contact(self, contact):
-        """V3: 点击选中会话卡时，卡片背景变 #D6D6D6 模拟微信PC会话选中灰"""
+        """V3 P0-1: 点击会话卡 → 按选中会话重建中栏气泡（支持系统📋卡=全部会话）"""
         self._active_contact = contact
-        # 切换会话 → 按联系人重建消息列表（只显示当前会话的消息，避免过滤导致的空白）
-        self._rebuild_message_list()
+        # 切换会话 → 重建消息列表（最新在顶）
+        try:
+            self._rebuild_message_list()
+        except Exception:
+            pass
+
+        # 刷新每张卡的背景色 + badge清零
         for name, info in self._contact_cards.items():
             is_active = (name == contact)
             bg = WC_COLORS["card_active"] if is_active else "#EBEBEB"
-            for w in (info["frame"], info["title"].master, info["title"].master.master):
-                try:
-                    w.configure(bg=bg)
-                except Exception:
-                    pass
+
+            # 1. frame 层（tk.Frame 或 CTkFrame）
+            frame_widget = info.get("frame")
             try:
-                info["title"].configure(bg=bg)
-                info["preview"].configure(bg=bg)
+                if hasattr(frame_widget, "configure"):
+                    if isinstance(frame_widget, ctk.CTkFrame):
+                        frame_widget.configure(fg_color=bg)
+                    else:
+                        frame_widget.configure(bg=bg)
             except Exception:
                 pass
-            if is_active:
+
+            # 2. title / preview 层
+            title_w = info.get("title")
+            preview_w = info.get("preview")
+            try:
+                if isinstance(title_w, ctk.CTkLabel):
+                    # 系统卡 CTkLabel：parent 也是 CTkFrame
+                    title_w.configure(fg_color=bg if bg != "#EBEBEB" else "transparent")
+                    # 同步文字区 master fg（CTkFrame）
+                    if hasattr(title_w, "master") and isinstance(title_w.master, ctk.CTkFrame):
+                        try:
+                            title_w.master.configure(fg_color=bg)
+                        except Exception:
+                            pass
+                elif title_w is not None:
+                    # tk.Label：改 bg
+                    title_w.configure(bg=bg)
+                    if hasattr(title_w, "master") and title_w.master is not None:
+                        try:
+                            title_w.master.configure(bg=bg)
+                            if hasattr(title_w.master, "master") and title_w.master.master is not None and title_w.master.master is not frame_widget:
+                                title_w.master.master.configure(bg=bg)
+                        except Exception:
+                            pass
+            except Exception:
+                pass
+
+            try:
+                if isinstance(preview_w, ctk.CTkLabel):
+                    preview_w.configure(fg_color=bg if bg != "#EBEBEB" else "transparent")
+                elif preview_w is not None:
+                    preview_w.configure(bg=bg)
+            except Exception:
+                pass
+
+            if is_active and info.get("badge") is not None:
                 info["unread"] = 0
-                info["badge"].pack_forget()
-        # 标题栏同步
+                try:
+                    info["badge"].pack_forget()
+                except Exception:
+                    pass
+
+        # 顶部 chat_title 同步（区分系统卡 / 群聊 / 私聊）
         try:
-            is_group = bool(self._contact_cards.get(contact, {}).get("is_group"))
-            prefix = "👥" if is_group else "💬"
-            self.chat_title.configure(text=f"{prefix} {contact}")
-            if hasattr(self, "top_current_label"):
-                self.top_current_label.configure(
-                    text=f"当前会话：{contact} {'（群聊）' if is_group else ''}")
+            is_system_all = (contact == self._contact_filter_all)
+            if is_system_all:
+                self.chat_title.configure(text="📋 全部会话视图")
+                if hasattr(self, "top_current_label"):
+                    self.top_current_label.configure(text="当前：📋 全部会话（默认混合视图）")
+            else:
+                info = self._contact_cards.get(contact, {})
+                is_group = bool(info.get("is_group"))
+                prefix = "👥" if is_group else "💬"
+                self.chat_title.configure(text=f"{prefix} {contact}")
+                if hasattr(self, "top_current_label"):
+                    self.top_current_label.configure(
+                        text=f"当前会话：{contact} {'（群聊）' if is_group else ''}")
         except Exception:
             pass
+
+    # ==============================================================
+    # V3 P1-1: 左栏搜索框 — 实时过滤会话卡（按名字/预览匹配）
+    # ==============================================================
+    def _on_contact_search(self, event=None):
+        q = ""
+        try:
+            q = str(self.contact_search_entry.get() or "").strip().lower()
+        except Exception:
+            q = ""
+        # 系统卡"全部会话"永远显示
+        try:
+            sys_info = self._contact_cards.get(self._contact_filter_all, {})
+            if sys_info:
+                sys_info.get("frame").pack(side="top", fill="x")
+        except Exception:
+            pass
+        for name, info in self._contact_cards.items():
+            if name == self._contact_filter_all:
+                continue
+            if not q:
+                try:
+                    info.get("frame").pack(side="top", fill="x")
+                except Exception:
+                    pass
+                continue
+            hit = (q in str(name).lower())
+            if not hit:
+                try:
+                    hit = q in str(info.get("preview").cget("text") or "").lower() if hasattr(info.get("preview"), "cget") else False
+                except Exception:
+                    hit = False
+            try:
+                if hit:
+                    info.get("frame").pack(side="top", fill="x")
+                else:
+                    info.get("frame").pack_forget()
+            except Exception:
+                pass
+
+    # ==============================================================
+    # V3 P2-2: 会话卡右键 → 📤 导出该会话为 Markdown（Obsidian 微信风格）
+    # ==============================================================
+    def _export_contact_md(self, contact):
+        """把该会话历史消息（优先 storage.query，回退 _messages_store）写成 Obsidian .md 文件"""
+        import tkinter as tk
+        from tkinter import filedialog
+
+        try:
+            # 1) 拉取该会话的消息列表（最新在前）
+            messages = []
+            try:
+                if self.engine and self.engine.storage:
+                    rows = self.engine.storage.query(
+                        contact=None if contact == self._contact_filter_all else contact,
+                        limit=999999,
+                    )
+                    # storage 返回的字段名与 UI 消息池字段对齐
+                    for r in rows:
+                        messages.append({
+                            "contact": r.get("contact") or contact,
+                            "sender": r.get("sender", "other"),
+                            "content": r.get("raw_text", ""),
+                            "timestamp": r.get("timestamp", ""),
+                            "matched_keywords": r.get("matched_keywords") or [],
+                            "keywords": r.get("matched_keywords") or [],
+                            "regex_extracts": r.get("regex_extracts") or {},
+                            "extracted_fields": {},
+                            "is_important": bool(r.get("is_important", False)),
+                            "importance_reason": r.get("importance_reason") or "",
+                            "llm_analysis": r.get("llm_analysis") or {},
+                            "summary": ((r.get("llm_analysis") or {}).get("summary"))
+                                       if isinstance(r.get("llm_analysis"), dict) else "",
+                            "is_group": False,
+                            "group_member": None,
+                        })
+            except Exception:
+                pass
+
+            # 2) UI 内存消息池合并（因为storage可能还没及时保存）
+            if contact == self._contact_filter_all:
+                extra = []
+                for msgs in (self._messages_store or {}).values():
+                    extra.extend(msgs)
+                messages.extend(extra)
+            else:
+                msgs_from_cache = (self._messages_store or {}).get(contact, [])
+                if msgs_from_cache:
+                    messages.extend(msgs_from_cache)
+
+            if not messages:
+                messagebox.showinfo("导出", f"「{contact}」无历史可导出")
+                return
+
+            # 3) 用 ObsidianSync._format_contact_note 渲染（复用统一格式）
+            sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+            from obsidian_sync import ObsidianSync
+            renderer = ObsidianSync({"mode": "file", "vault_path": "",
+                                      "folder": "", "auto_sync": False})
+            if contact == self._contact_filter_all:
+                # "全部会话" → 用每日笔记格式渲染
+                from datetime import datetime as _dt
+                md = renderer._format_daily_note(messages,
+                                                   date_str=_dt.now().strftime("%Y-%m-%d"))
+            else:
+                md = renderer._format_contact_note(contact, messages)
+
+            # 4) 文件保存对话框
+            safe_name = "".join(c for c in str(contact) if c.isalnum() or c in "_-()[] ").strip() or "导出"
+            default_name = f"{safe_name}_聊天记录_{datetime.now().strftime('%Y%m%d_%H%M%S')}.md"
+            default_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "exports")
+            os.makedirs(default_dir, exist_ok=True)
+            path = filedialog.asksaveasfilename(
+                title=f"导出「{contact}」聊天记录",
+                initialdir=default_dir,
+                initialfile=default_name,
+                defaultextension=".md",
+                filetypes=[("Markdown 笔记", "*.md"), ("所有文件", "*.*")],
+            )
+            if not path:
+                return
+            with open(path, "w", encoding="utf-8") as f:
+                f.write(md)
+
+            # 5) 提示 + 可选打开所在文件夹
+            try:
+                msg = f"导出成功：\n{path}\n共 {len(messages)} 条消息"
+                if messagebox.askyesno("导出成功", msg + "\n\n是否打开所在文件夹？"):
+                    try:
+                        import subprocess
+                        subprocess.Popen(f'explorer /select,"{os.path.abspath(path)}"')
+                    except Exception:
+                        pass
+                else:
+                    messagebox.showinfo("导出成功", msg)
+            except Exception:
+                messagebox.showinfo("导出成功", f"已保存 {path}")
+        except Exception as e:
+            messagebox.showerror("导出失败", str(e))
+
 
     def _build_message_row(self, parent, m):
         """构建单条消息气泡行（微信PC风格），返回行容器。供 _rebuild_message_list 复用。"""
@@ -755,42 +1064,77 @@ class WeChatAIApp(ctk.CTk):
         return row
 
     def _rebuild_message_list(self):
-        """按当前选中联系人重建右侧消息列表：单联系人显示该会话，None 显示全部（最新置顶）。"""
+        """V3 P0-1: 按当前选中会话重建气泡列表，最新消息在顶部（用户偏好）。
+        - active == _contact_filter_all 或 None → 合并所有会话消息，按 _seq 倒序（最新在上）。
+        - active == 某个 contact → 只取该会话的消息（_messages_store 里已存：最新在前，索引0）。
+        """
         try:
+            # 清空：先 destroy 所有子节点
             for c in list(self.msg_list_frame_inner.winfo_children()):
                 try:
-                    c.destroy()
+                    if c.winfo_exists():
+                        c.destroy()
                 except Exception:
                     pass
             self.msg_empty_label = None
 
             active = self._active_contact
-            if active is None:
-                items = []
-                for msgs in self._messages_store.values():
-                    items.extend(msgs)
-                items.sort(key=lambda x: x.get("_seq", 0), reverse=True)
+            is_all = (active == self._contact_filter_all) or (active is None)
+
+            if is_all:
+                # 全部会话：收集所有消息按 _seq 倒序（最新→最旧），pack 顺序直接就是"最新在顶"
+                all_msgs = []
+                for msgs in (self._messages_store or {}).values():
+                    all_msgs.extend(msgs)
+                items = sorted(all_msgs, key=lambda x: x.get("_seq", 0), reverse=True)
             else:
-                items = list(self._messages_store.get(active, []))
+                # 单会话：_messages_store[contact] 本身就是"最新在前"
+                items = list((self._messages_store or {}).get(active, []))
 
             if not items:
-                txt = "暂无聊天记录" if active is None else f"暂无与「{active}」的聊天记录"
-                self.msg_empty_label = ctk.CTkLabel(
-                    self.msg_list_frame_inner, text=txt,
-                    font=ctk.CTkFont(size=12), text_color=WC_COLORS["text_muted"])
-                self.msg_empty_label.pack(pady=30)
+                if is_all:
+                    txt = "暂无聊天记录 — 点击「开始监控」识别微信聊天消息，会实时显示在这里。"
+                else:
+                    txt = f"暂无与「{active}」的聊天记录 — 切换到该会话后，新消息会显示在这里。"
+                self.msg_empty_label = ctk.CTkFrame(
+                    self.msg_list_frame_inner, fg_color="transparent")
+                self.msg_empty_label.pack(pady=36, padx=20, fill="x")
+                ctk.CTkLabel(
+                    self.msg_empty_label, text="💬",
+                    font=ctk.CTkFont(size=22), text_color=WC_COLORS["text_muted"],
+                ).pack(pady=(0, 6))
+                ctk.CTkLabel(
+                    self.msg_empty_label, text=txt,
+                    font=ctk.CTkFont(size=12), text_color=WC_COLORS["text_muted"],
+                    wraplength=480, justify="center",
+                ).pack()
                 return
 
-            # 倒序排列：最新在底部（微信风格）
-            for m in reversed(items):
-                self._build_message_row(self.msg_list_frame_inner, m)
-            # 滚动到底部（最新消息可见）
+            # 直接按 items 当前顺序（最新在前）逐条 pack → 最顶部是最新消息
+            for m in items:
+                try:
+                    self._build_message_row(self.msg_list_frame_inner, m)
+                except Exception:
+                    pass
+
+            # 滚动到最顶部（最新消息可见）
             try:
-                self.msg_list_frame_inner.after(50, lambda: self.msg_list_frame._parent_canvas.yview_moveto(1.0))
+                self.msg_list_frame_inner.after(
+                    40,
+                    lambda: self.msg_list_frame._parent_canvas.yview_moveto(0.0))
+            except Exception:
+                try:
+                    self.msg_list_frame.after(
+                        40,
+                        lambda: self.msg_list_frame._scrollbar.set(0.0, 0.1))
+                except Exception:
+                    pass
+        except Exception:
+            import traceback as _tb
+            try:
+                logger.warning("[重建消息列表] 异常: %s", _tb.format_exc()[-200:])
             except Exception:
                 pass
-        except Exception:
-            pass
 
     def _build_reply_tab(self):
         tab = self.tab_reply
@@ -3306,8 +3650,108 @@ class WeChatAIApp(ctk.CTk):
         self.result_text.see("end")
         self.result_text.configure(state="disabled")
 
-    def _on_reply(self, contact, reply):
-        self.after(0, lambda: self._append_log("info", f"[回复] {contact}: {reply[:50]}"))
+    def _on_reply(self, contact, reply=None):
+        """V3 P0-5: AI回复回执 — 兼容两种签名：
+        老：_on_reply(contact: str, reply: str)
+        新：_on_reply(payload: dict)  字段：contact/reply/status(sent/preview/failed)/method/sent_ok/timestamp/role
+        """
+        # —— 签名归一化 ——
+        payload = None
+        if isinstance(contact, dict):
+            payload = contact
+            contact = payload.get("contact", "")
+            reply = payload.get("reply", "")
+        if not contact:
+            contact = "未知会话"
+
+        # —— 日志 ——
+        if isinstance(payload, dict):
+            st = payload.get("status", "unknown")
+            st_text = {"sent": "✅已发送", "preview": "⌛待确认", "failed": "❌发送失败"}.get(st, st)
+            self.after(0, lambda c=contact, r=reply, s=st_text, m=(payload or {}).get("method", ""):
+                       self._append_log("info", f"[回复·{s}] {c}: {r[:50]}{(' ('+m+')') if m else ''}"))
+        else:
+            self.after(0, lambda c=contact, r=reply:
+                       self._append_log("info", f"[回复] {c}: {r[:50]}"))
+
+        # —— 插入回执气泡（sender=me 绿色自己 + 🤖AI徽章 + 状态） ——
+        try:
+            import hashlib as _hl
+            _now = (payload or {}).get("timestamp") or datetime.now().strftime("%H:%M")
+            _st = (payload or {}).get("status", "sent") if payload else "sent"
+            _sent_ok = bool(payload.get("sent_ok", True)) if payload else True
+            _method = (payload or {}).get("method", "") if payload else ""
+            _role = (payload or {}).get("role", "") if payload else ""
+
+            # 状态徽章文字
+            if _st == "preview":
+                _badge = "🤖AI·待确认 ⌛"
+                _importance_reason = f"AI自动回复（预览模式，已粘贴输入框，角色：{_role or '默认'}，方法：{_method or '剪贴板'}）"
+            elif _st == "failed":
+                _badge = "🤖AI·发送失败 ❌"
+                _importance_reason = f"AI自动回复（所有方法失败，请手动检查微信窗口焦点）角色：{_role or '默认'}"
+            else:
+                _badge = "🤖AI·已发送 ✔"
+                _importance_reason = f"AI自动回复（已通过 {_method or '智能发送'} 发出，角色：{_role or '默认'}）"
+
+            # 合成一条"自己消息"并走实时消息管道 → 自动按会话过滤/重建/右栏同步/写盘
+            msg_key_src = f"ai_reply|{contact}|{_now}|{reply}"
+            msg_key = _hl.md5(msg_key_src.encode("utf-8")).hexdigest()[:14]
+
+            msg_data = {
+                "msg_key": msg_key,
+                "is_update": False,
+                "contact": contact,
+                "sender": "me",
+                "content": reply,
+                "timestamp": _now,
+                "is_important": (_st == "failed"),  # 失败高亮红色警告
+                "importance_reason": _importance_reason,
+                "keywords": ["🤖AI自动回复", _st],
+                "categories": ["AI助手"],
+                "regex_extracts": {},
+                "extracted_fields": {"回复方法": _method, "回复角色": _role, "回复状态": _st},
+                "summary": f"{_badge} {reply[:20]}…" if len(reply) > 20 else f"{_badge} {reply}",
+                "classification": "AI助手",
+                "priority": 2,
+                "is_group": False,
+                "group_member": None,
+                "confidence": 1.0,
+                "sender_confidence": 1.0,
+                # 专属回执字段（用于气泡顶部徽章条）
+                "_ai_reply_receipt": True,
+                "_ai_badge": _badge,
+                "_ai_status": _st,
+            }
+            self.after(0, lambda m=msg_data: self._on_new_message(m))
+        except Exception as e:
+            try:
+                self._append_log("warning", f"[回复·回执] 气泡创建失败: {e}")
+            except Exception:
+                pass
+
+        # —— 同步 Obsidian：作为"自己消息"存档 ——
+        try:
+            if isinstance(payload, dict) and hasattr(self, "engine") and self.engine is not None \
+                    and getattr(self.engine, "obsidian", None) is not None and self.engine.obsidian.enabled:
+                sync_data = {
+                    "contact": contact,
+                    "sender": "me",
+                    "raw_text": reply,
+                    "timestamp": (payload.get("timestamp") if payload else None)
+                                  or datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                    "matched_keywords": ["🤖AI自动回复"],
+                    "regex_extracts": {},
+                    "is_important": (payload.get("status") == "failed") if payload else False,
+                    "importance_reason": f"AI自动回复（状态：{_st}）",
+                    "llm_analysis": {"summary": f"🤖AI{_st}: {reply[:40]}"},
+                }
+                try:
+                    self.engine.obsidian.sync_message(sync_data)
+                except Exception:
+                    pass
+        except Exception:
+            pass
 
     def _on_stats(self, stats):
         self.after(0, lambda: self._update_stats(stats))
