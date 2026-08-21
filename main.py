@@ -63,7 +63,7 @@ class WeChatEngine:
         self.config_path = config_path
         self.callbacks = callbacks or {}
         self._on_new_message = callbacks.get("on_new_message") if callbacks else None  # 新消息实时回调
-        self._on_capture_cb = callbacks.get("on_capture")  # 截图预览回调
+        self._on_capture_cb = callbacks.get("on_capture") if callbacks else None  # 截图预览回调
         self._running = False
         self._thread = None
         self._stop_flag = threading.Event()
@@ -134,36 +134,36 @@ class WeChatEngine:
         if self.callbacks.get("on_log"):
             try:
                 self.callbacks["on_log"](level, message)
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning("[UI回调] on_log失败: %s", e)
 
     def _on_extract(self, result):
         if self.callbacks.get("on_extract"):
             try:
                 self.callbacks["on_extract"](result)
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning("[UI回调] on_extract失败: %s", e)
 
     def _on_reply(self, contact, reply):
         if self.callbacks.get("on_reply"):
             try:
                 self.callbacks["on_reply"](contact, reply)
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning("[UI回调] on_reply失败: %s", e)
 
     def _on_stats(self):
         if self.callbacks.get("on_stats"):
             try:
                 self.callbacks["on_stats"](dict(self.stats))
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning("[UI回调] on_stats失败: %s", e)
 
     def _on_status(self, status):
         if self.callbacks.get("on_status"):
             try:
                 self.callbacks["on_status"](status)
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning("[UI回调] on_status失败: %s", e)
 
     def _on_capture(self, image):
         """截图预览回调：把截图发送到UI预览窗口"""
@@ -179,8 +179,8 @@ class WeChatEngine:
         if self._on_new_message:
             try:
                 self._on_new_message(message)
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning("[UI回调] on_new_message失败: %s", e)
 
     def _send_ui_card(self, contact, sender, content, timestamp,
                       extracted=None, is_important=False,
@@ -331,7 +331,40 @@ class WeChatEngine:
             self.extractor.set_classification(categories)
             self._log("info", f"[分类] 已更新分类规则，共 {len(categories)} 类")
 
+    def _physical_click(self, click_x, click_y):
+        """物理鼠标点击（可见模式专用，带延时模拟真实点击）"""
+        import win32api
+        win32api.SetCursorPos((int(click_x), int(click_y)))
+        time.sleep(0.1)
+        win32api.mouse_event(win32con.MOUSEEVENTF_LEFTDOWN, 0, 0, 0, 0)
+        time.sleep(0.05)
+        win32api.mouse_event(win32con.MOUSEEVENTF_LEFTUP, 0, 0, 0, 0)
+
     def _maybe_auto_reply(self, contact, content, sender, context=None):
+        """
+        自动回复调度入口（异步线程执行，不阻塞监控主循环）：
+        LLM生成+发送耗时较长，若同步执行会阻塞截图/OCR/新消息检测，
+        导致监控实时性下降。改为后台线程执行，互不阻塞。
+        """
+        import threading
+        if not getattr(self, '_auto_reply_lock', None):
+            self._auto_reply_lock = threading.Lock()
+        if not self._auto_reply_lock.acquire(blocking=False):
+            self._log("debug", "[自动回复] 上一条回复仍在生成/发送中，跳过本条")
+            return
+        threading.Thread(target=self._run_auto_reply_async,
+                         args=(contact, content, sender, context),
+                         daemon=True, name="auto-reply").start()
+
+    def _run_auto_reply_async(self, contact, content, sender, context=None):
+        try:
+            self._auto_reply_impl(contact, content, sender, context)
+        except Exception as e:
+            self._log("error", f"[自动回复] 线程异常: {e}")
+        finally:
+            self._auto_reply_lock.release()
+
+    def _auto_reply_impl(self, contact, content, sender, context=None):
         """自动回复（仅对方消息触发；自己的消息绝不回复）。
         主循环轮询路径与红点路径共用——此前红点路径无回复逻辑，最小化模式下消息从不回复。
 
@@ -1638,12 +1671,7 @@ class WeChatEngine:
                         self.window, item["red_dot_y"], None
                     )
                     self._log("info", f"[红点] 物理点击坐标: ({click_x}, {click_y})")
-                    import win32api
-                    win32api.SetCursorPos((int(click_x), int(click_y)))
-                    time.sleep(0.1)
-                    win32api.mouse_event(win32con.MOUSEEVENTF_LEFTDOWN, 0, 0, 0, 0)
-                    time.sleep(0.05)
-                    win32api.mouse_event(win32con.MOUSEEVENTF_LEFTUP, 0, 0, 0, 0)
+                    self._physical_click(click_x, click_y)
                     self._log("info", f"[红点] 物理点击完成: ({int(click_x)}, {int(click_y)})")
             except Exception as e:
                 self._log("error", f"[红点] 点击失败: {e}")
@@ -1919,21 +1947,21 @@ class WeChatEngine:
                     # 自动回复（红点路径原本缺失 → 最小化模式下消息从不回复；己方消息上层自动拦截）
                     self._maybe_auto_reply(new_contact, content, _sender)
 
-                # Obsidian同步
-                if self.obsidian and self.obsidian.enabled:
-                    sync_data = {
-                        "contact": new_contact,
-                        "sender": extracted.get("sender", "other"),
-                        "content": extracted.get("raw_text", ""),
-                        "timestamp": extracted.get("timestamp", ""),
-                        "is_important": extracted.get("is_important", False),
-                        "importance_reason": extracted.get("importance_reason", ""),
-                        "keywords": extracted.get("matched_keywords", []),
-                        "summary": (extracted.get("llm_analysis", {}) or {}).get("summary", "") if isinstance(extracted.get("llm_analysis"), dict) else "",
-                    }
-                    self.obsidian.sync_message(sync_data)
+                    # Obsidian同步
+                    if self.obsidian and self.obsidian.enabled:
+                        sync_data = {
+                            "contact": new_contact,
+                            "sender": extracted.get("sender", "other"),
+                            "content": extracted.get("raw_text", ""),
+                            "timestamp": extracted.get("timestamp", ""),
+                            "is_important": extracted.get("is_important", False),
+                            "importance_reason": extracted.get("importance_reason", ""),
+                            "keywords": extracted.get("matched_keywords", []),
+                            "summary": (extracted.get("llm_analysis", {}) or {}).get("summary", "") if isinstance(extracted.get("llm_analysis"), dict) else "",
+                        }
+                        self.obsidian.sync_message(sync_data)
 
-                self._on_extract(extracted)
+                    self._on_extract(extracted)
 
             # 标记已处理（真正处理成功才进冷却，并清零重试计数）
             self.red_dot_monitor.mark_processed(contact)
@@ -1970,12 +1998,7 @@ class WeChatEngine:
                             click_x, click_y = self.red_dot_monitor.get_click_position(
                                 self.window, int(target_y), None
                             )
-                            import win32api
-                            win32api.SetCursorPos((int(click_x), int(click_y)))
-                            time.sleep(0.1)
-                            win32api.mouse_event(win32con.MOUSEEVENTF_LEFTDOWN, 0, 0, 0, 0)
-                            time.sleep(0.05)
-                            win32api.mouse_event(win32con.MOUSEEVENTF_LEFTUP, 0, 0, 0, 0)
+                            self._physical_click(click_x, click_y)
                         time.sleep(1.0)
                         self._log("info", f"[红点] 已切回: {original_contact}")
                     else:

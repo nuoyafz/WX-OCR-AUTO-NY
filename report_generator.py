@@ -142,7 +142,7 @@ class ReportGenerator:
                     if msg.get(field) and isinstance(msg[field], str):
                         try:
                             msg[field] = json.loads(msg[field])
-                        except:
+                        except (json.JSONDecodeError, TypeError):
                             pass
 
             # 按联系人分组

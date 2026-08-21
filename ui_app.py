@@ -21,77 +21,10 @@ import yaml
 import customtkinter as ctk
 from tkinter import messagebox, filedialog
 from datetime import datetime
+from ui_theme import WC_COLORS
 
 ctk.set_appearance_mode("light")
 ctk.set_default_color_theme("blue")
-
-# ============================================================
-# V3 UI 配色：严格微信 PC 原版风格（废弃像素风/MC风）
-# 参考：
-#   - 左侧导航条:        #2C2C2C （微信PC左侧深蓝灰）
-#   - 会话列表:          #EBEBEB / 选中 #D6D6D6 / 悬停 #DDDDDD
-#   - 聊天区背景:        #F5F5F5 （微信PC聊天页白底微灰）
-#   - 聊天顶部栏:        #EDEDED
-#   - 搜索框背景:        #DCDCDC / #E8E8E8
-#   - 自己气泡:          #95EC69 （官方微信PC 经典草绿，带尖角）
-#   - 对方气泡:          #FFFFFF （白色圆角）
-#   - 重要高亮:          #FFF2CC （微信PC 置顶/重要 淡米黄）
-#   - 主绿色(按钮/在线点) #07C160
-#   - 标题文字:          #191919
-#   - 次要文字:          #888888 / #999999
-#   - 分割线:            #E5E5E5
-# ============================================================
-WC_COLORS = {
-    # === 背景层 ===
-    "bg": "#F5F5F5",                  # 聊天页背景（微灰接近白）
-    "bg_dark": "#EDEDED",             # 聊天顶部栏
-    "sidebar": "#2C2C2C",             # 微信PC左侧导航
-    "sidebar_hover": "#383838",       # 悬停
-    "sidebar_active": "#07C160",      # 选中绿
-    "card": "#FFFFFF",                # 会话列表卡片 / 提取面板卡片
-    "card_hover": "#DDDDDD",          # 会话悬停
-    "card_active": "#D6D6D6",         # 会话选中（微信PC会话灰）
-    "header": "#EDEDED",              # 聊天顶部栏 / 面板标题
-
-    # === 强调色（微信官方色）===
-    "accent": "#07C160",              # 微信绿
-    "accent_hover": "#06AE56",
-    "accent_light": "#95EC69",        # 自己气泡底色
-    "danger": "#FA5151",              # 官方微信红（重要）
-    "danger_light": "#FFE5E5",
-    "warning": "#FFF2CC",             # 重要高亮（米黄底）
-    "info": "#1485EE",                # 微信蓝（链接/提取）
-    "info_light": "#E8F3FF",
-    "summary": "#888888",             # 摘要灰
-    "keyword": "#FF8A00",             # 微信橙（关键词）
-
-    # === 文字 ===
-    "text": "#191919",                # 主文字 深灰
-    "text_muted": "#888888",          # 次要文字（时间/副标题）
-    "text_muted2": "#B2B2B2",         # 更次（会话预览副文字）
-    "text_dark": "#FFFFFF",           # 深底白字
-
-    # === 边框/分割 ===
-    "border": "#E5E5E5",
-    "border_light": "#EEEEEE",
-    "shadow": "#00000020",            # 轻阴影
-
-    # === 微信PC气泡 ===
-    "bubble_self": "#95EC69",
-    "bubble_self_border": "#95EC69",
-    "bubble_other": "#FFFFFF",
-    "bubble_other_border": "#F0F0F0",
-    "bubble_important": "#FFF2CC",
-    "bubble_important_border": "#FFD98A",
-
-    # === 头像（默认色块，未启用自定义头像图片时）===
-    "avatar_me": "#07C160",
-    "avatar_other": "#DCDCDC",
-
-    # === 状态 ===
-    "online_dot": "#07C160",
-    "offline_dot": "#888888",
-}
 
 
 class WeChatAIApp(ctk.CTk):
@@ -1236,8 +1169,8 @@ class WeChatAIApp(ctk.CTk):
         search_input_frame = ctk.CTkFrame(search_frame, fg_color="transparent")
         search_input_frame.pack(fill="x", padx=10, pady=5)
 
-        self.search_entry = ctk.CTkEntry(search_input_frame, placeholder_text="输入关键词搜索消息内容...")
-        self.search_entry.pack(side="left", fill="x", expand=True, padx=(0, 5))
+        self.search_entry_msg = ctk.CTkEntry(search_input_frame, placeholder_text="输入关键词搜索消息内容...")
+        self.search_entry_msg.pack(side="left", fill="x", expand=True, padx=(0, 5))
 
         ctk.CTkButton(search_input_frame, text="搜索", width=80,
                       command=self._search_messages).pack(side="left")
@@ -2136,7 +2069,7 @@ class WeChatAIApp(ctk.CTk):
         # —— 按当前选中联系人重建右侧消息列表 + 滚动到底部 ——
         self._rebuild_message_list()
         try:
-            self.after(80, lambda: self.msg_list_frame._parent_canvas.yview_moveto(1.0))
+            self.after(80, lambda: self.msg_list_frame._parent_canvas.yview_moveto(0.0))
         except Exception:
             pass
 
@@ -2255,8 +2188,8 @@ class WeChatAIApp(ctk.CTk):
         search_frame.pack(fill="x", padx=10, pady=5)
 
         ctk.CTkLabel(search_frame, text="🔍 搜索:").pack(side="left", padx=5)
-        self.search_entry = ctk.CTkEntry(search_frame, width=200, placeholder_text="搜索联系人或消息内容...")
-        self.search_entry.pack(side="left", padx=5)
+        self.search_entry_all = ctk.CTkEntry(search_frame, width=200, placeholder_text="搜索联系人或消息内容...")
+        self.search_entry_all.pack(side="left", padx=5)
 
         search_btn = ctk.CTkButton(search_frame, text="搜索", width=60, command=self._do_search)
         search_btn.pack(side="left", padx=5)
@@ -2265,7 +2198,7 @@ class WeChatAIApp(ctk.CTk):
         self.search_results_frame.pack(fill="both", expand=True, padx=10, pady=5)
 
     def _do_search(self):
-        keyword = self.search_entry.get().strip()
+        keyword = self.search_entry_all.get().strip()
         if not keyword:
             return
         # 清空结果
@@ -3442,13 +3375,13 @@ class WeChatAIApp(ctk.CTk):
 
         canvas = tk.Canvas(list_container, bg="#2E2E2E", highlightthickness=0)
         scrollbar = tk.Scrollbar(list_container, orient="vertical", command=canvas.yview)
-        self.contact_list_frame = tk.Frame(canvas, bg="#2E2E2E")
+        self._preview_list_frame = tk.Frame(canvas, bg="#2E2E2E")
 
-        self.contact_list_frame.bind(
+        self._preview_list_frame.bind(
             "<Configure>",
             lambda e: canvas.configure(scrollregion=canvas.bbox("all"))
         )
-        canvas.create_window((0, 0), window=self.contact_list_frame, anchor="nw")
+        canvas.create_window((0, 0), window=self._preview_list_frame, anchor="nw")
         canvas.configure(yscrollcommand=scrollbar.set)
 
         canvas.pack(side="left", fill="both", expand=True)
@@ -3647,6 +3580,15 @@ class WeChatAIApp(ctk.CTk):
             self.result_text.insert("end", f"  摘要: {llm['summary']} | 紧急度:{urgency} | 分类:{category}\n", "llm_tag")
 
         self.result_text.insert("end", "  ──────────────────────────────────\n", "separator")
+
+        # 行数封顶：防止长期运行内存无限膨胀（超过600行删除最旧的200行）
+        try:
+            _line_count = int(self.result_text.index("end-1c").split(".")[0])
+            if _line_count > 600:
+                self.result_text.delete("1.0", "200.0")
+        except Exception:
+            pass
+
         self.result_text.see("end")
         self.result_text.configure(state="disabled")
 
@@ -3794,7 +3736,7 @@ class WeChatAIApp(ctk.CTk):
 
     def _search_messages(self):
         """搜索消息"""
-        keyword = self.search_entry.get().strip()
+        keyword = self.search_entry_msg.get().strip()
         if not keyword:
             self._on_log("warning", "[搜索] 请输入关键词")
             return
