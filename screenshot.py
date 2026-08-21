@@ -180,6 +180,27 @@ def crop_chat_region_img(full_img, bottom_ratio=1.0):
     return chat
 
 
+def crop_title_bar_img(full_img):
+    """截聊天窗口顶部标题栏区域（群名/联系人名所在）。
+
+    微信4.x 所有聊天窗口的*系统窗口标题*恒为"微信"，真实群名/联系人名
+    只显示在聊天区顶部的标题栏（群名 + 下方成员数/微信号）。本函数裁剪
+    该区域，供 OCR 提取当前会话真实名称，解决 contact 被误识别为"微信"的问题。
+    坐标与 crop_chat_region_img 一致（排除左侧联系人栏）。
+    """
+    if full_img is None:
+        return None
+    h, w = full_img.shape[:2]
+    x1 = int(w * 0.30)              # 排除左侧联系人栏
+    x2 = x1 + int(w * 0.68)
+    # 顶部标题栏高度：微信4.x 在不同 DPI/缩放下约 8%~14%，
+    # 取 14% 留余量（多截一点不会误伤，少截则群名/成员数可能被切掉，
+    # 此前 12% 时较长群名(如"东赚30②群(258)")被截断只识别到首字"一"）
+    y2 = max(int(h * 0.14), 1)
+    bar = full_img[0:y2, x1:x2]
+    return bar if bar.size else full_img
+
+
 def capture_chat_bottom(window, ratio=0.35):
     """
     只截取聊天区域底部（最新消息所在位置）。

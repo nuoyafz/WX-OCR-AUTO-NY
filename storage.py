@@ -288,6 +288,89 @@ class MessageStorage:
         except Exception:
             return []
 
+    def delete_message(self, msg_id=None, contact=None, raw_text=None,
+                       timestamp=None):
+        """
+        删除单条消息（SQLite）。
+        优先按 id 删除；未提供 id 时按 (contact, raw_text, timestamp) 组合删除。
+        返回删除的行数。
+        """
+        if self.storage_type != "sqlite":
+            return 0
+        try:
+            conn = sqlite3.connect(self.db_path)
+            if msg_id is not None:
+                cur = conn.execute("DELETE FROM messages WHERE id = ?", (msg_id,))
+            elif contact and raw_text:
+                cur = conn.execute(
+                    "DELETE FROM messages WHERE contact = ? AND raw_text = ? "
+                    "AND (? IS NULL OR timestamp = ?)",
+                    (contact, raw_text, timestamp, timestamp))
+            else:
+                conn.close()
+                return 0
+            conn.commit()
+            n = cur.rowcount
+            conn.close()
+            return n
+        except Exception as e:
+            logger.error(f"删除消息失败: {e}")
+            return 0
+
+    def delete_contact(self, contact):
+        """删除某个联系人的全部消息，返回删除条数。"""
+        if self.storage_type != "sqlite":
+            return 0
+        try:
+            conn = sqlite3.connect(self.db_path)
+            cur = conn.execute(
+                "DELETE FROM messages WHERE contact = ?", (contact,))
+            conn.commit()
+            n = cur.rowcount
+            conn.close()
+            return n
+        except Exception as e:
+            logger.error(f"删除联系人记录失败: {e}")
+            return 0
+
+    def clear_all(self):
+        """清空全部消息记录（SQLite），返回删除条数。"""
+        if self.storage_type != "sqlite":
+            return 0
+        try:
+            conn = sqlite3.connect(self.db_path)
+            cur = conn.execute("DELETE FROM messages")
+            conn.commit()
+            n = cur.rowcount
+            conn.close()
+            return n
+        except Exception as e:
+            logger.error(f"清空记录失败: {e}")
+            return 0
+
+    def delete_orphan_contacts(self):
+        """删除“伪联系人”记录：空联系人名、或日期/时间分隔符被误当联系人名
+        （如 '' / '昨天11' / '今天2' / '星期三'）。返回删除条数。"""
+        if self.storage_type != "sqlite":
+            return 0
+        try:
+            conn = sqlite3.connect(self.db_path)
+            cur = conn.execute(
+                "DELETE FROM messages WHERE contact IS NULL OR contact = '' "
+                "OR contact LIKE '昨天%' OR contact LIKE '今天%' "
+                "OR contact LIKE '明天%' OR contact LIKE '前天%' "
+                "OR contact LIKE '星期%' OR contact LIKE '周%' "
+                "OR contact GLOB '[0-9]*' "
+                "OR contact GLOB '[0-9][0-9]:[0-9][0-9]'"
+            )
+            conn.commit()
+            n = cur.rowcount
+            conn.close()
+            return n
+        except Exception as e:
+            logger.error(f"删除伪联系人记录失败: {e}")
+            return 0
+
     def search(self, keyword, limit=50):
         """搜索消息"""
         if self.storage_type != "sqlite":

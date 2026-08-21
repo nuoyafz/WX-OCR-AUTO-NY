@@ -7,7 +7,7 @@ except Exception:
     except Exception:
         pass
 """
-微信 AI 助手 — 核心引擎
+NOYA Chat 微信助手 — 核心引擎
 ========================
 整合截图+OCR+信息提取+自动回复，可被UI调用或命令行运行。
 自动回复默认关闭，可通过config或UI开启。
@@ -19,6 +19,7 @@ import signal
 import os
 import hashlib
 import json
+import re
 import logging
 import argparse
 import threading
@@ -97,7 +98,13 @@ class WeChatEngine:
         if self.obsidian.enabled:
             self._log("info", "[Obsidian] 同步已启用")
 
+        # ===== P0: 绑定 UI 上下文取数回调 (由 UI 在创建引擎后注入) =====
+        self._fetch_context_fn = None
+        self._context_turns = 5
+
+        self._ui = None
         self.window = None
+        self._last_contact_name = ""   # 最近一次成功解析到的有效联系人名（瞬时OCR失败兜底）
         self._last_red_dot_check = 0
 
         # 最小化监控模式：offscreen=屏幕外保活(推荐), minimized=闪现截图, normal=前台
@@ -194,6 +201,11 @@ class WeChatEngine:
         - V3 新增：is_group / group_member / confidence / sender_confidence
         """
         if not self._on_new_message:
+            return
+
+        # 空联系人名保护：红点切换/切回瞬间窗口名未解析到时，
+        # 跳过本轮卡片，避免落库 contact="" 幽灵会话
+        if not contact or not str(contact).strip():
             return
 
         if msg_key is None:
@@ -296,6 +308,9 @@ class WeChatEngine:
         if red_dot_config.get("enabled"):
             from red_dot_monitor import RedDotMonitor
             self.red_dot_monitor = RedDotMonitor(red_dot_config)
+            # 注入黑名单（含通配符*）：让红点诊断与待处理计数排除公众号/文件传输助手等常驻红点
+            _bl = self.role_manager.config.get("contacts_filter", {}).get("blacklist", [])
+            self.red_dot_monitor.blacklist = list(_bl)
             self._log("info", "  ✔ 红点监控器已启用（自动检测未读红点）")
         else:
             self._log("info", "  ✔ 红点监控器未启用")
@@ -340,7 +355,121 @@ class WeChatEngine:
         time.sleep(0.05)
         win32api.mouse_event(win32con.MOUSEEVENTF_LEFTUP, 0, 0, 0, 0)
 
-    def _maybe_auto_reply(self, contact, content, sender, context=None):
+    # 工具自身窗口标题/状态栏特征，OCR 误把工具自己当成微信时会匹配到这些 → 必须挡在库外
+    _SELF_TITLE_MARKERS = ("NOYA", "微信AI助手", "微信 AI 助手", "助手 v2.0", "AI 助手 v2.0")
+    _STATUS_NOISE_RE = re.compile(
+        r"(消息|提取|重要|回复|OCR)\s*[:：]\s*\d|引擎已初始化|已初始化：|"
+        r"NOYA|微信AI助手|核心引擎|监控预览|识别当前"
+    )
+    # 存储兜底：即便上游 red_dot 匹配漏过，contact 看起来像消息预览/垃圾时拒存
+    # 防止 "[草稿] 哈哈，这么!" / "[18条]南阳本地宝：" 这种垃圾被当成联系人名存进库
+    # ★ 注意：不能用裸长度>20 判断预览 —— 微信长联系人名/群名（如
+    #   "Hero 学长(求职规划报名中)10～23 点"）完全合法，会被误杀导致存储丢失。
+    #   只在「名里混进消息体特征」时才判为预览：方括号[N条]/[草稿]、含消息体标点、
+    #   或 含冒号分隔的"标题：正文"结构（预览常把最新一条消息正文拼进名字）。
+    _PREVIEW_PUNCT_RE = re.compile(r'[。！!？?,，;；、…：][^"]{2,}|：[^\s]')  # 名里带句末标点或冒号接正文
+    _PREVIEW_KEYWORDS = ("草稿", "撤回", "拍了拍", "收到红包", "添加了", "邀请你", "新消息")
+    _PREVIEW_BRACKET_RE = re.compile(r'^\[[\d条]+]|\[草稿\]|\[N条\]')  # 方括号未读条数/草稿标记
+
+    # 微信系统提示/非对话消息标记（出现在聊天区、不应作为真实对话消息存储/回复）。
+    # 常见于：通话状态、群操作、撤回、拍一拍等。三处(new_messages/flush/红点)统一引用。
+    SYSTEM_MSG_MARKERS = (
+        "以下是新消息", "以上是打招呼", "收到红包", "撤回了一条消息", "拍了拍",
+        "添加了", "邀请你", "你已退出群聊", "你被", "已在其它设备接听",
+        "对方正在输入", "你邀请", "你撤回了", "你已成为", "你通过", "对方已",
+        "该消息已撤回", "通话时长", "语音通话", "视频通话", "本次通话",
+    )
+
+    @classmethod
+    def _looks_like_preview(cls, name):
+        if not name:
+            return False
+        n = name.strip()
+        # 仅当名字本身带着「未读条数/草稿」方括号标记才算预览（不再用裸长度误杀）
+        if cls._PREVIEW_BRACKET_RE.search(n):
+            return True
+        if cls._PREVIEW_PUNCT_RE.search(n):
+            return True
+        for kw in cls._PREVIEW_KEYWORDS:
+            if n.startswith(kw) or f"[{kw}]" in n:
+                return True
+        return False
+
+    @classmethod
+    def _strip_timestamp_prefix(cls, text):
+        """剥离微信消息正文里被 OCR 混进来的时间戳前缀。
+
+        微信每行消息左侧有时间戳列（如 '9:57' '20:08' '星期三07:50' '7/18'），
+        OCR 常把相邻行的时间戳错并入正文，导致 '9:57\\n20:08'、'0:08\\n有点大' 这类脏文本。
+        剥离每行的 HH:MM / M/D HH:MM / 星期X HH:MM 前缀，保留干净正文给 LLM。
+        """
+        import re as _re
+        if not text:
+            return text
+        _lines = text.split("\n")
+        _cleaned = []
+        for _ln in _lines:
+            _ln = _ln.strip()
+            # 移除开头的：纯时间戳（9:57）、M/D+时间（7/18 9:57）、星期X+时间（星期三07:50）
+            _ln = _re.sub(r'^\s*(星期[一二三四五六日天]|周[一二三四五六日天])?\s*\d{1,2}[/:]\d{1,2}\s*',
+                          '', _ln)
+            _ln = _re.sub(r'^\s*\d{1,2}[/:]\d{1,2}\s*', '', _ln)
+            _ln = _re.sub(r'^\s*\d{1,2}[/:]\d{1,2}\s*', '', _ln)  # 二次（M/D HH:MM 两截）
+            # 整行若是纯时间戳/空/纯符号 → 丢弃（这是 OCR 把时间戳列错当正文，非真实消息）
+            if not _ln:
+                continue
+            if _re.match(r'^[\d\s/:：（）()?]+$', _ln):
+                continue
+            _cleaned.append(_ln)
+        return "\n".join(_cleaned).strip()
+
+    def _store_extracted(self, extracted):
+        """
+        统一的存储入口（替代散落的 `if self.storage: self.storage.save(extracted)`）：
+        1. 过滤工具自身窗口被误识别为微信的垃圾（contact 是工具标题/状态栏文字）
+        2. 过滤工具状态栏/日志噪声文本
+        3. 空联系人兜底为“未命名会话”，避免真实消息丢失在空 contact 下
+        """
+        if not self.storage:
+            return
+        contact = (extracted.get("contact") or "").strip()
+        text = (extracted.get("raw_text") or "").strip()
+        # 4. 剥离 OCR 混进正文的时间戳前缀（9:57 / 星期三07:50 / 7/18 等）
+        if text:
+            _clean = self._strip_timestamp_prefix(text)
+            if _clean != text:
+                extracted = dict(extracted)
+                extracted["raw_text"] = _clean
+                text = _clean
+        # 1. 工具自身窗口
+        for m in self._SELF_TITLE_MARKERS:
+            if m in contact:
+                self._log("debug", f"[存储] 跳过工具自身窗口误识别: contact='{contact}'")
+                return
+        # 2. 状态栏/日志噪声
+        if self._STATUS_NOISE_RE.search(text):
+            self._log("debug", f"[存储] 跳过状态栏噪声: {text[:30]!r}")
+            return
+        # 3. 空联系人兜底
+        if not contact:
+            try:
+                from window_manager import get_contact_name
+                _name = get_contact_name(self.window)
+                if _name and _name not in ("微信", ""):
+                    contact = _name
+            except Exception:
+                pass
+            if not contact:
+                contact = "未命名会话"
+            extracted = dict(extracted)
+            extracted["contact"] = contact
+        # 兜底：contact 看起来像消息预览 → 拒存，避免"[草稿] 哈哈，这么!" / "[18条]南阳本地宝：" 这类垃圾联系人
+        if self._looks_like_preview(contact):
+            self._log("warning", f"[存储] 拒绝疑似预览的 contact: '{contact}'")
+            return
+        self.storage.save(extracted)
+
+    def _maybe_auto_reply(self, contact, content, sender, context=None, is_group=False):
         """
         自动回复调度入口（异步线程执行，不阻塞监控主循环）：
         LLM生成+发送耗时较长，若同步执行会阻塞截图/OCR/新消息检测，
@@ -352,6 +481,13 @@ class WeChatEngine:
         if not self._auto_reply_lock.acquire(blocking=False):
             self._log("debug", "[自动回复] 上一条回复仍在生成/发送中，跳过本条")
             return
+        # 把群聊标记塞进 context，供 _auto_reply_impl 安全护栏读取
+        if is_group:
+            if context is None:
+                context = {}
+            if isinstance(context, dict):
+                context = dict(context)
+                context["__is_group__"] = True
         threading.Thread(target=self._run_auto_reply_async,
                          args=(contact, content, sender, context),
                          daemon=True, name="auto-reply").start()
@@ -386,6 +522,13 @@ class WeChatEngine:
             self._log("debug", "[自动回复跳过] 自动回复未启用")
             return
 
+        # ★ 群聊安全护栏：默认不在群里自动发言（避免对全体群成员刷屏/误发）
+        #   需在 config.yaml 显式开启 auto_reply.allow_group_reply: true 才允许群聊自动回复
+        _is_group = bool(context.get("__is_group__", False)) if isinstance(context, dict) else False
+        if _is_group and not self.auto_reply_config.get("allow_group_reply", False):
+            self._log("info", f"[自动回复跳过] 群聊『{contact}』默认不自动回复（allow_group_reply=false）")
+            return
+
         # LLM客户端检查和初始化
         if not self.llm_client:
             try:
@@ -407,6 +550,22 @@ class WeChatEngine:
             role = self.role_manager.get_role_for(contact)
             self._log("info", f"[角色] {role['name']} ({role['reply_style']})")
 
+            # ===== P0: 优先取 UI 维护的对话上下文（最近 N 轮） =====
+            if self._fetch_context_fn is not None and contact:
+                try:
+                    rich_ctx = self._fetch_context_fn(contact) or []
+                    if rich_ctx:
+                        mapped = []
+                        for m in rich_ctx[-self._context_turns*2:]:
+                            sender_side = "我" if m.get("sender") in ("me","self","mine") else "对方"
+                            c = str(m.get("content", "")).strip()
+                            if c:
+                                mapped.append(f"{sender_side}：{c}")
+                        if mapped:
+                            context = mapped
+                            self._log("debug", f"[上下文] 使用UI上下文 {len(mapped)} 条")
+                except Exception as _e:
+                    self._log("debug", f"[上下文] 取UI上下文失败: {_e}")
             if not context:
                 context = []
 
@@ -551,6 +710,9 @@ class WeChatEngine:
             from window_manager import focus_window
             from sender import send_text
 
+            # ★ 发送前校验前台焦点确为微信，防乱发
+            if not self._verify_wechat_focus():
+                return False
             focus_window(self.window)
             time.sleep(0.2)
             return send_text(self.window, reply)
@@ -564,6 +726,8 @@ class WeChatEngine:
             from window_manager import focus_window
             from sender import send_text_type_mode
 
+            if not self._verify_wechat_focus():
+                return False
             focus_window(self.window)
             time.sleep(0.2)
             return send_text_type_mode(self.window, reply)
@@ -584,6 +748,45 @@ class WeChatEngine:
                 return False
         except Exception as e:
             self._log("error", f"[屏幕外发送] 失败: {e}")
+            return False
+
+    def _verify_wechat_focus(self):
+        """发送前校验：微信窗口必须是当前前台窗口，否则取消发送。
+
+        防『乱发』：若用户切到了别的程序、或焦点意外落到非微信窗口，
+        粘贴+Enter 会把回复发到错误的地方。此函数要求前台窗口就是
+        我们正在监控的微信窗口（标题/类匹配），不匹配则视为不安全。
+        """
+        try:
+            import win32gui
+            fg = win32gui.GetForegroundWindow()
+            if not fg:
+                return False
+            hwnd = getattr(self.window, "_hWnd", None)
+            # 情况1：前台窗口正好是目标微信窗
+            if hwnd and fg == hwnd:
+                return True
+            # 情况2：前台窗口是目标窗的子窗口（输入框聚焦时常见）
+            if hwnd:
+                cur = fg
+                for _ in range(6):
+                    if cur == hwnd:
+                        return True
+                    cur = win32gui.GetParent(cur)
+                    if not cur:
+                        break
+            # 情况3：前台窗口标题/类名属微信（兜底，允许同进程其它微信窗）
+            try:
+                title = win32gui.GetWindowText(fg)
+                cls = win32gui.GetClassName(fg)
+            except Exception:
+                title, cls = "", ""
+            if "微信" in title or cls in ("WeChatMainWndForPC", "Qt51514QWindowIcon"):
+                return True
+            self._log("warning", f"[发送校验] 前台窗口非微信(title={title!r},cls={cls!r})，取消发送防乱发")
+            return False
+        except Exception as e:
+            self._log("error", f"[发送校验] 异常: {e}，保守取消发送")
             return False
 
     def _dedup_ocr_by_position(self, ocr_results):
@@ -799,6 +1002,91 @@ class WeChatEngine:
     def is_running(self):
         return self._running
 
+    def _pick_title_name(self, ocr_results):
+        """从顶部标题栏 OCR 结果里挑出当前会话名（群名/联系人名）。
+
+        过滤掉微信UI控件词、纯数字、微信号、单字符噪声等，优先取最上方、
+        且更像“会话名”的一行（多字符优先，单字/标点噪声坚决拒）。
+        """
+        if not ocr_results:
+            return ""
+        _ban = {"微信", "草稿", "搜索", "添加", "通讯录", "文件传输助手",
+                "订阅号", "微信团队", "服务通知", "设置", "收藏", "朋友圈",
+                "?"}
+        _cands = []
+        for r in ocr_results:
+            if not isinstance(r, dict):
+                continue
+            t = (r.get("text") or "").strip()
+            if not t or t in _ban:
+                continue
+            if len(t) < 2:            # ★ 单字符（?、一、单个汉字）绝不当会话名
+                continue
+            if len(t) > 24:           # 群名/联系人名通常不会太长
+                continue
+            if "@" in t or t.lower().startswith("wxid"):   # 微信号
+                continue
+            if re.match(r'^[\d\s()（）+\-:：?]+$', t):      # 纯数字/符号/问号（如成员数、?)
+                continue
+            if re.match(r'^[\?\.\，\。\！\？\!\-\_]+$', t):  # 纯标点噪声
+                continue
+            _bbox = r.get("bbox")
+            _y = _bbox.get("y", 0) if isinstance(_bbox, dict) else r.get("y", 0)
+            # 越长越像真名 → 加权（相同y时优先长名）
+            _len_w = len(t)
+            _cands.append((_y, -_len_w, r.get("confidence", 0.0), t))
+        if not _cands:
+            return ""
+        # 取最上方（y最小）、同高取“最长且最像名”的行
+        _cands.sort(key=lambda c: (c[0], c[1], -c[2]))
+        return _cands[0][3]
+
+    def _resolve_contact_name(self, hwnd, fallback_name=""):
+        """解析当前会话真实名称（群名/联系人名）。
+
+        优先级：① 窗口标题（旧版微信含联系人名）② 顶部标题栏OCR
+        （微信4.x 唯一可靠来源）③ 红点匹配名兜底。
+        微信4.x 窗口标题恒为'微信'，必须靠②拿到真实名，否则群聊/私聊
+        全被误存为'微信'。
+        """
+        # ① 窗口标题（非微信4.x 的版本可能含真实名）
+        try:
+            _title_name = get_contact_name(self.window)
+        except Exception:
+            _title_name = ""
+        if _title_name and _title_name != "微信" and _title_name.strip():
+            return _title_name.strip()
+        # ② 顶部标题栏 OCR
+        if hwnd:
+            try:
+                from screenshot import capture_via_printwindow, crop_title_bar_img
+                _img = capture_via_printwindow(hwnd)
+                if _img is not None and float(_img.mean()) >= 3:
+                    _bar = crop_title_bar_img(_img)
+                    if _bar is not None:
+                        from ocr_engine import recognize
+                        _res = recognize(_bar, scale=3.0, min_confidence=0.35)
+                        _name = self._pick_title_name(_res)
+                        if _name:
+                            return _name
+            except Exception:
+                pass
+        # ③ 红点匹配名兜底
+        if fallback_name and fallback_name != "微信":
+            return fallback_name
+        # ④ 最近一次有效名兜底（防 OCR 瞬时失败闪回"微信"/空）
+        #    仅当本次完全取不到名、且上次名合法时使用；同名持续有效
+        _last = getattr(self, "_last_contact_name", "") or ""
+        if _last and _last != "微信":
+            self._log("debug", f"[联系人名] OCR/标题均无结果，沿用上次有效名: {_last}")
+            return _last
+        return ""
+
+    def _remember_contact_name(self, name):
+        """记录最近一次成功解析到的有效联系人名（供瞬时OCR失败兜底）。"""
+        if name and name != "微信" and not self._looks_like_preview(name):
+            self._last_contact_name = name
+
     def _flush_stable_candidates(self, contact_name):
         """
         确认稳定帧超时的候选新消息。
@@ -811,6 +1099,8 @@ class WeChatEngine:
             return
         for msg in candidates:
             content = str(msg.get("content", "")).strip()
+            # 剥离 OCR 混进正文的时间戳前缀（9:57 / 星期三07:50 / 7/18 等）
+            content = self._strip_timestamp_prefix(content)
             if not content or msg.get("sender") == "me":
                 continue
             if any(skip in content for skip in ["助手v2.0", "AI助手", "微信 AI", "信息提取", "自动回复", "数据查看", "设置", "红点", "屏幕外", "保活", "截图", "预览", "诊断", "增量", "窗口坐标"]):
@@ -822,8 +1112,7 @@ class WeChatEngine:
                 continue
             if re.match(r'^(昨天|今天|明天|后天|星期[一二三四五六日天]|周[一二三四五六日天])$', content):
                 continue
-            system_words = ["以下是新消息", "收到红包", "撤回了一条消息", "拍了拍", "以上是打招呼", "添加了", "邀请你"]
-            if any(sw in content for sw in system_words):
+            if any(sw in content for sw in self.SYSTEM_MSG_MARKERS):
                 continue
             self.stats["messages_detected"] += 1
             self._log("info", f"[新消息·确认] {contact_name}: {content[:80]}")
@@ -852,8 +1141,7 @@ class WeChatEngine:
                         importance_reason=extracted.get("importance_reason", ""),
                         is_update=True,
                     )
-                    if self.storage:
-                        self.storage.save(extracted)
+                    self._store_extracted(extracted)
                     self._on_extract(extracted)
                 except Exception:
                     pass
@@ -868,10 +1156,12 @@ class WeChatEngine:
         capture_ratio = self.wechat_config.get("capture_ratio", 0.35)
         send_delay = self.auto_reply_config.get("send_delay", 0.5)
 
-        contact_name = get_contact_name(self.window)
+        contact_name = self._resolve_contact_name(getattr(self.window, "_hWnd", None))
+        self._remember_contact_name(contact_name)
         # V2: 初始群聊/私聊判断（基于窗口标题），后续每轮会结合OCR再精细裁决
         ctx = analyze_chat_context(self.window)
         contact_name = ctx["contact"] or contact_name
+        self._remember_contact_name(contact_name)
         current_chat_kind = "group" if ctx["is_group"] is True else \
             ("personal" if ctx["is_group"] is False else "unknown")
         current_group_members = set()
@@ -946,6 +1236,24 @@ class WeChatEngine:
                             continue  # 处理完未读后跳过本轮正常截图
                         else:
                             self._log("info", "[红点] 未检测到未读消息，继续监控当前窗口")
+
+                # 0.5 每轮重新解析当前窗口联系人名（红点切换/切回后窗口已变，
+                #     必须刷新 contact_name，否则消息会被存进空 contact "" 幽灵会话）
+                _now_cn = time.time()
+                if _now_cn - getattr(self, "_last_contact_resolve", 0) > 1.5:
+                    self._last_contact_resolve = _now_cn
+                    try:
+                        _cn = self._resolve_contact_name(getattr(self.window, "_hWnd", None))
+                        if _cn:
+                            contact_name = _cn
+                            self._remember_contact_name(contact_name)
+                        else:
+                            # OCR/标题均无结果：沿用上次有效名（_resolve 内部已兜底，这里防空串污染）
+                            _last = getattr(self, "_last_contact_name", "") or ""
+                            if _last and _last != "微信":
+                                contact_name = _last
+                    except Exception:
+                        pass
 
                 # 1. 截图
                 try:
@@ -1247,6 +1555,22 @@ class WeChatEngine:
                     except Exception:
                         pass
 
+                # ★ 保守兜底：与红点路径一致，用气泡水平位置强制修正发送者，
+                #   避免自己发的右侧消息被误判为对方（微信自己消息在右侧绿色气泡）。
+                #   极端靠右(>70%)→me；极端靠左(<30%)→other；其余保留 OCR 判断。
+                try:
+                    _img_w = image.shape[1] if image is not None else 800
+                    for _r in ocr_results:
+                        if not isinstance(_r, dict):
+                            continue
+                        _xc = _r.get("x_center", 0)
+                        if _xc > _img_w * 0.70:
+                            _r["sender"] = "me"
+                        elif _xc < _img_w * 0.30:
+                            _r["sender"] = "other"
+                except Exception:
+                    pass
+
                 # ★ ② 位置桶去抖：同位置桶+文本相似度>=0.9 的 OCR 行合并（保留置信高者），
                 #   抑制"同一消息每帧OCR抖动->近似重复"（dedup 的补充，按位置维度更准）
                 ocr_results = self._dedup_ocr_by_position(ocr_results)
@@ -1285,6 +1609,8 @@ class WeChatEngine:
 
                 for msg in new_messages:
                     content = str(msg.get("content", "")).strip()
+                    # 剥离 OCR 混进正文的时间戳前缀（9:57 / 星期三07:50 / 7/18 等）
+                    content = self._strip_timestamp_prefix(content)
                     if not content:
                         continue
                     _sender = msg.get("sender", "other")
@@ -1311,9 +1637,7 @@ class WeChatEngine:
                         continue
                     if _sender == "other" and re.match(r'^\d+$', content):
                         continue
-                    system_words = ["以下是新消息", "收到红包", "撤回了一条消息",
-                                    "拍了拍", "以上是打招呼", "添加了", "邀请你"]
-                    if any(sw in content for sw in system_words):
+                    if any(sw in content for sw in self.SYSTEM_MSG_MARKERS):
                         continue
                     if re.match(r'^[\s\.\,\，\。\！\？\!\?\-\_\(\)\(\)]+$', content):
                         continue
@@ -1385,8 +1709,7 @@ class WeChatEngine:
                             msg_key=_mk,
                         )
 
-                        if self.storage:
-                            self.storage.save(extracted)
+                        self._store_extracted(extracted)
 
                         # Obsidian同步（V3：最新消息在顶部 + 微信气泡Callout风格）
                         if self.obsidian and self.obsidian.enabled:
@@ -1411,7 +1734,8 @@ class WeChatEngine:
                         self._on_extract(extracted)
 
                     # === 自动回复（只对方消息触发；自己的绝对不回复，避免 AI 复读自己） ===
-                    self._maybe_auto_reply(contact_name, content, _sender, context)
+                    self._maybe_auto_reply(contact_name, content, _sender, context,
+                                           is_group=(current_chat_kind == "group"))
 
                 self._on_stats()
 
@@ -1468,8 +1792,7 @@ class WeChatEngine:
                                         self.stats["extracted"] += 1
                                         if extracted.get("is_important"):
                                             self.stats["important"] += 1
-                                        if self.storage:
-                                            self.storage.save(extracted)
+                                        self._store_extracted(extracted)
                                         self._on_extract(extracted)
                     else:
                         self._log("warning", "[轮询] 切换失败，可能已到列表底部")
@@ -1596,6 +1919,7 @@ class WeChatEngine:
                     except Exception:
                         pass
 
+        _processed_count = 0  # 实际处理（非跳过）的联系人数，用于日志口径
         for item in unread_contacts:
             if self._stop_flag.is_set():
                 break
@@ -1649,8 +1973,10 @@ class WeChatEngine:
             try:
                 if hwnd and _was_offscreen:
                     from window_manager import edge_click_window
+                    # 优先用匹配到的"联系人名"中心Y（更精准），回退到红点像素Y
+                    _click_y = item.get("name_y", item["red_dot_y"])
                     click_cx, click_cy = self.red_dot_monitor.get_click_client_position(
-                        self.window, item["red_dot_y"], None
+                        self.window, _click_y, None
                     )
                     # 边缘点击方案：窗口移到屏幕边缘(露1px)→激活→SendInput物理点击→移回
                     self._log("info", f"[红点] 边缘点击: ({click_cx}, {click_cy})")
@@ -1667,12 +1993,22 @@ class WeChatEngine:
                         continue
                     self._log("info", "[红点] 后台点击完成（待验证切换）")
                 else:
-                    click_x, click_y = self.red_dot_monitor.get_click_position(
-                        self.window, item["red_dot_y"], None
+                    # 优先用匹配到的"联系人名"中心Y（更精准），回退到红点像素Y
+                    _click_y = item.get("name_y", item["red_dot_y"])
+                    click_cx, click_cy = self.red_dot_monitor.get_click_client_position(
+                        self.window, _click_y, None
                     )
-                    self._log("info", f"[红点] 物理点击坐标: ({click_x}, {click_y})")
-                    self._physical_click(click_x, click_y)
-                    self._log("info", f"[红点] 物理点击完成: ({int(click_x)}, {int(click_y)})")
+                    self._log("info", f"[红点] 模拟点击(无鼠标移动)坐标: ({click_cx}, {click_cy})")
+                    from window_manager import simulate_click_window
+                    ok = simulate_click_window(self.window, click_cx, click_cy)
+                    if not ok:
+                        # 兜底：SendMessageW 注入失败时退回物理点击
+                        self._log("warning", "[红点] SendMessageW 模拟点击失败，退回物理点击")
+                        click_x, click_y = self.red_dot_monitor.get_click_position(
+                            self.window, _click_y, None
+                        )
+                        self._physical_click(click_x, click_y)
+                    self._log("info", "[红点] 模拟点击完成（待验证切换）")
             except Exception as e:
                 self._log("error", f"[红点] 点击失败: {e}")
                 self._click_retry_counts[contact] = self._click_retry_counts.get(contact, 0) + 1
@@ -1685,12 +2021,19 @@ class WeChatEngine:
 
             time.sleep(2.5)  # 等待聊天窗口加载完成（增加等待让页面充分加载）
 
-            # 重新获取窗口标题（联系人名可能变了）
-            new_contact = get_contact_name(self.window)
-            # 微信4.x窗口标题只有"微信"，用红点匹配到的联系人名作为备选
-            if not new_contact or new_contact == "微信" or new_contact.strip() == "":
-                new_contact = item.get("contact", "")
-                self._log("info", f"[红点] 窗口标题无联系人名，使用红点匹配名: {new_contact}")
+            # 重新获取当前会话真实名称：窗口标题(微信4.x恒为"微信")→顶部标题栏OCR→红点匹配名
+            # ★ 关键修复：红点匹配名(item["contact"])是点击前就从侧边栏确定的真实名，
+            #   远比切换后顶部OCR可靠（顶部OCR常只截到群名首字/把图标误识为?）。
+            #   若顶部OCR取到空/噪声，必须回退到 item["contact"]，绝不能用 ? 覆盖。
+            _reddot_name = item.get("contact", "")
+            new_contact = self._resolve_contact_name(
+                getattr(self.window, "_hWnd", None), _reddot_name)
+            # 顶部OCR若返回空或单字噪声(如 ?/一)，回退红点匹配名
+            if not new_contact or len(new_contact) < 2 or new_contact == "?":
+                new_contact = _reddot_name
+            self._remember_contact_name(new_contact)
+            if not new_contact:
+                new_contact = _reddot_name or "未命名会话"
             self._log("info", f"[红点] 已切换到: {new_contact}")
 
             if self.smart_monitor:
@@ -1731,11 +2074,15 @@ class WeChatEngine:
             # OCR识别
             ocr_scale = self.wechat_config.get("ocr_scale", 1.0)
             ocr_min_conf = self.wechat_config.get("ocr_min_confidence", 0.40)
+            # ★ 多行气泡合并：红点路径原 hard-coded merge_bubble=False，
+            #   导致对面发的 5~6 行长消息被切成多条 → LLM 拿到碎片 → 回复乱。
+            #   改为读配置 ocr_merge_bubble（默认 True），与轮询路径一致。
+            ocr_merge = self.wechat_config.get("ocr_merge_bubble", True)
             ocr_results = recognize(
                 image,
                 scale=ocr_scale,
                 min_confidence=ocr_min_conf,
-                merge_bubble=False,
+                merge_bubble=ocr_merge,
                 denoise=False,
             )
 
@@ -1784,7 +2131,7 @@ class WeChatEngine:
                         if image2 is not None and not is_image_blank(image2):
                             ocr_results2 = recognize(
                                 image2, scale=ocr_scale, min_confidence=ocr_min_conf,
-                                merge_bubble=False, denoise=False,
+                                merge_bubble=ocr_merge, denoise=False,
                             )
                             if ocr_results2:
                                 all_ocr_results.extend(ocr_results2)
@@ -1868,6 +2215,8 @@ class WeChatEngine:
 
             for msg in new_messages:
                 content = str(msg.get("content", "")).strip()
+                # 剥离 OCR 混进正文的时间戳前缀（9:57 / 星期三07:50 / 7/18 等）
+                content = self._strip_timestamp_prefix(content)
                 if not content:
                     continue
                 _sender = msg.get("sender", "other")
@@ -1887,8 +2236,7 @@ class WeChatEngine:
                 if _sender == "other" and re.match(r'^\d+$', content):
                     continue
                 # 过滤系统提示
-                system_words = ["以下是新消息", "收到红包", "撤回了一条消息", "拍了拍", "以上是打招呼", "添加了", "邀请你"]
-                if any(sw in content for sw in system_words):
+                if any(sw in content for sw in self.SYSTEM_MSG_MARKERS):
                     continue
                 # 过滤无意义OCR碎片（纯标点或特殊字符）
                 if re.match(r'^[\s\.\,\，\。\！\？\!\?\-\_\(\)\(\)]+$', content):
@@ -1941,11 +2289,16 @@ class WeChatEngine:
                         msg_key=_rk,
                     )
 
-                    if self.storage:
-                        self.storage.save(extracted)
+                    self._store_extracted(extracted)
 
                     # 自动回复（红点路径原本缺失 → 最小化模式下消息从不回复；己方消息上层自动拦截）
-                    self._maybe_auto_reply(new_contact, content, _sender)
+                    try:
+                        from ocr_engine import infer_chat_kind_by_title
+                        _rk_kind = infer_chat_kind_by_title(new_contact)
+                    except Exception:
+                        _rk_kind = "unknown"
+                    self._maybe_auto_reply(new_contact, content, _sender,
+                                           is_group=(_rk_kind == "group"))
 
                     # Obsidian同步
                     if self.obsidian and self.obsidian.enabled:
@@ -1969,7 +2322,11 @@ class WeChatEngine:
 
         # 切回原窗口（点击侧边栏第一个或原始联系人）
         try:
-            if original_contact:
+            # 若 original_contact 本身是噪声(?/空/单字/未命名)，不强行在侧边栏找它
+            # （会导致"未找到原联系人 ?"死循环），直接保持当前窗口即可。
+            _orig_ok = (original_contact and len(original_contact) >= 2
+                        and original_contact not in ("?", "微信", "未命名会话"))
+            if original_contact and _orig_ok:
                 self._log("info", f"[红点] 切回原窗口: {original_contact}")
                 sidebar_img = self.red_dot_monitor.capture_sidebar(self.window)
                 if sidebar_img is not None:
@@ -1995,10 +2352,16 @@ class WeChatEngine:
                             )
                             edge_click_window(self.window, click_cx, click_cy)
                         else:
-                            click_x, click_y = self.red_dot_monitor.get_click_position(
+                            click_cx, click_cy = self.red_dot_monitor.get_click_client_position(
                                 self.window, int(target_y), None
                             )
-                            self._physical_click(click_x, click_y)
+                            from window_manager import simulate_click_window
+                            if not simulate_click_window(self.window, click_cx, click_cy):
+                                self._log("warning", "[红点] SendMessageW 模拟点击失败，退回物理点击")
+                                click_x, click_y = self.red_dot_monitor.get_click_position(
+                                    self.window, int(target_y), None
+                                )
+                                self._physical_click(click_x, click_y)
                         time.sleep(1.0)
                         self._log("info", f"[红点] 已切回: {original_contact}")
                     else:
@@ -2006,8 +2369,11 @@ class WeChatEngine:
         except Exception as e:
             self._log("warning", f"[红点] 切回原窗口失败: {e}")
 
+        _processed_count += 1  # 本轮联系人已处理完（跳过黑名单的不计入）
+
         self._on_stats()
-        self._log("info", f"[红点] 处理完成，共 {len(unread_contacts)} 个联系人")
+        self._log("info", f"[红点] 处理完成，实际处理 {_processed_count} 个联系人"
+                  f"（含跳过黑名单/白名单 {len(unread_contacts) - _processed_count} 个）")
 
         # === 屏幕外模式：处理完无需移回（本来就在屏幕外） ===
         if _was_offscreen:

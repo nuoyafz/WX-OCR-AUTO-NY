@@ -28,6 +28,9 @@ debug/
 *.jpg
 *.jpeg
 !banner.txt
+# assets/ 为例外：项目文档用演示图，必须纳入版本控制
+!assets/
+!assets/**
 
 # === 日志 ===
 *.log
@@ -37,6 +40,17 @@ logs/
 *.bak
 *.bak2
 *.orig
+*.bak*
+*_bak*
+*.bak_*
+*.noback.bak
+*.indent_bak
+# 调试/临时脚本（本地用，不入库）
+1.py
+tuning.py
+_apply_ui_patch.py
+fix_*.py
+*_fixer.py
 
 # === IDE ===
 .vscode/

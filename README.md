@@ -8,7 +8,7 @@
   ![](https://img.shields.io/badge/LLM-Qwen-green)
   ![](https://img.shields.io/badge/Platform-Windows‑Only-lightgrey)
   ![](https://img.shields.io/badge/License-MIT-yellow)
-  ![](https://img.shields.io/badge/Version‑v3.0-blueviolet)
+  ![](https://img.shields.io/badge/Version‑v3.1-blueviolet)
 
 ---
 
@@ -324,6 +324,26 @@ v3.0版本已修复；内置LLM调用前后双重停止标记校验。
 PaddleOCR模型初始化需要5‑10秒；v3.0版本已经做启动优化。
 
 ## 📋 更新日志
+
+### v3.1 (2026‑08‑21) — 稳定性与识别精度专项修复
+
+本版本聚焦「运行时崩溃导致会话丢失 / 识别噪声」三大类共 7 项修复，全部经 `py_compile` 验证。
+
+**🔴 P0 崩溃修复（导致实时消息卡片全丢）**
+
+- **上下文属性未初始化**：`ui_app.py` 的 `_context_max_turns` / `_context_enabled` 从未赋值，每条新消息回调都抛 `AttributeError` → 左栏会话卡与详情面板全部建不出来。已在 `__init__` 补默认值，并在 `_on_new_message` 加 `getattr` 兜底。
+- **去重分支未定义变量**：`_add_message_card_impl` 去重更新分支引用了未定义的 `_m`（应为 `store[_i]`），红点路径每条消息都命中该分支必崩。已修正取已存消息做原位更新。
+- **空联系人名幽灵会话**：主循环 `contact_name` 仅在启动时解析一次，红点切回原窗口后沿用旧空值 → 消息落库 `contact=""` 幽灵会话、左栏出现空白卡。已在主循环每轮（限频1.5s）重新解析当前窗口名，并在 `_send_ui_card` 入口拦截空 contact。
+
+**🟡 识别精度与噪声优化**
+
+- **长联系人/群名被误杀**：`_looks_like_preview` 旧逻辑 `len(n)>20 → 拒存`，把「Hero 学长(求职规划报名中)10～23 点」这类合法长名当垃圾丢掉。改为仅识别 `[N条]/[草稿]` 方括号 + 句末标点/冒号正文结构 + 关键词。
+- **主循环时间戳污染**：`_flush_stable_candidates` 与主线 `new_messages` 路径漏用 `_strip_timestamp_prefix`，消息正文带 `0:56` 等时间戳前缀。两处已补清洗。
+- **系统提示过滤扩展**：抽出统一常量 `SYSTEM_MSG_MARKERS`，新增过滤「已在其它设备接听 / 你已退出群聊 / 对方正在输入 / 你邀请 / 你撤回了 / 通话时长」等微信系统提示，三处（主循环/flush/红点）统一引用。
+- **红点黑名单噪音消除**：红点监控诊断把「公众号 / 文件传输助手」等常驻红点算进 `匹配=N`，造成误判焦虑。现注入黑名单配置后，诊断显示 `匹配=X个(黑名单Y)`，待处理数仅含真实未读。
+- **自己发的消息误判对方**：主循环补充 `x_center` 兜底（右侧>70%→自己 / 左侧<30%→对方），与红点路径一致，己方消息正确归右、标「我」。
+
+> ⚠️ 部署提示：每次改完源码必须**彻底关闭并重启 `ui_app.py`**（`__pycache__` 已清理，但旧进程仍缓存模块）。
 
 ### v3.0 (2026‑08‑20)
 

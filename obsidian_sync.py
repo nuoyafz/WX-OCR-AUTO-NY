@@ -741,3 +741,46 @@ class ObsidianSync:
 
         logger.info(f"[Obsidian] 批量同步完成: {count}/{len(messages)} 条")
         return count
+
+    def delete_contact_note(self, contact):
+        """
+        删除某联系人的 Obsidian 聚合笔记（文件模式）：<vault>/<folder>/联系人/<contact>.md。
+        仅在文件模式启用时生效；API 模式下调用方需自行处理。返回是否成功。
+        """
+        if not self._file_enabled or not contact:
+            return False
+        try:
+            contact_dir = os.path.join(self.vault_path, self.folder, "联系人")
+            safe = self._sanitize_filename(contact)
+            note_path = os.path.join(contact_dir, f"{safe}.md")
+            if os.path.exists(note_path):
+                os.remove(note_path)
+                logger.info(f"[Obsidian] 已删除联系人笔记: {note_path}")
+                return True
+        except Exception as e:
+            logger.error(f"[Obsidian] 删除联系人笔记失败: {e}")
+        return False
+
+    def rebuild_contact_note(self, contact, messages):
+        """
+        根据联系人剩余消息（通常来自 SQLite 查询）重建其聚合笔记（文件模式）。
+        用于"单条删除"后让 Obsidian 笔记与本地一致。
+        """
+        if not self._file_enabled or not contact:
+            return False
+        try:
+            contact_dir = os.path.join(self.vault_path, self.folder, "联系人")
+            os.makedirs(contact_dir, exist_ok=True)
+            safe = self._sanitize_filename(contact)
+            note_path = os.path.join(contact_dir, f"{safe}.md")
+            if not messages:
+                # 没有剩余消息 → 直接删除笔记（等价于清空该联系人）
+                return self.delete_contact_note(contact)
+            content = self._format_contact_note(contact, messages)
+            with open(note_path, "w", encoding="utf-8") as f:
+                f.write(content)
+            logger.info(f"[Obsidian] 已重建联系人笔记: {safe}.md ({len(messages)}条)")
+            return True
+        except Exception as e:
+            logger.error(f"[Obsidian] 重建联系人笔记失败: {e}")
+        return False

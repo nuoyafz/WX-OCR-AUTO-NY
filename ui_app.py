@@ -24,7 +24,8 @@ from datetime import datetime
 from ui_theme import WC_COLORS
 
 ctk.set_appearance_mode("light")
-ctk.set_default_color_theme("blue")
+# macOS 风格：干净白 + Apple蓝 #007AFF + 大圆角 + 极细分隔
+# 不调用 set_default_color_theme 避免污染 accent 色系
 
 
 class WeChatAIApp(ctk.CTk):
@@ -49,9 +50,15 @@ class WeChatAIApp(ctk.CTk):
         self._msg_rows_by_contact = {}           # contact -> list[(row_frame, msg_data)]（最新在前）
         self._all_filtered = False                # 内部保护：避免循环调用
 
-        self.title("NOYA Chat 微信助手")
-        self.geometry("1100x720")
-        self.minsize(1000, 650)
+        # === P0 修复：对话上下文开关/轮数必须初始化，否则 _on_new_message 读
+        #     self._context_max_turns 抛 AttributeError → 实时消息卡片（含左栏会话卡）
+        #     全部建不出来，左栏只剩“全部会话”。缺省关闭，挂载时按配置开启。 ===
+        self._context_enabled = False
+        self._context_max_turns = 10
+
+        self.title("微信AI助手")
+        self.geometry("1280x800")
+        self.minsize(1024, 680)
         self.configure(fg_color=WC_COLORS["bg"])
 
         self._load_config()
@@ -64,6 +71,15 @@ class WeChatAIApp(ctk.CTk):
         self.bind_all("<Control-t>", lambda e: self._toggle_monitoring())
         self.bind_all("<Control-T>", lambda e: self._toggle_monitoring())
 
+        # ===== P0: 4 个全局快捷键 =====
+        self.bind_all("<Control-f>", self._hotkey_focus_search)
+        self.bind_all("<Control-F>", self._hotkey_focus_search)
+        self.bind_all("<Control-d>", self._hotkey_toggle_important)
+        self.bind_all("<Control-D>", self._hotkey_toggle_important)
+        self.bind_all("<Control-S>", self._hotkey_goto_settings)
+        self.bind_all("<Control-s>", lambda e: None)  # 小写 Ctrl+S 不拦截避免与保存冲突
+        self.bind_all("<Escape>", self._hotkey_minimize_or_close)
+
     def _load_config(self):
         import yaml
         config_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), self.config_path)
@@ -74,19 +90,34 @@ class WeChatAIApp(ctk.CTk):
             self.config_data = {}
 
     def _build_ui(self):
+        # 2列布局：侧栏(52) | 主内容(满宽)
+        self.grid_columnconfigure(0, weight=0, minsize=52)
         self.grid_columnconfigure(1, weight=1)
         self.grid_rowconfigure(0, weight=1)
 
-        # ====== 左侧导航栏（微信风格图标导航） ======
-        self.sidebar = ctk.CTkFrame(self, fg_color=WC_COLORS["sidebar"], width=64, corner_radius=0)
+        # ====== 左侧导航栏（微信PC深灰窄侧栏） ======
+        self.sidebar = ctk.CTkFrame(self, fg_color=WC_COLORS["sidebar"], width=52,
+                               corner_radius=0, border_width=0)
         self.sidebar.grid(row=0, column=0, sticky="ns")
         self.sidebar.grid_propagate(False)
 
-        # 顶部Logo
-        logo_label = ctk.CTkLabel(self.sidebar, text="🤖", font=ctk.CTkFont(size=24))
-        logo_label.grid(row=0, column=0, pady=(20, 30))
+        # 用户头像区（微信PC侧边栏顶部：圆形头像 + 在线绿点）
+        avatar_frame = ctk.CTkFrame(self.sidebar, fg_color="transparent", width=40, height=40)
+        avatar_frame.grid(row=0, column=0, pady=(20, 6))
+        self.sidebar_avatar = ctk.CTkLabel(
+            avatar_frame, text="N", width=36, height=36, corner_radius=18,
+            fg_color=WC_COLORS["avatar_me"], text_color="#FFFFFF",
+            font=ctk.CTkFont(size=16, weight="bold"),
+        )
+        self.sidebar_avatar.pack()
+        # 在线绿点（右下角）
+        self.sidebar_online_dot = ctk.CTkLabel(
+            avatar_frame, text="", width=8, height=8, corner_radius=4,
+            fg_color=WC_COLORS["online_dot"],
+        )
+        self.sidebar_online_dot.place(relx=0.75, rely=0.75, anchor="center")
 
-        # 导航按钮
+        # 导航按钮（加未读角标支持）
         nav_items = [
             ("📡", "monitor", "监控", True),
             ("💬", "reply", "回复", False),
@@ -94,22 +125,34 @@ class WeChatAIApp(ctk.CTk):
             ("⚙️", "settings", "设置", False),
         ]
         self._nav_buttons = {}
+        self._nav_badges = {}
         for i, (icon, key, label, active) in enumerate(nav_items):
+            # 每个按钮用 frame 包裹，支持角标 overlay
+            btn_wrap = ctk.CTkFrame(self.sidebar, fg_color="transparent")
+            btn_wrap.grid(row=i + 1, column=0, pady=5, padx=10)
             btn = ctk.CTkButton(
-                self.sidebar, text=icon, width=44, height=44,
+                btn_wrap, text=icon, width=44, height=44,
                 fg_color="transparent", hover_color=WC_COLORS["sidebar_hover"],
                 corner_radius=8, font=ctk.CTkFont(size=18),
                 command=lambda k=key: self._switch_nav(k),
             )
-            btn.grid(row=i + 1, column=0, pady=5, padx=10)
+            btn.pack()
             if active:
                 btn.configure(fg_color=WC_COLORS["sidebar_active"])
             self._nav_buttons[key] = btn
 
-        # 底部状态
+            # 未读角标（默认隐藏）
+            badge = ctk.CTkLabel(
+                btn_wrap, text="", width=16, height=16, corner_radius=8,
+                fg_color=WC_COLORS["danger"], text_color="#FFFFFF",
+                font=ctk.CTkFont(size=9, weight="bold"),
+            )
+            self._nav_badges[key] = badge
+
+        # 底部状态（带呼吸动画样式）
         self.sidebar_status = ctk.CTkLabel(
             self.sidebar, text="● 待机",
-            font=ctk.CTkFont(size=11), text_color="#888888",
+            font=ctk.CTkFont(size=11), text_color=WC_COLORS["text_muted"],
         )
         self.sidebar_status.grid(row=10, column=0, pady=(30, 15))
 
@@ -168,7 +211,7 @@ class WeChatAIApp(ctk.CTk):
         tab.grid_rowconfigure(2, weight=1)
 
         # ====== 顶部控制条（微信 PC 风格圆角 8px） ======
-        ctrl = ctk.CTkFrame(tab, fg_color=WC_COLORS["header"], corner_radius=8, height=54)
+        ctrl = ctk.CTkFrame(tab, fg_color=WC_COLORS["card"], corner_radius=12, height=54)
         ctrl.grid(row=0, column=0, sticky="ew", padx=10, pady=(10, 4))
         ctrl.grid_columnconfigure(8, weight=1)
 
@@ -176,34 +219,34 @@ class WeChatAIApp(ctk.CTk):
             ctrl, text="▶ 开始监控", width=110, height=32,
             font=ctk.CTkFont(size=12, weight="bold"),
             fg_color=WC_COLORS["accent"], hover_color=WC_COLORS["accent_hover"],
-            corner_radius=6, command=self.start_monitoring,
+            corner_radius=8, command=self.start_monitoring,
         )
         self.btn_start.grid(row=0, column=0, padx=(12, 4), pady=11)
 
         self.btn_stop = ctk.CTkButton(
-            ctrl, text="■ 停止", width=80, height=32, corner_radius=6,
+            ctrl, text="■ 停止", width=80, height=32, corner_radius=8,
             font=ctk.CTkFont(size=12),
-            fg_color=WC_COLORS["danger"], hover_color="#E04848",
+            fg_color=WC_COLORS["danger"], hover_color="#E53935",
             command=self.stop_monitoring, state="disabled",
         )
         self.btn_stop.grid(row=0, column=1, padx=4, pady=11)
 
         self.btn_test = ctk.CTkButton(
-            ctrl, text="🔍 识别", width=72, height=32, corner_radius=6,
+            ctrl, text="🔍 识别", width=72, height=32, corner_radius=8,
             font=ctk.CTkFont(size=12),
-            fg_color="#8A8A8A", hover_color="#7A7A7A",
+            fg_color=WC_COLORS["text_muted2"], hover_color=WC_COLORS["text_muted"],
             command=self.test_ocr,
         )
         self.btn_test.grid(row=0, column=2, padx=4, pady=11)
 
         self.btn_preview = ctk.CTkButton(
-            ctrl, text="🖼 预览", width=72, height=32, corner_radius=6,
-            fg_color="#5B6BE7", hover_color="#4A59D0",
+            ctrl, text="🖼 预览", width=72, height=32, corner_radius=8,
+            fg_color=WC_COLORS["accent"], hover_color=WC_COLORS["accent_hover"],
             font=ctk.CTkFont(size=12), command=self._open_preview_window)
         self.btn_preview.grid(row=0, column=3, padx=4, pady=11)
 
         self.btn_show_wechat = ctk.CTkButton(
-            ctrl, text="👁 显示微信", width=96, height=32, corner_radius=6,
+            ctrl, text="👁 显示微信", width=96, height=32, corner_radius=8,
             font=ctk.CTkFont(size=12),
             fg_color=WC_COLORS["accent"], hover_color=WC_COLORS["accent_hover"],
             command=self._show_wechat_window,
@@ -219,8 +262,8 @@ class WeChatAIApp(ctk.CTk):
         self.top_current_label.grid(row=0, column=8, padx=(10, 16), sticky="e")
 
         # ====== V3 统计信息（微信绿/红/灰 官方色，扁平圆角） ======
-        stats_frame = ctk.CTkFrame(tab, fg_color=WC_COLORS["card"], corner_radius=8,
-                                   border_width=1, border_color=WC_COLORS["border"])
+        stats_frame = ctk.CTkFrame(tab, fg_color=WC_COLORS["card"], corner_radius=12,
+                                   border_width=0)
         stats_frame.grid(row=1, column=0, sticky="ew", padx=10, pady=(4, 6))
         for i in range(6):
             stats_frame.grid_columnconfigure(i, weight=1)
@@ -228,11 +271,11 @@ class WeChatAIApp(ctk.CTk):
         self.stat_labels = {}
         stat_items = [
             ("frames",    "📷 截图",   WC_COLORS["info"]),
-            ("ocr",       "🔤 OCR",   "#9B59B6"),
+            ("ocr",       "🔤 OCR",   "#AF52DE"),
             ("messages",  "💬 消息",   WC_COLORS["accent"]),
             ("extracted", "📋 提取",   WC_COLORS["keyword"]),
             ("important", "⭐ 重要",   WC_COLORS["danger"]),
-            ("replies",   "✉️ 回复",   "#7B5EE0"),
+            ("replies",   "✉️ 回复",   "#5856D6"),
         ]
         for i, (key, label, val_color) in enumerate(stat_items):
             col = ctk.CTkFrame(stats_frame, fg_color="transparent")
@@ -248,25 +291,24 @@ class WeChatAIApp(ctk.CTk):
             val_label.grid(row=1, column=0, sticky="ew")
             self.stat_labels[key] = val_label
 
-        # ====== V3: 微信 PC 三栏主体 ======
-        three_col = ctk.CTkFrame(tab, fg_color="transparent")
-        three_col.grid(row=2, column=0, sticky="nsew", padx=10, pady=(4, 10))
-        three_col.grid_columnconfigure(0, weight=0, minsize=220)
-        three_col.grid_columnconfigure(1, weight=3)
-        three_col.grid_columnconfigure(2, weight=0, minsize=280)
-        three_col.grid_rowconfigure(0, weight=1)
+        # ====== V3: 两栏主体（砍掉右侧空白详情面板） ======
+        two_col = ctk.CTkFrame(tab, fg_color="transparent")
+        two_col.grid(row=2, column=0, sticky="nsew", padx=10, pady=(4, 10))
+        two_col.grid_columnconfigure(0, weight=0, minsize=200)
+        two_col.grid_columnconfigure(1, weight=1)
+        two_col.grid_rowconfigure(0, weight=1)
 
-        # 左：会话列表（微信 PC #EBEBEB 会话灰背景）
-        contacts_col = ctk.CTkFrame(three_col, fg_color="#EBEBEB", corner_radius=8,
-                                     width=240, border_width=1, border_color=WC_COLORS["border"])
+        # 左：会话列表（200px，紧凑）
+        contacts_col = ctk.CTkFrame(two_col, fg_color=WC_COLORS["card"], corner_radius=12,
+                                     width=200, border_width=0)
         contacts_col.grid(row=0, column=0, sticky="nsew", padx=(0, 4))
         contacts_col.grid_propagate(True)
         self._create_contact_list_panel(contacts_col)
 
-        # 中：聊天消息 + 日志 Tabview（微信PC聊天页 #F5F5F5）
-        center_col = ctk.CTkFrame(three_col, fg_color=WC_COLORS["bg"], corner_radius=8,
-                                 border_width=1, border_color=WC_COLORS["border"])
-        center_col.grid(row=0, column=1, sticky="nsew", padx=2)
+        # 中：聊天消息 + 日志 Tabview（满宽）
+        center_col = ctk.CTkFrame(two_col, fg_color=WC_COLORS["card"], corner_radius=12,
+                                 border_width=0)
+        center_col.grid(row=0, column=1, sticky="nsew", padx=(0, 0))
         center_col.grid_rowconfigure(1, weight=1)
         center_col.grid_columnconfigure(0, weight=1)
 
@@ -286,17 +328,30 @@ class WeChatAIApp(ctk.CTk):
 
         self.chat_subtitle = ctk.CTkLabel(
             chat_header, text="● 等待新消息",
-            font=ctk.CTkFont(size=10),
+            font=ctk.CTkFont(size=10, weight="bold"),
             text_color=WC_COLORS["online_dot"], anchor="e",
         )
         self.chat_subtitle.grid(row=0, column=1, padx=14, pady=10, sticky="e")
+
+        # 在线状态动画（呼吸灯效果：每1.5秒切换透明度）
+        def _breathe_online():
+            try:
+                cur = self.chat_subtitle.cget("text_color")
+                if cur == WC_COLORS["online_dot"]:
+                    self.chat_subtitle.configure(text_color=WC_COLORS["accent_light"])
+                else:
+                    self.chat_subtitle.configure(text_color=WC_COLORS["online_dot"])
+                self.after(1500, _breathe_online)
+            except Exception:
+                pass
+        self.after(1500, _breathe_online)
 
         # 中栏 Tabview（消息 / 日志）
         self.view_tabview = ctk.CTkTabview(
             center_col, fg_color=WC_COLORS["bg"], corner_radius=0,
             border_width=0, segmented_button_fg_color=WC_COLORS["header"],
-            segmented_button_selected_color="#FFFFFF",
-            segmented_button_selected_hover_color="#F9F9F9",
+            segmented_button_selected_color=WC_COLORS["card"],
+            segmented_button_selected_hover_color=WC_COLORS["card_hover"],
             segmented_button_unselected_color=WC_COLORS["header"],
             text_color=WC_COLORS["text"],
         )
@@ -317,15 +372,15 @@ class WeChatAIApp(ctk.CTk):
 
         self.log_text = ctk.CTkTextbox(
             log_frame, font=ctk.CTkFont(size=12),
-            fg_color="#FAFAFA", text_color=WC_COLORS["text"],
+            fg_color=WC_COLORS["card"], text_color=WC_COLORS["text"],
             wrap="word", state="disabled",
-            border_width=1, border_color=WC_COLORS["border"], corner_radius=4,
+            border_width=0, corner_radius=12,
         )
         self.log_text.grid(row=0, column=0, sticky="nsew", pady=(0, 4))
 
         # 日志底部内置"最新提取结果"
-        result_frame = ctk.CTkFrame(log_frame, fg_color="#FAFAFA", corner_radius=4,
-                                     border_width=1, border_color=WC_COLORS["border"])
+        result_frame = ctk.CTkFrame(log_frame, fg_color=WC_COLORS["card"], corner_radius=12,
+                                     border_width=0)
         result_frame.grid(row=1, column=0, sticky="nsew")
         result_frame.grid_columnconfigure(0, weight=1)
         result_frame.grid_rowconfigure(1, weight=1)
@@ -336,19 +391,13 @@ class WeChatAIApp(ctk.CTk):
             row=0, column=0, sticky="w", padx=10, pady=(8, 4))
         self.result_text = ctk.CTkTextbox(
             result_frame, font=ctk.CTkFont(size=12),
-            fg_color="#FFFFFF", text_color=WC_COLORS["text"],
+            fg_color=WC_COLORS["card"], text_color=WC_COLORS["text"],
             wrap="word", state="disabled",
         )
         self.result_text.grid(row=1, column=0, sticky="nsew", padx=10, pady=(0, 8))
 
         # 预览：嵌入中栏
         self._create_main_preview(tab_preview)
-
-        # 右：详情面板（关键词/提取字段/摘要/置信度）
-        detail_col = ctk.CTkFrame(three_col, fg_color=WC_COLORS["card"], corner_radius=8,
-                                   width=300, border_width=1, border_color=WC_COLORS["border"])
-        detail_col.grid(row=0, column=2, sticky="nsew", padx=(4, 0))
-        self._create_detail_panel(detail_col)
 
     # ==============================================================
     # V3: 会话列表 （微信 PC 左栏：搜索框 + 会话卡片）
@@ -361,17 +410,51 @@ class WeChatAIApp(ctk.CTk):
         search_wrap = ctk.CTkFrame(parent, fg_color="transparent")
         search_wrap.grid(row=0, column=0, sticky="ew", padx=8, pady=(8, 4))
         self.contact_search_entry = ctk.CTkEntry(
-            search_wrap, placeholder_text="🔍 搜索", height=28, corner_radius=4,
-            fg_color="#DCDCDC", placeholder_text_color=WC_COLORS["text_muted"],
+            search_wrap, placeholder_text="🔍 搜索", height=28, corner_radius=8,
+            fg_color=WC_COLORS["sidebar"], placeholder_text_color=WC_COLORS["text_muted"],
             text_color=WC_COLORS["text"], border_width=0,
             font=ctk.CTkFont(size=11),
         )
         self.contact_search_entry.pack(fill="x", side="top")
 
+        # 批量操作工具栏（默认隐藏，点击批量模式按钮显示）
+        self._batch_bar = ctk.CTkFrame(parent, fg_color="transparent", height=32)
+        self._batch_bar.grid_remove()
+        self._batch_mode = False
+        self._batch_selected = set()
+
+        self._batch_select_all_btn = ctk.CTkButton(
+            self._batch_bar, text="全选", width=60, height=26,
+            font=ctk.CTkFont(size=11),
+            command=self._batch_select_all)
+        self._batch_select_all_btn.pack(side="left", padx=(8, 2))
+
+        self._batch_delete_btn = ctk.CTkButton(
+            self._batch_bar, text="🗑 删除选中", width=90, height=26,
+            font=ctk.CTkFont(size=11),
+            fg_color=WC_COLORS["danger"], hover_color="#E53935",
+            command=self._batch_delete_selected)
+        self._batch_delete_btn.pack(side="left", padx=2)
+
+        self._batch_cancel_btn = ctk.CTkButton(
+            self._batch_bar, text="取消", width=50, height=26,
+            font=ctk.CTkFont(size=11),
+            fg_color=WC_COLORS["text_muted2"], hover_color=WC_COLORS["text_muted"],
+            command=self._batch_cancel)
+        self._batch_cancel_btn.pack(side="right", padx=8)
+
+        # 批量模式切换按钮（放在搜索框右侧的小按钮，通过右键菜单也可进入）
+        self._batch_toggle_btn = ctk.CTkButton(
+            search_wrap, text="📋 批量", width=50, height=26,
+            font=ctk.CTkFont(size=10),
+            fg_color=WC_COLORS["text_muted2"], hover_color=WC_COLORS["text_muted"],
+            command=self._toggle_batch_mode)
+        self._batch_toggle_btn.place(relx=1.0, rely=0.5, anchor="e", x=-4)
+
         # 会话列表滚动
         self.contact_list_frame = ctk.CTkScrollableFrame(
-            parent, fg_color="#EBEBEB", corner_radius=0,
-            scrollbar_button_color="#C8C8C8", scrollbar_button_hover_color="#AAAAAA",
+            parent, fg_color=WC_COLORS["card_hover"], corner_radius=0, border_width=0,
+            scrollbar_button_color=WC_COLORS["border"], scrollbar_button_hover_color=WC_COLORS["text_muted2"],
         )
         self.contact_list_frame.grid(row=1, column=0, sticky="nsew", padx=0, pady=(4, 0))
 
@@ -385,22 +468,13 @@ class WeChatAIApp(ctk.CTk):
             os.path.dirname(os.path.abspath(__file__)), "data", "messages_history.json")
         self._history_save_job = None      # after() 句柄（防抖）
         self._history_dirty = False
-        self._messages_store = {}
+        self._messages_store = {}      # 仅缓存"已打开/实时"的联系人全文（懒加载，不再全量驻留）
+        self._conv_index = {}          # 轻量会话索引: contact -> {count,preview,last_sender,last_time,unread,is_group}
         self._msg_seq = 0
+        self._msg_index = {}           # 去重索引 contact -> {msg_key: idx}
+        self._all_messages_live = []   # "全部会话"视图下的实时新增（尚未落库）
+        self._storage_cache = None     # 自建存储对象缓存（避免 engine 未初始化时删除/查询失效）
         self._load_history()
-
-        # 从历史记录重建联系人卡片
-        if self._messages_store:
-            for contact, msgs in self._messages_store.items():
-                if msgs:
-                    latest = msgs[0]
-                    preview = str(latest.get("content", ""))[:26]
-                    is_group = bool(latest.get("is_group", False))
-                    self._append_contact_card(
-                        contact, preview,
-                        is_group=is_group,
-                        unread=0, active=False
-                    )
 
         # V3 P0-1: 顶部系统卡"📋 全部会话"（永远存在，点击显示所有会话混排）
         #   系统卡放在 contact_list_frame 最顶部（before 第一个孩子）
@@ -410,19 +484,19 @@ class WeChatAIApp(ctk.CTk):
         except Exception:
             before = None
 
-        sys_wrap = ctk.CTkFrame(self.contact_list_frame, fg_color="#EBEBEB", height=56)
+        sys_wrap = ctk.CTkFrame(self.contact_list_frame, fg_color=WC_COLORS["card_active"], height=52)
         if before:
             sys_wrap.pack(before=before, side="top", fill="x")
         else:
             sys_wrap.pack(side="top", fill="x")
         sys_wrap.pack_propagate(False)
 
-        sys_avatar = ctk.CTkLabel(sys_wrap, text="📋", width=36, height=36, corner_radius=4,
-                                   fg_color="#5B6BE7", text_color="#FFFFFF",
+        sys_avatar = ctk.CTkLabel(sys_wrap, text="📋", width=36, height=36, corner_radius=18,
+                                   fg_color=WC_COLORS["accent"], text_color="#FFFFFF",
                                    font=ctk.CTkFont(size=15))
         sys_avatar.pack(side="left", padx=(10, 8), pady=10)
 
-        sys_text = ctk.CTkFrame(sys_wrap, fg_color="#EBEBEB")
+        sys_text = ctk.CTkFrame(sys_wrap, fg_color=WC_COLORS["card_hover"])
         sys_text.pack(side="left", fill="both", expand=True, pady=9)
         sys_title = ctk.CTkLabel(sys_text, text=self._contact_filter_all,
                                   text_color=WC_COLORS["text"],
@@ -440,6 +514,14 @@ class WeChatAIApp(ctk.CTk):
             "_is_system_all": True,
         }
 
+        # 启动渲染：按会话索引把每个联系人渲染为独立左栏卡片。
+        # 修复回归：此前 _load_history 只建 _conv_index 却漏调 _rebuild_contact_list，
+        # 导致启动后左栏只剩“全部会话”，历史联系人的独立卡片永不出现。
+        try:
+            self._rebuild_contact_list()
+        except Exception:
+            pass
+
         # 绑定系统卡点击事件
         def _sys_enter(_e):
             for w in (sys_wrap, sys_avatar, sys_title.master, sys_title.master.master):
@@ -454,7 +536,7 @@ class WeChatAIApp(ctk.CTk):
                 pass
 
         def _sys_leave(_e):
-            bg = WC_COLORS["card_active"] if self._active_contact == self._contact_filter_all else "#EBEBEB"
+            bg = WC_COLORS["card_active"] if self._active_contact == self._contact_filter_all else WC_COLORS["card_hover"]
             try:
                 sys_wrap.configure(fg_color=bg)
                 sys_title.master.configure(fg_color=bg)
@@ -463,6 +545,29 @@ class WeChatAIApp(ctk.CTk):
 
         def _sys_click(_e):
             self._set_active_contact(self._contact_filter_all)
+
+        # 系统卡右键菜单
+        def _sys_right_click(e):
+            import tkinter as _tk
+            m = _tk.Menu(self, tearoff=0)
+            m.add_command(label="🗑 删除全部会话历史…",
+                          command=self._delete_all_contacts)
+            m.add_command(label="📋 批量选择模式",
+                          command=self._toggle_batch_mode)
+            try:
+                m.tk_popup(e.x_root, e.y_root)
+            finally:
+                try:
+                    m.grab_release()
+                except Exception:
+                    pass
+
+        for w in (sys_wrap, sys_avatar, sys_title, sys_preview):
+            try:
+                w.bind("<Button-3>", _sys_right_click)
+                w.bind("<Control-Button-1>", _sys_right_click)
+            except Exception:
+                pass
 
         for w in (sys_wrap, sys_avatar, sys_title, sys_preview):
             try:
@@ -475,40 +580,239 @@ class WeChatAIApp(ctk.CTk):
         # V3 P0-1 + P1-1: 搜索框 实时过滤会话卡（按名字/预览匹配）
         try:
             self.contact_search_entry.bind("<KeyRelease>", self._on_contact_search)
-            self.contact_search_entry.bind("<FocusOut>", self._on_contact_search)
+           # self.contact_search_entry.bind("<FocusOut>", self._on_contact_search)
         except Exception:
             pass
 
-        # 默认选中"📋 全部会话"
+        # 默认选中"📋 全部会话" + 350ms 后 rebuild 气泡（确保 frame 已布局）
         self.after(250, lambda: self._set_active_contact(self._contact_filter_all))
+        self.after(450, self._rebuild_message_list)
+        self.after(450, self._rebuild_contact_list)
         if self._messages_store:
             self.after(300, self._rebuild_message_list)
 
     def _load_history(self):
-        """启动时加载消息历史（data/messages_history.json）"""
+        """启动加载：只构建轻量会话索引（contact -> count/preview/...），不把全量消息体载入内存。
+
+        数据源：
+          - messages.db  —— 引擎持久化库（GROUP BY 量级查询，启动极快）。
+          - messages_history.json —— 仅用于恢复未读数等 UI 态（不再承载全量正文）。
+        真正点开某会话时才按需从 db 懒加载该会话全文（见 _load_conversation）。
+        """
         try:
-            if os.path.exists(self._history_path):
-                with open(self._history_path, "r", encoding="utf-8") as f:
-                    raw = json.load(f)
-                if isinstance(raw, dict):
-                    for contact, msgs in raw.items():
-                        if not isinstance(msgs, list) or not msgs:
-                            continue
-                        cleaned = []
-                        for m in msgs:
-                            if isinstance(m, dict) and m.get("content") is not None:
-                                cleaned.append(m)
-                        if cleaned:
-                            self._messages_store[str(contact)] = cleaned
-                    # 恢复 seq：取全局最大 _seq + 1
-                    max_seq = 0
-                    for msgs in self._messages_store.values():
-                        for m in msgs:
-                            if isinstance(m.get("_seq"), int):
-                                max_seq = max(max_seq, m["_seq"])
-                    self._msg_seq = max_seq + 1
+            # 1) 从 db 构建会话索引（权威、最快）
+            self._rebuild_conv_index()
+
+            # 2) 恢复未读数等 UI 态（db 无 unread 概念，从 json overlay）
+            try:
+                if os.path.exists(self._history_path):
+                    with open(self._history_path, "r", encoding="utf-8") as f:
+                        _raw = json.load(f)
+                    if isinstance(_raw, dict) and "__unread__" in _raw:
+                        for _c, _u in (_raw["__unread__"] or {}).items():
+                            if _c in self._conv_index:
+                                self._conv_index[_c]["unread"] = int(_u or 0)
+            except Exception:
+                pass
         except Exception:
             pass
+
+    def _get_storage(self):
+        """返回存储对象：优先 engine.storage，否则按配置自建（避免未初始化时删除/查询失效）。"""
+        try:
+            if getattr(self, "engine", None) and getattr(self.engine, "storage", None):
+                return self.engine.storage
+        except Exception:
+            pass
+        if getattr(self, "_storage_cache", None) is None:
+            try:
+                from storage import MessageStorage
+                _sc = (self.config_data or {}).get("storage", {}) or {}
+                self._storage_cache = MessageStorage(_sc)
+            except Exception as _e:
+                try:
+                    self._on_log("error", f"[存储] 初始化失败: {_e}")
+                except Exception:
+                    pass
+                return None
+        return self._storage_cache
+
+    def _rebuild_conv_index(self):
+        """从 messages.db 构建轻量会话索引（一条查询，启动/刷新极快，不载入全量正文）。"""
+        self._conv_index = {}
+        _st = self._get_storage()
+        if _st is None:
+            return
+        try:
+            import sqlite3
+            _db = getattr(_st, "db_path", "data/messages.db")
+            if not os.path.exists(_db):
+                return
+            _conn = sqlite3.connect(_db)
+            _conn.row_factory = sqlite3.Row
+            _rows = _conn.execute(
+                "SELECT contact, sender, raw_text, timestamp, is_important "
+                "FROM messages ORDER BY timestamp ASC"
+            ).fetchall()
+            _conn.close()
+
+            _tool = ["助手v2.0", "AI助手", "微信 AI", "信息提取", "自动回复",
+                     "数据查看", "设置", "红点", "屏幕外", "保活", "截图",
+                     "预览", "诊断", "增量", "窗口坐标"]
+            _status = ["消息：", "提取：", "重要：", "回复：", "引擎已初始化"]
+            import re as _re
+            for _r in _rows:
+                _contact = (_r["contact"] or "").strip()
+                _content = (_r["raw_text"] or "").strip()
+                _sender = _r["sender"] or "other"
+                if not _content:
+                    continue
+                if any(_mk in _contact for _mk in _tool):
+                    continue
+                if _re.search(r'(昨天|今天|明天|前天|星期[一二三四五六日天]|周[一二三四五六日天])', _contact) \
+                        or _re.match(r'^\d{1,2}[:：]\d{2}$', _contact) \
+                        or _re.match(r'^\d+$', _contact):
+                    _contact = "未命名会话"
+                if any(_sm in _content for _sm in _status):
+                    continue
+                if _sender == "other":
+                    if len(_content) < 2:
+                        continue
+                    if _re.match(r'^\d{1,2}[:：]\d{2}$', _content):
+                        continue
+                    if _re.match(r'^\d+$', _content):
+                        continue
+                if not _contact:
+                    _contact = "未命名会话"
+                _idx = self._conv_index.setdefault(_contact, {
+                    "count": 0, "preview": "", "last_sender": _sender,
+                    "last_time": _r["timestamp"] or "", "unread": 0, "is_group": False,
+                })
+                _idx["count"] += 1
+                _idx["preview"] = _content
+                _idx["last_sender"] = _sender
+                _idx["last_time"] = _r["timestamp"] or _idx["last_time"]
+        except Exception as _e:
+            try:
+                self._on_log("warning", f"[会话索引] 构建失败: {_e}")
+            except Exception:
+                pass
+
+    def _load_conversation(self, contact):
+        """懒加载某联系人完整消息体（精确匹配，从 db），缓存到 _messages_store[contact]。"""
+        if contact in self._messages_store:
+            return self._messages_store[contact]
+        _st = self._get_storage()
+        _msgs = []
+        if _st is not None:
+            try:
+                import sqlite3
+                _db = getattr(_st, "db_path", "data/messages.db")
+                _conn = sqlite3.connect(_db)
+                _conn.row_factory = sqlite3.Row
+                _rows = _conn.execute(
+                    "SELECT sender, raw_text, timestamp, is_important FROM messages "
+                    "WHERE contact = ? ORDER BY timestamp ASC", (contact,)
+                ).fetchall()
+                _conn.close()
+                for _r in _rows:
+                    _msgs.append({
+                        "contact": contact,
+                        "sender": _r["sender"] or "other",
+                        "content": _r["raw_text"] or "",
+                        "timestamp": _r["timestamp"] or "",
+                        "is_important": bool(_r["is_important"]),
+                        "is_group": False,
+                        "_seq": 0,
+                    })
+            except Exception:
+                pass
+        for i, _m in enumerate(_msgs):
+            _m["_seq"] = i + 1
+        self._msg_seq = max(self._msg_seq, len(_msgs))
+        _msgs.reverse()  # 最新在前（与 _add_message_card_impl 的 insert(0) 一致）
+        self._messages_store[contact] = _msgs
+        _ci = self._msg_index.setdefault(contact, {})
+        for _idx, _m in enumerate(_msgs):
+            _k = _m.get("msg_key")
+            if _k:
+                _ci[_k] = _idx
+        return _msgs
+
+    def _get_all_view_messages(self):
+        """全部会话视图：从 db 取最近 _MAX 条（一次查询），合并本会话实时新增。"""
+        _st = self._get_storage()
+        _base = []
+        if _st is not None:
+            try:
+                _rows = _st.query(contact=None, limit=300)
+                for _r in _rows:
+                    _base.append({
+                        "contact": _r.get("contact") or "?",
+                        "sender": _r.get("sender", "other"),
+                        "content": _r.get("raw_text", ""),
+                        "timestamp": _r.get("timestamp", ""),
+                        "is_important": bool(_r.get("is_important", False)),
+                        "is_group": False,
+                        "_seq": 0,
+                    })
+            except Exception:
+                pass
+        _live = getattr(self, "_all_messages_live", []) or []
+        _merged = _base + _live
+        _seen = set()
+        _out = []
+        for _m in _merged:
+            _key = (_m.get("contact"), _m.get("content"), _m.get("timestamp"))
+            if _key in _seen:
+                continue
+            _seen.add(_key)
+            _out.append(_m)
+        # 按时间正序（旧→新，最新在底部）；混合格式时间戳退化为插入序
+        try:
+            _out.sort(key=lambda x: str(x.get("timestamp", "")))
+        except Exception:
+            pass
+        return _out
+
+    def _rebuild_contact_list(self):
+        """重建左侧会话卡片（除📋全部会话系统卡外全部销毁重建）。
+        Ctrl+D / 删除历史 / 刷新 等场景调用。"""
+        try:
+            if not hasattr(self, "contact_list_frame") or not self.contact_list_frame.winfo_exists():
+                return
+            # 1) 除📋全部会话卡外，其它卡全部销毁（系统卡永远保留）
+            sys_card_info = self._contact_cards.get(self._contact_filter_all, {})
+            sys_frame = sys_card_info.get("frame") if isinstance(sys_card_info, dict) else None
+            for child in list(self.contact_list_frame.winfo_children()):
+                try:
+                    if sys_frame is not None and str(child) == str(sys_frame):
+                        continue
+                    child.destroy()
+                except Exception:
+                    pass
+            # 2) 清理 _contact_cards，仅保留系统卡
+            keep = {self._contact_filter_all: self._contact_cards[self._contact_filter_all]}                 if self._contact_filter_all in self._contact_cards else {}
+            self._contact_cards = keep
+            # 3) 从会话索引重建所有会话卡（索引里已是“最新消息预览”，无需载入正文）
+            active = getattr(self, "_active_contact", None)
+            for contact, idx in (self._conv_index or {}).items():
+                preview = str(idx.get("preview", ""))[:26]
+                is_group = bool(idx.get("is_group", False))
+                unread = int(idx.get("unread", 0) or 0)
+                self._append_contact_card(
+                    contact, preview, is_group=is_group, unread=unread,
+                    active=(contact == active))
+            # 4) 系统卡移到最顶部（确保 pack 顺序在最上）
+            try:
+                if sys_frame and sys_frame.winfo_exists():
+                    sys_frame.pack_forget()
+                    sys_frame.pack(side="top", fill="x")
+            except Exception:
+                pass
+        except Exception as e:
+            try: self._append_log("warning", f"[会话列表] 重建失败: {e}")
+            except Exception: pass
 
     def _schedule_history_save(self):
         """防抖写盘：800ms 内合并多次写入"""
@@ -521,21 +825,29 @@ class WeChatAIApp(ctk.CTk):
         self._history_save_job = self.after(800, self._flush_history)
 
     def _flush_history(self):
-        """把消息池写盘（最新在前，按 JSON list 保存）"""
+        """写盘：只持久化轻量会话索引 + 未读数（全量正文始终以 messages.db 为权威源）。"""
         self._history_save_job = None
         if not self._history_dirty:
             return
         self._history_dirty = False
         try:
+            _payload = {
+                "__unread__": {c: int(v.get("unread", 0) or 0)
+                               for c, v in (self._conv_index or {}).items()}
+            }
             with open(self._history_path, "w", encoding="utf-8") as f:
-                json.dump(self._messages_store, f, ensure_ascii=False, indent=1)
+                json.dump(_payload, f, ensure_ascii=False, indent=1)
         except Exception:
             pass
 
     def _append_contact_card(self, contact, preview_text, is_group=False,
                               unread=0, active=False):
-        """V3: 新建或更新一个"会话卡片"（微信PC会话卡 #EBEBEB 悬停/选中变灰）"""
+        """V3: 新建或更新一个"会话卡片"（微信PC会话卡 #EBEBEB 悬停/选中变灰）
+        美化：圆形头像首字母 + 时间显示 + 在线状态点
+        """
         import tkinter as tk
+        import hashlib
+        from datetime import datetime
 
         if contact in self._contact_cards:
             info = self._contact_cards[contact]
@@ -546,43 +858,82 @@ class WeChatAIApp(ctk.CTk):
             if un > 0:
                 info["badge"].configure(text=str(un) if un < 99 else "99+")
                 info["badge"].pack(side="right", padx=(0, 6))
+                info["badge"].lift()
             else:
                 info["badge"].pack_forget()
+            # 更新时间
+            if info.get("time_label"):
+                info["time_label"].configure(
+                    text=datetime.now().strftime("%H:%M"))
+            # 更新侧边栏未读角标
+            try:
+                total_unread = sum(
+                    v.get("unread", 0) for v in self._contact_cards.values()
+                    if not v.get("_is_system_all"))
+                badge = self._nav_badges.get("monitor")
+                if badge:
+                    if total_unread > 0:
+                        badge.configure(
+                            text=str(total_unread) if total_unread < 99 else "99+")
+                        badge.place(relx=0.78, rely=0.12, anchor="ne")
+                        badge.lift()
+                    else:
+                        badge.place_forget()
+            except Exception:
+                pass
             if active:
                 self._set_active_contact(contact)
             return info["frame"]
 
-        # 新卡片
-        card = tk.Frame(self.contact_list_frame, bg="#EBEBEB", height=56,
-                        highlightthickness=0)
+        # 新卡片（微信PC：60px 高，悬停浅灰，选中深灰，底部 1px 分割线）
+        card = tk.Frame(self.contact_list_frame, bg=WC_COLORS["card_hover"], height=60,
+                        highlightthickness=0, width=218)
         card.pack(fill="x", side="top")
         card.pack_propagate(False)
+        try:
+            sep = tk.Frame(card, bg=WC_COLORS["divider"], height=1)
+            sep.pack(side="bottom", fill="x")
+        except Exception:
+            pass
 
-        # 头像（左）— 自己绿/对方灰，群聊加两个小人标识
-        avatar_bg = WC_COLORS["avatar_me"] if not is_group else "#2AA7E3"
-        avatar_char = "👥" if is_group else "👤"
-        avatar = ctk.CTkLabel(card, text=avatar_char, width=36, height=36, corner_radius=4,
+        # 圆形头像（首字母/群图标，固定颜色）
+        colors = WC_COLORS.get("avatar_colors",
+            ["#007AFF", "#34C759", "#FF3B30", "#FF9500", "#AF52DE"])
+        idx = int(hashlib.md5(contact.encode()).hexdigest(), 16) % len(colors)
+        avatar_bg = colors[idx]
+        first_char = contact[0] if contact else "?"
+        avatar_char = "👥" if is_group else first_char
+        avatar = ctk.CTkLabel(card, text=avatar_char, width=40, height=40,
+                              corner_radius=20,
                               fg_color=avatar_bg, text_color="#FFFFFF",
-                              font=ctk.CTkFont(size=15))
-        avatar.pack(side="left", padx=(10, 8), pady=10)
+                              font=ctk.CTkFont(size=16, weight="bold"))
+        avatar.pack(side="left", padx=(12, 10), pady=10)
 
         # 文字区
-        text_wrap = tk.Frame(card, bg="#EBEBEB")
-        text_wrap.pack(side="left", fill="both", expand=True, pady=9)
+        text_wrap = tk.Frame(card, bg=WC_COLORS["card_hover"])
+        text_wrap.pack(side="left", fill="both", expand=True, pady=8)
 
-        header_row = tk.Frame(text_wrap, bg="#EBEBEB")
+        header_row = tk.Frame(text_wrap, bg=WC_COLORS["card_hover"])
         header_row.pack(fill="x")
 
-        title_lbl = tk.Label(header_row, text=contact, bg="#EBEBEB", fg=WC_COLORS["text"],
+        title_lbl = tk.Label(header_row, text=contact, bg=WC_COLORS["card_hover"],
+                             fg=WC_COLORS["text"],
                              font=("Microsoft YaHei", 12, "bold"), anchor="w")
         title_lbl.pack(side="left")
 
-        # 未读红点 Badge（微信PC 红色小圆标，初始pack_forget）
-        badge = tk.Label(header_row, text="1", bg=WC_COLORS["danger"], fg="#FFFFFF",
-                         font=("Microsoft YaHei", 9, "bold"),
-                         padx=5, pady=0, borderwidth=0)
+        # 时间标签（右侧，灰色小字）
+        time_label = tk.Label(header_row, text=datetime.now().strftime("%H:%M"),
+                              bg=WC_COLORS["card_hover"], fg=WC_COLORS["time_badge"],
+                              font=("Microsoft YaHei", 9), anchor="e")
+        time_label.pack(side="right", padx=(0, 8))
 
-        preview = tk.Label(text_wrap, text=preview_text[:26], bg="#EBEBEB",
+        # 未读红点 Badge（微信PC 红色小圆标，初始pack_forget）
+        badge = tk.Label(header_row, text="1", bg=WC_COLORS["danger"],
+                         fg=WC_COLORS["text"],
+                         font=("Microsoft YaHei", 9, "bold"),
+                         padx=6, pady=1, borderwidth=0)
+
+        preview = tk.Label(text_wrap, text=preview_text[:26], bg=WC_COLORS["card_hover"],
                            fg=WC_COLORS["text_muted2"],
                            font=("Microsoft YaHei", 10), anchor="w")
         preview.pack(fill="x", side="top")
@@ -594,7 +945,7 @@ class WeChatAIApp(ctk.CTk):
             preview.configure(bg=WC_COLORS["card_hover"])
 
         def _on_leave(_e):
-            bg_new = WC_COLORS["card_active"] if self._active_contact == contact else "#EBEBEB"
+            bg_new = WC_COLORS["card_active"] if self._active_contact == contact else WC_COLORS["card_hover"]
             for w in (card, text_wrap, header_row):
                 w.configure(bg=bg_new)
             title_lbl.configure(bg=bg_new)
@@ -618,6 +969,8 @@ class WeChatAIApp(ctk.CTk):
             _ctx_menu.add_separator()
             _ctx_menu.add_command(label="📤 导出该会话为 Markdown (.md)",
                                    command=lambda c=contact: self._export_contact_md(c))
+            _ctx_menu.add_command(label="🗑 删除该会话所有记录…",
+                                   command=lambda c=contact: self._delete_contact_records(c))
 
             def _on_right_click(e, __m=_ctx_menu):
                 try:
@@ -640,7 +993,7 @@ class WeChatAIApp(ctk.CTk):
         self._contact_cards[contact] = {
             "frame": card, "title": title_lbl, "preview": preview,
             "badge": badge, "is_group": is_group, "unread": unread,
-            "avatar": avatar,
+            "avatar": avatar, "time_label": time_label,
             "_menu_ref": _ctx_menu,
         }
         info = self._contact_cards[contact]
@@ -656,6 +1009,9 @@ class WeChatAIApp(ctk.CTk):
     def _set_active_contact(self, contact):
         """V3 P0-1: 点击会话卡 → 按选中会话重建中栏气泡（支持系统📋卡=全部会话）"""
         self._active_contact = contact
+        # 离开“全部会话”视图时清空实时缓存，下次进入从 db 重载（防重复）
+        if contact != self._contact_filter_all:
+            self._all_messages_live = []
         # 切换会话 → 重建消息列表（最新在顶）
         try:
             self._rebuild_message_list()
@@ -665,7 +1021,7 @@ class WeChatAIApp(ctk.CTk):
         # 刷新每张卡的背景色 + badge清零
         for name, info in self._contact_cards.items():
             is_active = (name == contact)
-            bg = WC_COLORS["card_active"] if is_active else "#EBEBEB"
+            bg = WC_COLORS["card_active"] if is_active else WC_COLORS["card_hover"]
 
             # 1. frame 层（tk.Frame 或 CTkFrame）
             frame_widget = info.get("frame")
@@ -684,7 +1040,7 @@ class WeChatAIApp(ctk.CTk):
             try:
                 if isinstance(title_w, ctk.CTkLabel):
                     # 系统卡 CTkLabel：parent 也是 CTkFrame
-                    title_w.configure(fg_color=bg if bg != "#EBEBEB" else "transparent")
+                    title_w.configure(fg_color=bg if bg != WC_COLORS["card_hover"] else "transparent")
                     # 同步文字区 master fg（CTkFrame）
                     if hasattr(title_w, "master") and isinstance(title_w.master, ctk.CTkFrame):
                         try:
@@ -706,7 +1062,7 @@ class WeChatAIApp(ctk.CTk):
 
             try:
                 if isinstance(preview_w, ctk.CTkLabel):
-                    preview_w.configure(fg_color=bg if bg != "#EBEBEB" else "transparent")
+                    preview_w.configure(fg_color=bg if bg != WC_COLORS["card_hover"] else "transparent")
                 elif preview_w is not None:
                     preview_w.configure(bg=bg)
             except Exception:
@@ -876,6 +1232,245 @@ class WeChatAIApp(ctk.CTk):
         except Exception as e:
             messagebox.showerror("导出失败", str(e))
 
+    def _delete_contact_records(self, contact):
+        """删除指定会话的历史消息（增量刷新，不做全量重建）"""
+        self._batch_delete_contacts([contact])
+
+    def _batch_delete_contacts(self, contacts):
+        """批量删除多个联系人的消息（单次全量重建，只执行一次）"""
+        if not contacts:
+            return
+        contacts = [c for c in contacts if c and c != self._contact_filter_all]
+        if not contacts:
+            return
+
+        from tkinter import messagebox as _mb
+        if len(contacts) == 1:
+            msg = f"确定要删除与「{contacts[0]}」的全部聊天记录吗？\n\n此操作不可撤销。"
+        else:
+            msg = f"确定要删除以下 {len(contacts)} 个会话的全部聊天记录吗？\n\n{', '.join(contacts[:10])}{'...' if len(contacts) > 10 else ''}\n\n此操作不可撤销。"
+        if not _mb.askyesno("删除历史记录", msg):
+            return
+
+        total_removed = 0
+        # 关键修复：未初始化引擎（未点“开始监控”）时 engine.storage 为 None，
+        # 改用 _get_storage() 自建存储对象，否则 clear_all/delete_contact 被跳过 → 删了库里还在。
+        storage = self._get_storage()
+
+        obsidian_delete = self.config_data.get("obsidian", {}).get("delete_link", False)
+
+        for contact in contacts:
+            removed = 0
+            if storage:
+                try:
+                    n = storage.delete_contact(contact)
+                    if n:
+                        removed += int(n)
+                except Exception as e:
+                    self._on_log("error", f"[删除] 数据库删除失败: {contact}: {e}")
+                # “未命名会话”是索引里把空联系人/日期伪联系人改名而来，
+                # 其原始 db 名（'' / '昨天11' 等）与卡片名不一致，需单独清这些“伪联系人”行
+                if contact == "未命名会话":
+                    try:
+                        on = storage.delete_orphan_contacts()
+                        if on:
+                            removed += int(on)
+                    except Exception as e:
+                        self._on_log("error", f"[删除] 伪联系人清理失败: {e}")
+
+            if contact in self._messages_store:
+                removed += len(self._messages_store[contact])
+                del self._messages_store[contact]
+            # 同步清轻量索引 / 实时列表，避免左栏残留与重启复活
+            self._conv_index.pop(contact, None)
+            if hasattr(self, "_all_messages_live"):
+                self._all_messages_live = [
+                    m for m in self._all_messages_live
+                    if m.get("contact") != contact
+                ]
+
+            if obsidian_delete:
+                try:
+                    from obsidian_sync import ObsidianSync
+                    sync = ObsidianSync(self.config_data.get("obsidian", {}))
+                    sync.delete_contact_note(contact)
+                except Exception:
+                    pass
+
+            card = self._contact_cards.pop(contact, None)
+            if card:
+                frame_w = card.get("frame")
+                if frame_w:
+                    try:
+                        if frame_w.winfo_exists():
+                            frame_w.destroy()
+                    except Exception:
+                        pass
+                menu_ref = card.get("_menu_ref")
+                if menu_ref:
+                    try:
+                        menu_ref.destroy()
+                    except Exception:
+                        pass
+
+            if self._active_contact == contact:
+                self._active_contact = None
+
+            total_removed += removed
+
+        # 单次全量重建（批量只重建一次）
+        try:
+            self._rebuild_message_list()
+        except Exception:
+            pass
+        # 标记脏数据，确保 _flush_history 真正写盘
+        self._history_dirty = True
+        try:
+            self._flush_history()
+        except Exception:
+            pass
+
+        self._on_log("info", f"[删除] 已删除 {len(contacts)} 个会话共 {total_removed} 条消息")
+
+    def _delete_all_contacts(self):
+        """删除所有会话历史记录"""
+        non_system = [c for c in self._contact_cards if c != self._contact_filter_all]
+        if not non_system:
+            from tkinter import messagebox as _mb
+            _mb.showinfo("提示", "暂无历史记录可删除")
+            return
+        from tkinter import messagebox as _mb
+        if not _mb.askyesno(
+                "删除全部历史",
+                f"确定要删除全部 {len(non_system)} 个会话的所有聊天记录吗？\n\n此操作不可撤销！"):
+            return
+        # 一并清空底层 messages.db（含空联系人/日期伪联系人），
+        # 否则重启时 _rebuild_conv_index 会从 db 把已删记录“复活”
+        storage = self._get_storage()
+        if storage:
+            try:
+                n = storage.clear_all()
+                self._on_log("info", f"[删除] 已同步清空 messages.db（{n} 条）")
+            except Exception as e:
+                self._on_log("error", f"[删除] 清空数据库失败: {e}")
+        self._batch_delete_contacts(non_system)
+        # 兜底：清空所有内存态，确保“全部会话”视图与统计归零
+        self._conv_index = {}
+        self._messages_store = {}
+        self._all_messages_live = []
+        self._msg_index = {}
+
+    def _toggle_batch_mode(self):
+        """切换批量选择模式"""
+        self._batch_mode = not self._batch_mode
+        if self._batch_mode:
+            self._batch_bar.grid(row=2, column=0, sticky="ew", padx=8, pady=(4, 0))
+            self._batch_toggle_btn.configure(text="✓ 批量")
+            self._refresh_batch_checkboxes()
+        else:
+            self._batch_bar.grid_remove()
+            self._batch_toggle_btn.configure(text="📋 批量")
+            self._batch_selected.clear()
+            self._refresh_batch_checkboxes()
+
+    def _refresh_batch_checkboxes(self):
+        """刷新所有联系人卡的复选框状态"""
+        for contact, info in self._contact_cards.items():
+            if contact == self._contact_filter_all:
+                continue
+            cb = info.get("_batch_checkbox")
+            if self._batch_mode:
+                if cb is None:
+                    try:
+                        import tkinter as _tk
+                        var = _tk.BooleanVar(value=False)
+                        cb_widget = _tk.Checkbutton(
+                            info.get("frame"), variable=var,
+                            bg=WC_COLORS["card_hover"], activebackground=WC_COLORS["card_hover"],
+                            highlightthickness=0, bd=0)
+                        cb_widget.place(relx=0.0, rely=0.5, anchor="w", x=2)
+                        info["_batch_checkbox"] = cb_widget
+                        info["_batch_var"] = var
+                        var.trace_add("write",
+                            lambda *_args, c=contact: self._on_batch_check(c))
+                    except Exception:
+                        pass
+                else:
+                    try:
+                        cb.place(relx=0.0, rely=0.5, anchor="w", x=2)
+                    except Exception:
+                        pass
+            else:
+                if cb is not None:
+                    try:
+                        cb.place_forget()
+                    except Exception:
+                        pass
+
+    def _on_batch_check(self, contact):
+        """复选框勾选变化回调"""
+        info = self._contact_cards.get(contact, {})
+        var = info.get("_batch_var")
+        if var and var.get():
+            self._batch_selected.add(contact)
+        else:
+            self._batch_selected.discard(contact)
+
+    def _batch_select_all(self):
+        """全选所有联系人"""
+        import tkinter as _tk
+        for contact, info in self._contact_cards.items():
+            if contact == self._contact_filter_all:
+                continue
+            var = info.get("_batch_var")
+            if var:
+                var.set(True)
+        self._batch_selected = set(
+            c for c in self._contact_cards if c != self._contact_filter_all)
+
+    def _batch_delete_selected(self):
+        """删除勾选的会话"""
+        selected = list(self._batch_selected)
+        if not selected:
+            from tkinter import messagebox as _mb
+            _mb.showinfo("提示", "请先勾选要删除的会话")
+            return
+        self._batch_delete_contacts(selected)
+        self._batch_cancel()
+
+    def _batch_cancel(self):
+        """取消批量模式"""
+        self._batch_selected.clear()
+        self._toggle_batch_mode()
+
+    def _prepend_message_row(self, msg_data):
+        """增量插入单条气泡到顶部（旧版，保留兼容）"""
+        try:
+            row = self._build_message_row(self.msg_list_frame_inner, msg_data)
+            row.pack_forget()
+            slaves = self.msg_list_frame_inner.pack_slaves()
+            if slaves:
+                row.pack(side="top", fill="x", padx=6, pady=4, before=slaves[0])
+            else:
+                row.pack(side="top", fill="x", padx=6, pady=4)
+            try:
+                self.msg_list_frame._parent_canvas.yview_moveto(0.0)
+            except Exception:
+                pass
+        except Exception:
+            pass
+
+    def _append_message_row(self, msg_data):
+        """增量插入单条气泡到底部（微信风格：最新在最下）"""
+        try:
+            row = self._build_message_row(self.msg_list_frame_inner, msg_data)
+            row.pack(side="top", fill="x", padx=6, pady=4)
+            try:
+                self.msg_list_frame._parent_canvas.yview_moveto(1.0)
+            except Exception:
+                pass
+        except Exception:
+            pass
 
     def _build_message_row(self, parent, m):
         """构建单条消息气泡行（微信PC风格），返回行容器。供 _rebuild_message_list 复用。"""
@@ -898,9 +1493,9 @@ class WeChatAIApp(ctk.CTk):
             str(group_member)[0] if (group_member and is_group)
             else (str(contact)[0] if contact else "?"))
         avatar = ctk.CTkLabel(
-            row, text=avatar_text, width=36, height=36, corner_radius=4,
+            row, text=avatar_text, width=40, height=40, corner_radius=6,
             fg_color=avatar_bg, text_color="#FFFFFF",
-            font=ctk.CTkFont(family="Microsoft YaHei", size=13, weight="bold"),
+            font=ctk.CTkFont(family="Microsoft YaHei", size=14, weight="bold"),
         )
 
         # 消息气泡 + 昵称/时间
@@ -912,18 +1507,18 @@ class WeChatAIApp(ctk.CTk):
             text_col.pack(side="right", fill="x", expand=True)
 
             bubble_bg = WC_COLORS["bubble_self"]
-            bubble_text_color = "#111111"
 
             wrap = ctk.CTkFrame(text_col, fg_color="transparent")
             wrap.pack(side="right")      # 先 pack → 最右（贴头像）
-            outer_bubble = ctk.CTkFrame(wrap, fg_color=bubble_bg, corner_radius=4)
+            outer_bubble = ctk.CTkFrame(wrap, fg_color=WC_COLORS["bubble_self"], corner_radius=18,
+                                        border_width=0)
             outer_bubble.pack(side="right", anchor="e")
             content_lbl = ctk.CTkLabel(
                 outer_bubble, text=content[:360] if len(content) <= 360 else content[:360] + "…",
                 font=ctk.CTkFont(family="Microsoft YaHei", size=12),
-                text_color=bubble_text_color, anchor="w", justify="left",
-                wraplength=380,
-                padx=10, pady=7,
+                text_color="#FFFFFF", anchor="w", justify="left",
+                wraplength=500,
+                padx=14, pady=10,
             )
             content_lbl.pack(anchor="e")
 
@@ -961,15 +1556,15 @@ class WeChatAIApp(ctk.CTk):
             wrap = ctk.CTkFrame(text_col, fg_color="transparent")
             wrap.pack(side="left", fill="x")
 
-            outer_bubble = ctk.CTkFrame(wrap, fg_color="#FFFFFF", corner_radius=4,
-                                        border_width=1, border_color=WC_COLORS["border_light"])
+            outer_bubble = ctk.CTkFrame(wrap, fg_color=WC_COLORS["bubble_other"], corner_radius=18,
+                                        border_width=0)
             outer_bubble.pack(side="left", anchor="w")
             content_lbl = ctk.CTkLabel(
                 outer_bubble, text=content[:360] if len(content) <= 360 else content[:360] + "…",
                 font=ctk.CTkFont(family="Microsoft YaHei", size=12),
                 text_color=WC_COLORS["text"], anchor="w", justify="left",
-                wraplength=380,
-                padx=10, pady=7,
+                wraplength=500,
+                padx=14, pady=10,
             )
             content_lbl.pack(anchor="w")
 
@@ -993,20 +1588,20 @@ class WeChatAIApp(ctk.CTk):
                 star.pack(side="left", padx=(4, 0), pady=(18, 0), anchor="s")
 
         # 顶部对齐（调用方按"最新在前"顺序逐条打包，实现最新置顶）
-        row.pack(side="top", fill="x", padx= 6, pady=4)
+        row.pack(side="top", fill="x", padx=4, pady=2)
         return row
 
     def _rebuild_message_list(self):
-        """V3 P0-1: 按当前选中会话重建气泡列表，最新消息在顶部（用户偏好）。
-        - active == _contact_filter_all 或 None → 合并所有会话消息，按 _seq 倒序（最新在上）。
-        - active == 某个 contact → 只取该会话的消息（_messages_store 里已存：最新在前，索引0）。
+        """V3: 按当前选中会话重建气泡列表，最新消息在底部（微信风格）。
+        - active == _contact_filter_all 或 None → 合并所有会话消息，按 _seq 正序（旧→新）。
+        - active == 某个 contact → 只取该会话的消息，倒序排列后 pack。
         """
         try:
             # 清空：先 destroy 所有子节点
-            for c in list(self.msg_list_frame_inner.winfo_children()):
+            for child in list(self.msg_list_frame_inner.winfo_children()):
                 try:
-                    if c.winfo_exists():
-                        c.destroy()
+                    if child.winfo_exists():
+                        child.destroy()
                 except Exception:
                     pass
             self.msg_empty_label = None
@@ -1015,14 +1610,17 @@ class WeChatAIApp(ctk.CTk):
             is_all = (active == self._contact_filter_all) or (active is None)
 
             if is_all:
-                # 全部会话：收集所有消息按 _seq 倒序（最新→最旧），pack 顺序直接就是"最新在顶"
-                all_msgs = []
-                for msgs in (self._messages_store or {}).values():
-                    all_msgs.extend(msgs)
-                items = sorted(all_msgs, key=lambda x: x.get("_seq", 0), reverse=True)
+                # 全部会话：从 db 取最近 _MAX 条（一次查询，绝不把全量正文载入内存）
+                items = self._get_all_view_messages()
             else:
-                # 单会话：_messages_store[contact] 本身就是"最新在前"
-                items = list((self._messages_store or {}).get(active, []))
+                # 单会话：按需懒加载（点开才从 db 取该会话全文）
+                items = list(reversed(self._load_conversation(active)))
+
+            # 性能：限制渲染条数（保留最新的 _MAX 条）
+            _MAX = 300
+            total_items = len(items)
+            if total_items > _MAX:
+                items = items[-_MAX:]  # 截取尾部（最新部分）
 
             if not items:
                 if is_all:
@@ -1043,25 +1641,20 @@ class WeChatAIApp(ctk.CTk):
                 ).pack()
                 return
 
-            # 直接按 items 当前顺序（最新在前）逐条 pack → 最顶部是最新消息
+            # 微信风格：最新在底部，逐条 pack
             for m in items:
                 try:
                     self._build_message_row(self.msg_list_frame_inner, m)
                 except Exception:
                     pass
 
-            # 滚动到最顶部（最新消息可见）
+            # 自动滚动到底部（最新消息可见）
             try:
                 self.msg_list_frame_inner.after(
-                    40,
-                    lambda: self.msg_list_frame._parent_canvas.yview_moveto(0.0))
+                    50, lambda: self.msg_list_frame._parent_canvas.yview_moveto(1.0))
             except Exception:
-                try:
-                    self.msg_list_frame.after(
-                        40,
-                        lambda: self.msg_list_frame._scrollbar.set(0.0, 0.1))
-                except Exception:
-                    pass
+                pass
+
         except Exception:
             import traceback as _tb
             try:
@@ -1118,7 +1711,7 @@ class WeChatAIApp(ctk.CTk):
 
         roles = self.config_data.get("roles", {})
         for i, (role_key, role) in enumerate(roles.items()):
-            role_card = ctk.CTkFrame(roles_frame, fg_color=WC_COLORS["bg"], corner_radius=8)
+            role_card = ctk.CTkFrame(roles_frame, fg_color=WC_COLORS["card_hover"], corner_radius=12)
             role_card.grid(row=i + 1, column=0, sticky="ew", padx=15, pady=3)
             role_card.grid_columnconfigure(1, weight=1)
 
@@ -1159,7 +1752,7 @@ class WeChatAIApp(ctk.CTk):
         self.data_stats_label.grid(row=0, column=3, padx=10, sticky="e")
 
         # 搜索区域
-        search_frame = ctk.CTkFrame(tab, fg_color=WC_COLORS["card"], corner_radius=8)
+        search_frame = ctk.CTkFrame(tab, fg_color=WC_COLORS["card"], corner_radius=12)
         search_frame.grid(row=1, column=0, sticky="ew", padx=10, pady=5)
 
         ctk.CTkLabel(search_frame, text="消息搜索",
@@ -1192,7 +1785,7 @@ class WeChatAIApp(ctk.CTk):
         self._create_search_panel(search_container)
 
         # 数据表格
-        table_frame = ctk.CTkFrame(tab, fg_color=WC_COLORS["card"], corner_radius=8)
+        table_frame = ctk.CTkFrame(tab, fg_color=WC_COLORS["card"], corner_radius=12)
         table_frame.grid(row=4, column=0, sticky="nsew", padx=10, pady=(0, 10))
         table_frame.grid_rowconfigure(0, weight=1)
         table_frame.grid_columnconfigure(0, weight=1)
@@ -1398,7 +1991,7 @@ class WeChatAIApp(ctk.CTk):
         scroll.grid(row=0, column=0, sticky="nsew")
 
         # 消息监控模式
-        monitor_frame = ctk.CTkFrame(scroll, fg_color=WC_COLORS["card"], corner_radius=8)
+        monitor_frame = ctk.CTkFrame(scroll, fg_color=WC_COLORS["card"], corner_radius=12)
         monitor_frame.pack(fill="x", padx=20, pady=20)
         monitor_frame.grid_columnconfigure(1, weight=1)
 
@@ -1469,7 +2062,7 @@ class WeChatAIApp(ctk.CTk):
         advanced_switch.pack(pady=5, anchor="w", padx=20)
 
         # 校准向导
-        calib_frame = ctk.CTkFrame(scroll, fg_color=WC_COLORS["card"], corner_radius=8)
+        calib_frame = ctk.CTkFrame(scroll, fg_color=WC_COLORS["card"], corner_radius=12)
         calib_frame.pack(fill="x", padx=20, pady=10)
 
         ctk.CTkLabel(calib_frame, text="窗口校准",
@@ -1482,7 +2075,7 @@ class WeChatAIApp(ctk.CTk):
                       command=self._run_calibration).pack(padx=15, pady=10, anchor="w")
 
         # 模式开关
-        mode_frame = ctk.CTkFrame(scroll, fg_color=WC_COLORS["card"], corner_radius=8)
+        mode_frame = ctk.CTkFrame(scroll, fg_color=WC_COLORS["card"], corner_radius=12)
         mode_frame.pack(fill="x", padx=20, pady=10)
 
         ctk.CTkLabel(mode_frame, text="智能模式",
@@ -1498,7 +2091,7 @@ class WeChatAIApp(ctk.CTk):
         self.dnd_switch.pack(anchor="w", padx=15, pady=3)
 
         # 报告设置
-        report_frame = ctk.CTkFrame(scroll, fg_color=WC_COLORS["card"], corner_radius=8)
+        report_frame = ctk.CTkFrame(scroll, fg_color=WC_COLORS["card"], corner_radius=12)
         report_frame.pack(fill="x", padx=20, pady=10)
 
         ctk.CTkLabel(report_frame, text="定时报告",
@@ -1518,7 +2111,7 @@ class WeChatAIApp(ctk.CTk):
                       command=self._open_report_dir).pack(side="left", padx=5)
 
         # 分类优先级规则
-        cls_frame = ctk.CTkFrame(scroll, fg_color=WC_COLORS["card"], corner_radius=8)
+        cls_frame = ctk.CTkFrame(scroll, fg_color=WC_COLORS["card"], corner_radius=12)
         cls_frame.pack(fill="x", padx=20, pady=10)
         ctk.CTkLabel(cls_frame, text="📑 分类优先级规则",
                      font=ctk.CTkFont(size=14, weight="bold"),
@@ -1543,7 +2136,7 @@ class WeChatAIApp(ctk.CTk):
                       command=self._export_classification_rules).pack(side="left", padx=5)
 
         # LLM设置
-        llm_frame = ctk.CTkFrame(scroll, fg_color=WC_COLORS["card"], corner_radius=8)
+        llm_frame = ctk.CTkFrame(scroll, fg_color=WC_COLORS["card"], corner_radius=12)
         llm_frame.pack(fill="x", padx=20, pady=20)
         llm_frame.grid_columnconfigure(1, weight=1)
 
@@ -1570,7 +2163,7 @@ class WeChatAIApp(ctk.CTk):
             text="🔗 测试连接",
             font=ctk.CTkFont(size=11),
             fg_color=WC_COLORS["info"],
-            hover_color="#0D7DD8",
+            hover_color=WC_COLORS["accent_hover"],
             command=self._test_llm_connection,
             width=100,
             height=28
@@ -1596,7 +2189,7 @@ class WeChatAIApp(ctk.CTk):
         self.advanced_frame = ctk.CTkFrame(scroll, fg_color="transparent")
 
         # OCR设置
-        ocr_frame = ctk.CTkFrame(self.advanced_frame, fg_color=WC_COLORS["card"], corner_radius=8)
+        ocr_frame = ctk.CTkFrame(self.advanced_frame, fg_color=WC_COLORS["card"], corner_radius=12)
         ocr_frame.pack(fill="x", padx=20, pady=(0, 20))
         ocr_frame.grid_columnconfigure(1, weight=1)
 
@@ -1630,7 +2223,7 @@ class WeChatAIApp(ctk.CTk):
         self.switch_denoise.grid(row=4, column=0, columnspan=2, padx=15, pady=5, sticky="w")
 
         # AI训练设置
-        ai_frame = ctk.CTkFrame(scroll, fg_color=WC_COLORS["card"], corner_radius=8)
+        ai_frame = ctk.CTkFrame(scroll, fg_color=WC_COLORS["card"], corner_radius=12)
         ai_frame.pack(fill="x", padx=20, pady=10)
         ai_frame.grid_columnconfigure(1, weight=1)
 
@@ -1663,6 +2256,12 @@ class WeChatAIApp(ctk.CTk):
         self.obsidian_enabled_var = ctk.BooleanVar(value=self.config_data.get("obsidian", {}).get("auto_sync", False))
         ctk.CTkSwitch(obsidian_frame, text="启用自动同步",
                      variable=self.obsidian_enabled_var).pack(anchor="w", padx=15, pady=5)
+
+        # 删除联动：删除历史时同步删除 Obsidian 笔记
+        self.obsidian_delete_link_var = ctk.BooleanVar(
+            value=self.config_data.get("obsidian", {}).get("delete_link", False))
+        ctk.CTkSwitch(obsidian_frame, text="删除历史时联动删除 Obsidian 笔记",
+                     variable=self.obsidian_delete_link_var).pack(anchor="w", padx=15, pady=5)
 
         # Vault路径
         ctk.CTkLabel(obsidian_frame, text="Vault 路径:").pack(anchor="w", padx=15, pady=(5, 0))
@@ -1761,10 +2360,57 @@ class WeChatAIApp(ctk.CTk):
         self.msg_list_frame = ctk.CTkScrollableFrame(
             parent, fg_color=WC_COLORS["bg"], corner_radius=0,
             border_width=0,
-            scrollbar_button_color="#D5D5D5", scrollbar_button_hover_color="#B8B8B8",
+            scrollbar_button_color=WC_COLORS["border"], scrollbar_button_hover_color=WC_COLORS["text_muted"],
         )
         self.msg_list_frame.pack(fill="both", expand=True)
         self.msg_list_frame_inner = self.msg_list_frame
+
+        # 底部消息详情卡片（点击消息弹出，再次点击或点×收起）
+        self.detail_bar = ctk.CTkFrame(
+            parent, fg_color=WC_COLORS["bg_dark"], corner_radius=12,
+            border_width=1, border_color=WC_COLORS["border"], height=120)
+        self.detail_bar.pack_forget()
+        self._detail_bar_visible = False
+        self._detail_bar_msg = None
+        self._build_detail_bar()
+
+        # ===== P0: AI 建议回复气泡卡 (输入栏上方, 默认隐藏) =====
+        self.suggest_bar = ctk.CTkFrame(
+            parent, fg_color=WC_COLORS["accent_light"], corner_radius=12,
+            border_width=1, border_color=WC_COLORS["accent"], height=72)
+        self.suggest_bar.pack_forget()
+        self._suggest_bar_visible = False
+        self._build_suggest_bar()
+
+        # 底部装饰输入栏（macOS 风格）
+        input_bar = ctk.CTkFrame(
+            parent, fg_color=WC_COLORS["input_bar_bg"], height=44,
+            corner_radius=0, border_width=0,
+        )
+        input_bar.pack(fill="x", side="bottom")
+        input_bar.pack_propagate(False)
+
+        # 工具栏图标（模拟微信底栏）
+        tools = ["😊", "📎", "📁", "✂️"]
+        tool_frame = ctk.CTkFrame(input_bar, fg_color="transparent")
+        tool_frame.pack(side="left", padx=(12, 0), pady=6)
+        for t in tools:
+            tb = ctk.CTkLabel(
+                tool_frame, text=t, width=28, height=28,
+                font=ctk.CTkFont(size=14),
+                text_color=WC_COLORS["text_muted"],
+                fg_color="transparent",
+            )
+            tb.pack(side="left", padx=2)
+
+        # 提示文字
+        hint = ctk.CTkLabel(
+            input_bar, text="NOYA Chat 微信助手 · 监控运行中",
+            font=ctk.CTkFont(size=10),
+            text_color=WC_COLORS["text_muted2"],
+        )
+        hint.pack(side="right", padx=14, pady=6)
+        self._input_bar_hint = hint
 
         # 空状态（空的微信聊天小提示）
         self.msg_empty_label = ctk.CTkFrame(
@@ -1788,79 +2434,256 @@ class WeChatAIApp(ctk.CTk):
     # ==============================================================
     # V3: 右侧详情面板（关键词/提取字段/摘要/置信度）
     # ==============================================================
-    def _create_detail_panel(self, parent):
-        parent.grid_columnconfigure(0, weight=1)
-        parent.grid_rowconfigure(4, weight=1)
+    def _build_detail_bar(self):
+        """底部消息详情卡片（横向紧凑布局，点击消息弹出）"""
+        bar = self.detail_bar
+        bar.grid_columnconfigure(0, weight=1)
+        bar.grid_columnconfigure(1, weight=0)
+        bar.grid_rowconfigure(0, weight=0)
+        bar.grid_rowconfigure(1, weight=1)
 
-        title = ctk.CTkLabel(
-            parent, text="📋 消息详情",
-            font=ctk.CTkFont(size=13, weight="bold"),
-            text_color=WC_COLORS["text"],
-        )
-        title.grid(row=0, column=0, sticky="ew", padx=14, pady=(12, 6))
+        # 顶行：标题 + 关闭按钮
+        top = ctk.CTkFrame(bar, fg_color="transparent", height=28)
+        top.grid(row=0, column=0, columnspan=2, sticky="ew", padx=10, pady=(6, 0))
+        top.grid_propagate(False)
+        self.detail_bar_title = ctk.CTkLabel(
+            top, text="📋 消息详情",
+            font=ctk.CTkFont(size=12, weight="bold"),
+            text_color=WC_COLORS["text"])
+        self.detail_bar_title.pack(side="left")
+        close_btn = ctk.CTkLabel(
+            top, text="✕", width=24, height=24,
+            font=ctk.CTkFont(size=14, weight="bold"),
+            text_color=WC_COLORS["text_muted"], cursor="hand2")
+        close_btn.pack(side="right")
+        close_btn.bind("<Button-1>", lambda e: self._hide_detail_bar())
 
-        # 基础信息区
-        self.detail_info_frame = ctk.CTkFrame(
-            parent, fg_color="#FAFAFA", corner_radius=6,
-            border_width=1, border_color=WC_COLORS["border_light"])
-        self.detail_info_frame.grid(row=1, column=0, sticky="ew",
-                                     padx=12, pady=(0, 8))
-        self.detail_info_frame.grid_columnconfigure(1, weight=1)
+        # 内容行：横向4格信息 + 标签
+        content = ctk.CTkFrame(bar, fg_color="transparent")
+        content.grid(row=1, column=0, sticky="nsew", padx=10, pady=4)
+        content.grid_columnconfigure((0, 1, 2, 3), weight=1, uniform="dc")
 
         self._detail_labels = {}
         info_rows = [
-            ("contact",  "会话"),
-            ("sender",   "发送方"),
-            ("time",     "时间"),
-            ("conf",     "OCR置信度"),
+            ("contact", "会话"),
+            ("sender", "发送方"),
+            ("time", "时间"),
+            ("conf", "置信度"),
         ]
         for i, (key, name) in enumerate(info_rows):
-            ctk.CTkLabel(self.detail_info_frame, text=name,
-                         font=ctk.CTkFont(size=10),
-                         text_color=WC_COLORS["text_muted"]).grid(
-                row=i, column=0, padx=(10, 4), pady=4, sticky="nw")
-            val = ctk.CTkLabel(self.detail_info_frame, text="—",
-                               font=ctk.CTkFont(size=10),
-                               text_color=WC_COLORS["text"],
-                               anchor="w", justify="left", wraplength=160)
-            val.grid(row=i, column=1, padx=(0, 10), pady=4, sticky="ew")
+            cell = ctk.CTkFrame(content, fg_color="transparent")
+            cell.grid(row=0, column=i, sticky="nsew", padx=2)
+            ctk.CTkLabel(cell, text=name,
+                         font=ctk.CTkFont(size=9),
+                         text_color=WC_COLORS["text_muted"]).pack(anchor="w")
+            val = ctk.CTkLabel(cell, text="—",
+                               font=ctk.CTkFont(size=10, weight="bold"),
+                               text_color=WC_COLORS["text"], anchor="w")
+            val.pack(anchor="w", fill="x")
             self._detail_labels[key] = val
 
-        # 标签摘要（关键词/重要/提取）
-        ctk.CTkLabel(parent, text="🏷 标签",
-                     font=ctk.CTkFont(size=12, weight="bold"),
-                     text_color=WC_COLORS["text"]).grid(
-            row=2, column=0, sticky="w", padx=14, pady=(6, 4))
-
-        self.detail_tags_frame = ctk.CTkFrame(
-            parent, fg_color="#FAFAFA", corner_radius=6,
-            border_width=1, border_color=WC_COLORS["border_light"])
-        self.detail_tags_frame.grid(row=3, column=0, sticky="ew",
-                                     padx=12, pady=(0, 8))
+        # 标签区（横向）
+        self.detail_tags_frame = ctk.CTkFrame(content, fg_color="transparent")
+        self.detail_tags_frame.grid(row=1, column=0, columnspan=4, sticky="ew", pady=(4, 0))
         self._detail_tags_placeholder = ctk.CTkLabel(
-            self.detail_tags_frame, text="(等待消息)",
+            self.detail_tags_frame, text="",
             font=ctk.CTkFont(size=10), text_color=WC_COLORS["text_muted"])
-        self._detail_tags_placeholder.pack(padx=10, pady=8, anchor="w")
+        self._detail_tags_placeholder.pack(anchor="w")
 
-        # 提取字段区（可滚动）
-        ctk.CTkLabel(parent, text="💎 提取字段 / 内容摘要",
-                     font=ctk.CTkFont(size=12, weight="bold"),
-                     text_color=WC_COLORS["text"]).grid(
-            row=4, column=0, sticky="nw", padx=14, pady=(2, 4))
+        # 保持兼容：detail_fields_frame 也指向同一个标签区
+        self.detail_fields_frame = self.detail_tags_frame
+        self._detail_content_label = self._detail_tags_placeholder
 
-        self.detail_fields_frame = ctk.CTkScrollableFrame(
-            parent, fg_color="#FAFAFA", corner_radius=6,
-            border_width=1, border_color=WC_COLORS["border_light"])
-        self.detail_fields_frame.grid(row=5, column=0, sticky="nsew",
-                                       padx=12, pady=(0, 12))
-        parent.grid_rowconfigure(5, weight=4)
+    def _show_detail_bar(self, msg_data):
+        """弹出底部详情卡片：如果是对方消息，异步触发 AI 建议回复"""
+        self._detail_bar_msg = msg_data
+        try:
+            self.detail_bar.pack(fill="x", side="bottom", before=self._input_bar_hint.master)
+        except Exception:
+            self.detail_bar.pack(fill="x", side="bottom")
+        self._detail_bar_visible = True
+        self._update_detail_panel(msg_data)
+        # ===== P0: 对方消息 → 异步请求 AI 建议回复 =====
+        try:
+            sender = msg_data.get("sender", "other")
+            contact = msg_data.get("contact")
+            content = str(msg_data.get("content", "") or "").strip()
+            if sender != "me" and contact and content and len(content) >= 2:
+                self._async_gen_suggestion(contact, content)
+        except Exception:
+            pass
 
-        self._detail_content_label = ctk.CTkLabel(
-            self.detail_fields_frame, text="(等待新消息)",
-            font=ctk.CTkFont(size=10), text_color=WC_COLORS["text_muted"],
-            anchor="nw", justify="left", wraplength=240,
-        )
-        self._detail_content_label.pack(padx=10, pady=8, fill="x", anchor="w")
+    def _hide_detail_bar(self):
+        """收起底部详情卡片"""
+        self.detail_bar.pack_forget()
+        self._detail_bar_visible = False
+        self._detail_bar_msg = None
+
+    # ===== P0: AI 建议回复气泡卡相关方法 =====
+    def _build_suggest_bar(self):
+        bar = self.suggest_bar
+        bar.grid_columnconfigure(0, weight=1)
+        bar.grid_rowconfigure(1, weight=1)
+        top = ctk.CTkFrame(bar, fg_color="transparent", height=24)
+        top.grid(row=0, column=0, sticky="ew", padx=10, pady=(6, 0))
+        top.grid_propagate(False)
+        self.suggest_bar_title = ctk.CTkLabel(top, text="🤖 AI 建议回复",
+            font=ctk.CTkFont(size=11, weight="bold"), text_color=WC_COLORS["accent"])
+        self.suggest_bar_title.pack(side="left")
+        close_btn = ctk.CTkLabel(top, text="✕", width=20, height=20,
+            font=ctk.CTkFont(size=12, weight="bold"),
+            text_color=WC_COLORS["text_muted"], cursor="hand2")
+        close_btn.pack(side="right")
+        close_btn.bind("<Button-1>", lambda e: self._hide_suggest_bar())
+        body_wrap = ctk.CTkFrame(bar, fg_color="transparent")
+        body_wrap.grid(row=1, column=0, sticky="nsew", padx=10, pady=(2, 6))
+        body_wrap.grid_columnconfigure(0, weight=1)
+        self.suggest_text = ctk.CTkLabel(body_wrap, text="—",
+            font=ctk.CTkFont(size=12), text_color=WC_COLORS["text"],
+            anchor="w", justify="left", wraplength=720)
+        self.suggest_text.grid(row=0, column=0, sticky="w")
+        btn_row = ctk.CTkFrame(body_wrap, fg_color="transparent")
+        btn_row.grid(row=0, column=1, sticky="e", padx=(8, 0))
+        self.suggest_copy_btn = ctk.CTkButton(btn_row, text="📋 复制",
+            width=60, height=26, corner_radius=8,
+            fg_color=WC_COLORS["accent"], text_color="#FFFFFF",
+            hover_color=WC_COLORS["accent_hover"],
+            font=ctk.CTkFont(size=10, weight="bold"),
+            command=self._copy_suggestion)
+        self.suggest_copy_btn.pack(side="left", padx=2)
+        self.suggest_regen_btn = ctk.CTkButton(btn_row, text="🔄 重新生成",
+            width=84, height=26, corner_radius=8,
+            fg_color=WC_COLORS["card"], text_color=WC_COLORS["text"],
+            hover_color=WC_COLORS["card_hover"], border_width=1,
+            border_color=WC_COLORS["border"],
+            font=ctk.CTkFont(size=10),
+            command=self._regen_suggestion)
+        self.suggest_regen_btn.pack(side="left", padx=2)
+
+    def _show_suggest_bar(self, text, contact=None):
+        try:
+            self._suggest_bar_text = (text or "").strip()
+            self._suggest_bar_contact = contact or self._active_contact
+            if not self._suggest_bar_text: return
+            display = self._suggest_bar_text
+            if len(display) > 280: display = display[:280] + "…"
+            self.suggest_text.configure(text=display)
+            if not self._suggest_bar_visible:
+                try: self.suggest_bar.pack(fill="x", side="bottom",
+                        before=self._input_bar_hint.master, padx=8, pady=(0, 4))
+                except Exception:
+                    self.suggest_bar.pack(fill="x", side="bottom", padx=8, pady=(0, 4))
+                self._suggest_bar_visible = True
+        except Exception as e:
+            try: self._on_log("warning", f"[建议回复] 显示失败: {e}")
+            except Exception: pass
+
+    def _hide_suggest_bar(self):
+        try: self.suggest_bar.pack_forget()
+        except Exception: pass
+        self._suggest_bar_visible = False
+        self._suggest_bar_text = None
+        self._suggest_bar_contact = None
+
+    def _copy_suggestion(self):
+        text = getattr(self, "_suggest_bar_text", "") or ""
+        if text:
+            self.clipboard_clear()
+            self.clipboard_append(text)
+            self.update()
+            self.suggest_copy_btn.configure(text="✅ 已复制")
+            self.after(1200, lambda: self.suggest_copy_btn.configure(text="📋 复制"))
+            self._on_log("info", f"[建议回复] 已复制到剪贴板 ({len(text)}字)")
+
+    def _regen_suggestion(self):
+        contact = getattr(self, "_suggest_bar_contact", None) or self._active_contact
+        if not contact or contact == self._contact_filter_all:
+            self._on_log("warning", "[建议回复] 请先在左侧选中一个具体联系人"); return
+        msgs = self._load_conversation(contact)
+        last_other = None
+        for m in msgs:
+            if m.get("sender") != "me": last_other = m
+        if not last_other:
+            self._on_log("warning", "[建议回复] 该联系人还没有对方消息"); return
+        self._hide_suggest_bar()
+        self._on_log("info", f"[建议回复] 正在为「{contact}」重新生成...")
+        self._async_gen_suggestion(contact, last_other.get("content", ""))
+
+    def _async_gen_suggestion(self, contact, content):
+        if not getattr(self, "engine", None) or not getattr(self.engine, "llm_client", None):
+            self._on_log("warning", "[建议回复] LLM 未初始化，请先启动监控"); return
+        import threading
+        def _worker():
+            try:
+                role = self.engine.role_manager.get_role_for(contact)
+                ctx_mapped = []
+                ctx = self.get_conversation_context(contact) or []
+                for m in ctx[-10:]:
+                    r = "我" if m.get("sender") == "me" else "对方"
+                    c = str(m.get("content", "")).strip()
+                    if c: ctx_mapped.append(f"{r}：{c}")
+                reply = self.engine.llm_client.generate_reply(contact, content, role, ctx_mapped)
+                if reply:
+                    self.after(0, lambda r=reply: self._show_suggest_bar(r, contact))
+                else:
+                    self.after(0, lambda: self._on_log("warning", "[建议回复] LLM 返回为空"))
+            except Exception as e:
+                self.after(0, lambda: self._on_log("error", f"[建议回复] 生成失败: {e}"))
+        threading.Thread(target=_worker, daemon=True, name="suggest-gen").start()
+
+    # ===== P0: 4 个全局快捷键方法 =====
+    def _hotkey_focus_search(self, _event=None):
+        try:
+            self._switch_nav("monitor")
+            self.contact_search_entry.focus_set()
+            self.contact_search_entry.select_range(0, "end")
+            self._append_log("debug", "[快捷键] Ctrl+F → 搜索框聚焦")
+        except Exception: pass
+        return "break"
+
+    def _hotkey_toggle_important(self, _event=None):
+        try:
+            c = self._active_contact
+            if not c or c == self._contact_filter_all:
+                self._append_log("warning", "[快捷键] 请先在左侧选择联系人 (Ctrl+D)"); return
+            cur = False
+            msgs = self._load_conversation(c)
+            if msgs: cur = bool(msgs[0].get("is_important", False))
+            new_val = not cur
+            for m in msgs:
+                m["is_important"] = new_val
+                if new_val and not m.get("importance_reason"):
+                    m["importance_reason"] = "Ctrl+D 手动标记为重要"
+            self._history_dirty = True
+            try: self._flush_history()
+            except Exception: pass
+            self._rebuild_contact_list()
+            badge = "⭐ 重要" if new_val else "已取消重要"
+            self._append_log("info", f"[快捷键] Ctrl+D → 「{c}」{badge}")
+            try: self.chat_title.configure(text=f"{c} {' ⭐' if new_val else ''}")
+            except Exception: pass
+        except Exception as e:
+            try: self._append_log("error", f"[快捷键] Ctrl+D 失败: {e}")
+            except Exception: pass
+        return "break"
+
+    def _hotkey_goto_settings(self, _event=None):
+        try:
+            self._switch_nav("settings")
+            self._append_log("debug", "[快捷键] Ctrl+Shift+S → 设置页")
+        except Exception: pass
+        return "break"
+
+    def _hotkey_minimize_or_close(self, _event=None):
+        try:
+            if getattr(self, "_suggest_bar_visible", False):
+                self._hide_suggest_bar(); return "break"
+            if getattr(self, "_detail_bar_visible", False):
+                self._hide_detail_bar(); return "break"
+            self.iconify()
+            self._append_log("debug", "[快捷键] Esc → 窗口最小化")
+        except Exception: pass
+        return "break"
 
     def _create_main_preview(self, parent):
         """V3: 主界面截图预览区（轻量嵌入中栏）"""
@@ -1889,11 +2712,11 @@ class WeChatAIApp(ctk.CTk):
         self.main_preview_status.grid(row=0, column=1, padx=10, sticky="e")
 
         self.main_preview_label = tk.Label(
-            parent, bg="#E8E8E8",
+            parent, bg=WC_COLORS["bg_dark"],
             highlightbackground=WC_COLORS["border"], highlightthickness=1)
         self.main_preview_label.grid(row=1, column=0, sticky="nsew", padx=8, pady=8)
         try:
-            placeholder = Image.new("RGB", (480, 320), color="#F0F0F0")
+            placeholder = Image.new("RGB", (480, 320), color=WC_COLORS["bg"])
             self._main_placeholder_photo = ImageTk.PhotoImage(placeholder)
             self.main_preview_label.configure(image=self._main_placeholder_photo)
             self.main_preview_label.image = self._main_placeholder_photo
@@ -1901,14 +2724,46 @@ class WeChatAIApp(ctk.CTk):
             pass
 
     def _on_new_message(self, msg_data):
-        """新消息回调（线程安全）"""
+        """新消息回调（线程安全 + 上下文管理）"""
         try:
             contact = msg_data.get("contact", "?")
-            content = str(msg_data.get("content", ""))[:30]
-            self._on_log("info", f"[UI] 收到新消息回调: {contact}: {content}")
-            self.after(0, lambda: self._add_message_card(msg_data))
+            content_text = str(msg_data.get("content", ""))[:30]
+            self._on_log("info", f"[UI] 收到新消息回调: {contact}: {content_text}")
+
+            if getattr(self, "_context_enabled", False) and contact and contact != self._contact_filter_all:
+                if contact not in self._conv_context:
+                    self._conv_context[contact] = []
+                self._conv_context[contact].append({
+                    "sender": msg_data.get("sender", "other"),
+                    "content": msg_data.get("content", ""),
+                    "timestamp": msg_data.get("timestamp", ""),
+                    "keywords": msg_data.get("matched_keywords", []),
+                })
+                _max_turns = getattr(self, "_context_max_turns", 10)
+                maxlen = _max_turns * 2
+                if len(self._conv_context[contact]) > maxlen:
+                    self._conv_context[contact] = self._conv_context[contact][-maxlen:]
+
+            self.after(0, lambda d=dict(msg_data): self._add_message_card(d))
         except Exception as e:
             print(f"[实时消息] 回调调度失败: {e}")
+
+    def get_conversation_context(self, contact):
+        """获取指定联系人的对话上下文"""
+        return self._conv_context.get(contact, [])
+
+    def clear_conversation_context(self, contact=None):
+        """清空对话上下文"""
+        if contact:
+            self._conv_context.pop(contact, None)
+        else:
+            self._conv_context.clear()
+        self._on_log("info", f"[上下文] 已清空{' ' + contact if contact else '全部'}对话上下文")
+
+    def _set_context_enabled(self, enabled):
+        """开关对话上下文"""
+        self._context_enabled = enabled
+        self._on_log("info", f"[上下文] 对话上下文已{'开启' if enabled else '关闭'}")
 
     def _add_message_card(self, msg_data):
         """添加消息卡片到面板（异常输出到UI日志，不再静默）"""
@@ -1982,7 +2837,7 @@ class WeChatAIApp(ctk.CTk):
     def _add_message_card_impl(self, msg_data):
         """
         V3: 微信 PC 原版气泡（左白右绿，群聊上方显示群成员名）
-        - 最新消息放顶部（用户偏好）。
+        - 最新消息按微信风格显示在底部。
         - 同时更新左侧会话列表卡、右侧详情面板。
         """
         import tkinter as tk
@@ -2029,26 +2884,59 @@ class WeChatAIApp(ctk.CTk):
         # msg_key 去重：同一 msg_key（基础卡/更新卡、重复上报）原位更新，不新增
         mk = msg_data.get("msg_key")
         store = self._messages_store.setdefault(contact, [])
+        if not hasattr(self, "_msg_index"):
+            self._msg_index = {}
+        contact_idx = self._msg_index.setdefault(contact, {})
         if mk:
-            for _i, _m in enumerate(store):
-                if _m.get("msg_key") == mk:
-                    merged = dict(_m)
-                    merged.update(msg_data)
-                    merged["_seq"] = _m.get("_seq")
-                    store[_i] = merged
-                    try:
-                        self._update_detail_panel(merged)
-                    except Exception:
-                        pass
-                    self._schedule_history_save()
-                    self._rebuild_message_list()
-                    return
+            _i = contact_idx.get(mk)
+            if _i is not None and _i < len(store):
+                _m = store[_i]
+                merged = dict(_m)
+                merged.update(msg_data)
+                merged["_seq"] = _m.get("_seq")
+                store[_i] = merged
+                try:
+                    self._update_detail_panel(merged)
+                except Exception:
+                    pass
+                self._schedule_history_save()
+                self._rebuild_message_list()
+                return
         self._msg_seq += 1
         stored = dict(msg_data)
         stored["_seq"] = self._msg_seq
-        store.insert(0, stored)      # 最新置顶
-        if len(store) > 80:
-            del store[80:]
+        store.insert(0, stored)
+        if mk and hasattr(self, "_msg_index"):
+            ci = self._msg_index.setdefault(contact, {})
+            ci[mk] = 0
+            for idx, m in enumerate(store):
+                k = m.get("msg_key")
+                if k:
+                    ci[k] = idx
+        if len(store) > 500:
+            del store[500:]
+        # —— 维护会话索引（轻量，供左栏卡片/统计使用；不承载正文）——
+        try:
+            _ci = self._conv_index.setdefault(contact, {
+                "count": 0, "preview": "", "last_sender": sender,
+                "last_time": timestamp, "unread": 0, "is_group": is_group,
+            })
+            _ci["count"] = _ci.get("count", 0) + 1
+            _ci["preview"] = content.replace("\n", " ")[:26]
+            _ci["last_sender"] = sender
+            _ci["last_time"] = timestamp or _ci.get("last_time", "")
+            _ci["is_group"] = bool(_ci.get("is_group", False)) or is_group
+            if self._active_contact != contact:
+                _ci["unread"] = _ci.get("unread", 0) + 1
+        except Exception:
+            pass
+        # —— “全部会话”实时新增（切换回去时从 db 重载，避免重复）——
+        try:
+            _is_all_now = (self._active_contact is None) or (self._active_contact == self._contact_filter_all)
+            if _is_all_now:
+                self._all_messages_live.append(dict(stored))
+        except Exception:
+            pass
         self._schedule_history_save()
 
         # —— 更新右侧详情面板
@@ -2066,10 +2954,19 @@ class WeChatAIApp(ctk.CTk):
                 text_color=status_color,
             )
 
-        # —— 按当前选中联系人重建右侧消息列表 + 滚动到底部 ——
-        self._rebuild_message_list()
+        # —— 增量插入新气泡（微信风格：底部插入，不重建）——
         try:
-            self.after(80, lambda: self.msg_list_frame._parent_canvas.yview_moveto(0.0))
+            active = self._active_contact
+            is_all = (active is None) or (active == self._contact_filter_all)
+            is_shown = is_all or (active == contact)
+            if is_shown:
+                # 增量插入到底部，不触发全量重建
+                self._append_message_row(stored)
+                try:
+                    self.msg_list_frame._parent_canvas.yview_moveto(1.0)
+                except Exception:
+                    pass
+            # 不重建：只有用户切换会话时 _set_active_contact 才会重建
         except Exception:
             pass
 
@@ -2335,17 +3232,17 @@ class WeChatAIApp(ctk.CTk):
                 detail_lines.append(f"⚠️ 引擎统计异常: {e2}")
                 detail_lines.append("")
 
-            # 3. UI消息池统计
-            if hasattr(self, '_messages_store'):
-                total_msgs = sum(len(v) for v in self._messages_store.values())
-                total_contacts = len(self._messages_store)
-                detail_lines.append(f"💾 内存消息池: {total_msgs} 条消息, {total_contacts} 个联系人")
+            # 3. UI会话索引统计（轻量，不遍历全量正文）
+            if hasattr(self, '_conv_index'):
+                total_msgs = sum(v.get("count", 0) for v in self._conv_index.values())
+                total_contacts = len(self._conv_index)
+                detail_lines.append(f"💾 会话索引: {total_msgs} 条消息, {total_contacts} 个联系人")
                 if total_contacts > 0:
-                    top_contacts = sorted(self._messages_store.items(),
-                                         key=lambda x: len(x[1]), reverse=True)[:8]
+                    top_contacts = sorted(self._conv_index.items(),
+                                         key=lambda x: x[1].get("count", 0), reverse=True)[:8]
                     detail_lines.append("  会话Top8:")
-                    for name, msgs in top_contacts:
-                        detail_lines.append(f"    {name}: {len(msgs)}条")
+                    for name, idx in top_contacts:
+                        detail_lines.append(f"    {name}: {idx.get('count', 0)}条")
 
             self._set_stats_detail("\n".join(detail_lines) if detail_lines else "暂无统计数据")
 
@@ -2488,9 +3385,8 @@ class WeChatAIApp(ctk.CTk):
     def _auto_refresh_stats(self):
         """自动刷新统计（每10秒）"""
         try:
-            if hasattr(self, 'engine') and self.engine and self._running:
+            if hasattr(self, 'engine') and self.engine and self.engine.is_running():
                 self._refresh_stats()
-                # 10秒后再次刷新
                 self.after(10000, self._auto_refresh_stats)
         except Exception as e:
             self._on_log("warning", f"[统计] 自动刷新异常: {e}")
@@ -2554,6 +3450,13 @@ class WeChatAIApp(ctk.CTk):
                     "on_new_message": self._on_new_message,
                     "on_capture": self._on_capture,
                 })
+                # ===== P0: 把 UI 的对话上下文取数回调注入引擎 =====
+                try:
+                    self.engine._fetch_context_fn = self.get_conversation_context
+                    self.engine._context_turns = self._context_max_turns
+                    self._on_log("info", "[上下文] 已挂载到自动回复引擎 (最近%d轮)" % self._context_max_turns)
+                except Exception as _e:
+                    self._on_log("warning", "[上下文] 挂载到引擎失败: %s" % _e)
                 self._on_log("info", "✅ 监控引擎创建成功")
             except Exception as e:
                 self._on_log("error", f"❌ 引擎创建失败: {e}")
@@ -3331,51 +4234,51 @@ class WeChatAIApp(ctk.CTk):
         self.preview_win = tk.Toplevel(self)
         self.preview_win.title("NOYA Chat 微信助手 - 监控预览")
         self.preview_win.geometry("960x680")
-        self.preview_win.configure(bg="#EDEDED")
+        self.preview_win.configure(bg=WC_COLORS["bg"])
         self.preview_win.minsize(860, 580)
 
         # ===== 顶部标题栏（微信风格）=====
-        title_bar = tk.Frame(self.preview_win, bg="#2E2E2E", height=36)
+        title_bar = tk.Frame(self.preview_win, bg=WC_COLORS["sidebar"], height=36)
         title_bar.pack(fill="x", side="top")
         title_bar.pack_propagate(False)
 
         tk.Label(title_bar, text="🤖 NOYA Chat 微信助手",
-                 bg="#2E2E2E", fg="#07C160",
+                 bg=WC_COLORS["sidebar"], fg=WC_COLORS["accent"],
                  font=("Microsoft YaHei", 12, "bold")).pack(side="left", padx=15, pady=6)
 
         self.preview_status = tk.Label(title_bar, text="● 等待截图...",
-                                        bg="#2E2E2E", fg="#888888",
+                                        bg=WC_COLORS["sidebar"], fg=WC_COLORS["text_muted"],
                                         font=("Consolas", 10))
         self.preview_status.pack(side="right", padx=15, pady=6)
 
         # ===== 主体：左侧联系人 + 右侧预览 =====
-        body = tk.Frame(self.preview_win, bg="#EDEDED")
+        body = tk.Frame(self.preview_win, bg=WC_COLORS["bg"])
         body.pack(fill="both", expand=True)
 
         # ===== 左侧联系人面板 =====
-        left_panel = tk.Frame(body, bg="#2E2E2E", width=200)
+        left_panel = tk.Frame(body, bg=WC_COLORS["sidebar"], width=200)
         left_panel.pack(side="left", fill="y")
         left_panel.pack_propagate(False)
 
         # 搜索框
-        search_frame = tk.Frame(left_panel, bg="#2E2E2E")
+        search_frame = tk.Frame(left_panel, bg=WC_COLORS["sidebar"])
         search_frame.pack(fill="x", padx=10, pady=10)
         tk.Entry(search_frame, font=("Microsoft YaHei", 10),
-                 bg="#3A3A3A", fg="#FFFFFF", insertbackground="#FFFFFF",
+                 bg=WC_COLORS["sidebar_hover"], fg=WC_COLORS["text"], insertbackground=WC_COLORS["text"],
                  relief="flat", highlightthickness=0).pack(fill="x", ipady=4)
 
         # 标签
         tk.Label(left_panel, text="最近监控",
-                 bg="#2E2E2E", fg="#888888",
+                 bg=WC_COLORS["sidebar"], fg=WC_COLORS["text_muted"],
                  font=("Microsoft YaHei", 9)).pack(anchor="w", padx=15, pady=(5, 8))
 
         # 联系人列表（滚动）
-        list_container = tk.Frame(left_panel, bg="#2E2E2E")
+        list_container = tk.Frame(left_panel, bg=WC_COLORS["sidebar"])
         list_container.pack(fill="both", expand=True, padx=5)
 
-        canvas = tk.Canvas(list_container, bg="#2E2E2E", highlightthickness=0)
+        canvas = tk.Canvas(list_container, bg=WC_COLORS["sidebar"], highlightthickness=0)
         scrollbar = tk.Scrollbar(list_container, orient="vertical", command=canvas.yview)
-        self._preview_list_frame = tk.Frame(canvas, bg="#2E2E2E")
+        self._preview_list_frame = tk.Frame(canvas, bg=WC_COLORS["sidebar"])
 
         self._preview_list_frame.bind(
             "<Configure>",
@@ -3392,72 +4295,84 @@ class WeChatAIApp(ctk.CTk):
         self._update_preview_contacts()
 
         # ===== 右侧预览区 =====
-        right_panel = tk.Frame(body, bg="#EDEDED")
+        right_panel = tk.Frame(body, bg=WC_COLORS["bg"])
         right_panel.pack(side="left", fill="both", expand=True)
 
         # 聊天头部
-        chat_header = tk.Frame(right_panel, bg="#F7F7F7", height=48)
+        chat_header = tk.Frame(right_panel, bg=WC_COLORS["bg"], height=48,
+                               highlightbackground=WC_COLORS["border"], highlightthickness=2)
         chat_header.pack(fill="x", side="top")
         chat_header.pack_propagate(False)
 
         self.chat_preview_title = tk.Label(chat_header, text="📡 实时监控画面",
-                                            bg="#F7F7F7", fg="#191919",
+                                            bg=WC_COLORS["bg"], fg=WC_COLORS["text"],
                                             font=("Microsoft YaHei", 13, "bold"))
         self.chat_preview_title.pack(side="left", padx=15, pady=12)
 
         self.chat_preview_sub = tk.Label(chat_header, text="屏幕外监控中",
-                                          bg="#F7F7F7", fg="#07C160",
+                                          bg=WC_COLORS["bg"], fg=WC_COLORS["accent"],
                                           font=("Microsoft YaHei", 10))
         self.chat_preview_sub.pack(side="right", padx=15, pady=12)
 
         # 截图预览区
-        preview_container = tk.Frame(right_panel, bg="#EDEDED")
+        preview_container = tk.Frame(right_panel, bg=WC_COLORS["bg"])
         preview_container.pack(fill="both", expand=True, padx=10, pady=10)
 
         # 模拟微信窗口边框
         self.preview_label = tk.Label(
             preview_container, bg="black",
-            highlightbackground="#D0D0D0", highlightthickness=1,
+            highlightbackground=WC_COLORS["border"], highlightthickness=1,
         )
         self.preview_label.pack(fill="both", expand=True)
 
         # 底部信息栏
-        bottom_bar = tk.Frame(right_panel, bg="#F7F7F7", height=32)
+        bottom_bar = tk.Frame(right_panel, bg=WC_COLORS["bg"], height=32,
+                               highlightbackground=WC_COLORS["border"], highlightthickness=2)
         bottom_bar.pack(fill="x", side="bottom")
         bottom_bar.pack_propagate(False)
 
         self.preview_info = tk.Label(bottom_bar,
                                       text="分辨率: -- | 状态: 等待截图",
-                                      bg="#F7F7F7", fg="#888888",
+                                      bg=WC_COLORS["bg"], fg=WC_COLORS["text_muted"],
                                       font=("Microsoft YaHei", 9))
         self.preview_info.pack(pady=6)
 
         # 默认占位图
         placeholder = Image.new("RGB", (720, 480), (240, 240, 240))
         draw = ImageDraw.Draw(placeholder)
-        draw.rectangle([0, 0, 719, 479], outline="#E0E0E0", width=1)
-        draw.text((260, 200), "等待监控截图...", fill="#999999")
-        draw.text((230, 240), "启动监控后将实时显示微信画面", fill="#BBBBBB")
+        draw.rectangle([0, 0, 719, 479], outline="#E5E5EA", width=1)
+        draw.text((260, 200), "等待监控截图...", fill="#86868B")
+        draw.text((230, 240), "启动监控后将实时显示微信画面", fill="#AEAEB2")
         self._placeholder_photo = ImageTk.PhotoImage(placeholder)
         self.preview_label.configure(image=self._placeholder_photo)
 
         self.preview_win.protocol("WM_DELETE_WINDOW", self._close_preview)
+        # 预览窗口专用联系人 frame（避免误操作主 UI contact_list_frame）
+        if hasattr(self, "contact_list_frame") and self.contact_list_frame.winfo_exists():
+            for ch in self.contact_list_frame.winfo_children():
+                try:
+                    if ch.winfo_class() in ("Frame", "TFrame", "CTkFrame"):
+                        self._preview_contacts_frame = ch
+                        break
+                except Exception:
+                    pass
+        if not hasattr(self, "_preview_contacts_frame"):
+            self._preview_contacts_frame = self.contact_list_frame
         self._on_log("info", "[预览窗口] 微信风格预览已打开")
 
     def _update_preview_contacts(self):
-        """更新预览窗口联系人列表"""
+        """更新预览窗口联系人列表（仅操作预览窗口内部 frame，不碰主 UI 会话列表）"""
         if not hasattr(self, '_preview_contacts'):
             return
-        if not hasattr(self, 'contact_list_frame'):
+        # 预览窗口专用 frame（不是主 UI 的 contact_list_frame）
+        frame = getattr(self, "_preview_contacts_frame", None)
+        if frame is None or not frame.winfo_exists():
             return
         try:
-            if not self.contact_list_frame.winfo_exists():
-                return
+            for widget in frame.winfo_children():
+                widget.destroy()
         except Exception:
             return
-
-        for widget in self.contact_list_frame.winfo_children():
-            widget.destroy()
 
         items = list(self._preview_contacts.items())
         if not items:
@@ -3466,36 +4381,36 @@ class WeChatAIApp(ctk.CTk):
             ]
 
         for name, info in items:
-            contact_row = tk.Frame(self.contact_list_frame, bg="#2E2E2E", cursor="hand2")
+            contact_row = tk.Frame(self.contact_list_frame, bg=WC_COLORS["sidebar"], cursor="hand2")
             contact_row.pack(fill="x", padx=5, pady=2)
 
-            avatar_frame = tk.Frame(contact_row, bg="#07C160", width=36, height=36)
+            avatar_frame = tk.Frame(contact_row, bg=WC_COLORS["accent"], width=36, height=36)
             avatar_frame.pack(side="left", padx=(10, 8), pady=6)
             avatar_frame.pack_propagate(False)
             tk.Label(avatar_frame, text=name[0] if name else "?",
-                     bg="#07C160", fg="white",
+                     bg=WC_COLORS["accent"], fg=WC_COLORS["text"],
                      font=("Microsoft YaHei", 11, "bold")).pack(expand=True)
 
-            info_frame = tk.Frame(contact_row, bg="#2E2E2E")
+            info_frame = tk.Frame(contact_row, bg=WC_COLORS["sidebar"])
             info_frame.pack(side="left", fill="x", expand=True, pady=6)
 
-            name_row = tk.Frame(info_frame, bg="#2E2E2E")
+            name_row = tk.Frame(info_frame, bg=WC_COLORS["sidebar"])
             name_row.pack(fill="x")
-            tk.Label(name_row, text=name, bg="#2E2E2E", fg="#FFFFFF",
+            tk.Label(name_row, text=name, bg=WC_COLORS["sidebar"], fg=WC_COLORS["text"],
                      font=("Microsoft YaHei", 10, "bold")).pack(side="left")
-            tk.Label(name_row, text=info.get("time", ""), bg="#2E2E2E", fg="#888888",
+            tk.Label(name_row, text=info.get("time", ""), bg=WC_COLORS["sidebar"], fg=WC_COLORS["text_muted"],
                      font=("Consolas", 8)).pack(side="right")
 
-            msg_row = tk.Frame(info_frame, bg="#2E2E2E")
+            msg_row = tk.Frame(info_frame, bg=WC_COLORS["sidebar"])
             msg_row.pack(fill="x")
             preview = info.get("preview", "")[:20]
-            tk.Label(msg_row, text=preview or "暂无新消息", bg="#2E2E2E", fg="#888888",
+            tk.Label(msg_row, text=preview or "暂无新消息", bg=WC_COLORS["sidebar"], fg=WC_COLORS["text_muted"],
                      font=("Microsoft YaHei", 9)).pack(anchor="w")
 
             unread = info.get("unread", 0)
             if unread > 0:
                 badge = tk.Label(contact_row, text=str(unread),
-                                 bg="#FA5151", fg="white", width=2,
+                                 bg="#FA5151", fg=WC_COLORS["text"], width=2,
                                  font=("Microsoft YaHei", 8, "bold"))
                 badge.place(relx=1.0, y=8, x=-12, anchor="ne")
 
@@ -3513,9 +4428,26 @@ class WeChatAIApp(ctk.CTk):
             level = "info"
         self.after(0, lambda: self._append_log(level, message))
 
+    def _set_log_level(self, level):
+        """设置日志级别: debug/info/warning/error"""
+        valid = ("debug", "info", "warning", "error")
+        level = level.lower()
+        if level in valid:
+            self._log_level = level
+            self._on_log("info", f"[日志] 级别设为: {level}")
+
+    def _log_level_enabled(self, level):
+        """检查目标级别是否启用"""
+        order = {"debug": 0, "info": 1, "warning": 2, "error": 3}
+        current = order.get(getattr(self, "_log_level", "info"), 1)
+        target = order.get(level, 1)
+        return target >= current
+
     def _append_log(self, level, message):
+        if not self._log_level_enabled(level):
+            return
         timestamp = datetime.now().strftime("%H:%M:%S")
-        prefix = {"info": "", "warning": "⚠ ", "error": "✖ "}.get(level, "")
+        prefix = {"debug": "◆ ", "info": "", "warning": "⚠ ", "error": "✖ "}.get(level, "")
         self.log_text.configure(state="normal")
         self.log_text.insert("end", f"[{timestamp}] {prefix}{message}\n")
         # 日志行数上限：仅保留最近 800 行，防止长期运行 UI 卡顿/内存膨胀
@@ -3666,6 +4598,12 @@ class WeChatAIApp(ctk.CTk):
                 "_ai_status": _st,
             }
             self.after(0, lambda m=msg_data: self._on_new_message(m))
+            # ===== P0: AI 已发送/待确认的回复，都作为"建议回复"在底部显示，用户可快速再次复制 =====
+            if reply and len(reply) >= 2:
+                try:
+                    self.after(150, lambda r=reply, c=contact: self._show_suggest_bar(r, c))
+                except Exception:
+                    pass
         except Exception as e:
             try:
                 self._append_log("warning", f"[回复·回执] 气泡创建失败: {e}")
@@ -3696,7 +4634,7 @@ class WeChatAIApp(ctk.CTk):
             pass
 
     def _on_stats(self, stats):
-        self.after(0, lambda: self._update_stats(stats))
+        self.after(0, lambda s=dict(stats): self._update_stats(s))
 
     def _update_stats(self, stats):
         self.stat_labels["frames"].configure(text=str(stats.get("frames_captured", 0)))
@@ -3735,51 +4673,93 @@ class WeChatAIApp(ctk.CTk):
         self.result_text.tag_config("time", foreground=WC_COLORS["text_muted"])
 
     def _search_messages(self):
-        """搜索消息"""
+        """搜索消息 - 同时搜索数据库和内存历史"""
         keyword = self.search_entry_msg.get().strip()
         if not keyword:
             self._on_log("warning", "[搜索] 请输入关键词")
             return
 
         self._on_log("info", f"[搜索] 正在搜索: {keyword}")
+        all_results = []
+        db_count = 0
+        mem_count = 0
+
         try:
             if self.engine and self.engine.storage:
-                results = self.engine.storage.query(keyword=keyword, limit=200)
-                self._on_log("info", f"[搜索] 找到 {len(results)} 条匹配消息")
-
-                self._ensure_result_tags()
-                self.result_text.configure(state="normal")
-                self.result_text.delete("1.0", "end")
-
-                if not results:
-                    self.result_text.insert("end", "未找到匹配消息\n")
-                else:
-                    contacts = {}
-                    for r in results:
-                        name = r["contact"]
-                        if name not in contacts:
-                            contacts[name] = []
-                        contacts[name].append(r)
-
-                    self.result_text.insert("end", f"搜索: \"{keyword}\" — 共 {len(results)} 条\n", "header")
-                    self.result_text.insert("end", "-" * 50 + "\n\n", "separator")
-
-                    for name in sorted(contacts.keys()):
-                        msgs = contacts[name]
-                        self.result_text.insert("end", f"  {name} ({len(msgs)}条)\n", "contact")
-                        for msg in msgs:
-                            if msg["sender"] == "me":
-                                sender = "我"
-                            else:
-                                sender = msg.get("contact", "对方")
-                            important = " ★" if msg["is_important"] else ""
-                            self.result_text.insert("end", f"    [{sender}]{important} {msg['raw_text'][:60]}\n", "msg")
-                            self.result_text.insert("end", f"       {msg['timestamp']}\n", "time")
-                        self.result_text.insert("end", "\n")
-
-                self.result_text.configure(state="disabled")
+                db_results = self.engine.storage.query(keyword=keyword, limit=200)
+                db_count = len(db_results)
+                for r in db_results:
+                    all_results.append({
+                        "contact": r.get("contact", "?"),
+                        "sender": r.get("sender", "other"),
+                        "raw_text": r.get("raw_text", ""),
+                        "timestamp": r.get("timestamp", ""),
+                        "is_important": r.get("is_important", False),
+                        "source": "数据库",
+                    })
         except Exception as e:
-            self._on_log("error", f"[搜索] 搜索失败: {e}")
+            self._on_log("error", f"[搜索] 数据库查询失败: {e}")
+
+        try:
+            for contact, msgs in self._messages_store.items():
+                for msg in msgs:
+                    c_text = str(msg.get("content", ""))
+                    if keyword.lower() in c_text.lower():
+                        mem_count += 1
+                        all_results.append({
+                            "contact": contact,
+                            "sender": msg.get("sender", "other"),
+                            "raw_text": c_text,
+                            "timestamp": msg.get("timestamp", ""),
+                            "is_important": msg.get("is_important", False),
+                            "source": "实时",
+                        })
+        except Exception as e:
+            self._on_log("error", f"[搜索] 内存搜索失败: {e}")
+
+        seen = set()
+        deduped = []
+        for r in all_results:
+            key = (r["contact"], r["raw_text"])
+            if key not in seen:
+                seen.add(key)
+                deduped.append(r)
+
+        self._on_log("info", f"[搜索] 数据库:{db_count} 实时:{mem_count} 合计(去重):{len(deduped)}")
+
+        try:
+            self._ensure_result_tags()
+            self.result_text.configure(state="normal")
+            self.result_text.delete("1.0", "end")
+
+            if not deduped:
+                self.result_text.insert("end", "未找到匹配消息\n")
+            else:
+                contacts = {}
+                for r in deduped:
+                    name = r["contact"]
+                    if name not in contacts:
+                        contacts[name] = []
+                    contacts[name].append(r)
+
+                self.result_text.insert("end", f"搜索: \"{keyword}\" — 共 {len(deduped)} 条 (DB:{db_count} 实时:{mem_count})\n", "header")
+                self.result_text.insert("end", "-" * 50 + "\n\n", "separator")
+
+                for name in sorted(contacts.keys()):
+                    msgs = contacts[name]
+                    self.result_text.insert("end", f"  {name} ({len(msgs)}条)\n", "contact")
+                    for msg in msgs:
+                        s = msg["sender"]
+                        sender = "我" if s == "me" else msg.get("contact", "对方")
+                        important = " ★" if msg["is_important"] else ""
+                        src = f"[{msg.get('source', '')}] " if msg.get("source") else ""
+                        self.result_text.insert("end", f"    {src}[{sender}]{important} {msg['raw_text'][:60]}\n", "msg")
+                        self.result_text.insert("end", f"       {msg['timestamp']}\n", "time")
+                    self.result_text.insert("end", "\n")
+
+            self.result_text.configure(state="disabled")
+        except Exception as e:
+            self._on_log("error", f"[搜索] 渲染结果失败: {e}")
 
     def _show_important_messages(self):
         """显示所有重要消息"""

@@ -16,14 +16,26 @@ pyautogui.PAUSE = 0.1      # 每个操作间隔0.1秒
 def click_input_box(window):
     """
     点击微信输入框，确保焦点在输入框上。
-
-    Args:
-        window: 微信窗口对象
+    ★ 改用 SendMessageW 消息模拟点击（窗口_manager.simulate_click_window），
+      真实光标不移动，避免用户移动鼠标时误点其它位置。
     """
-    from window_manager import get_input_box_position
+    from window_manager import get_input_box_position, simulate_click_window
+    import win32gui
 
-    x, y = get_input_box_position(window)
-    pyautogui.click(x, y)
+    screen_x, screen_y = get_input_box_position(window)
+    hwnd = getattr(window, "_hWnd", None)
+    if hwnd and win32gui.IsWindow(hwnd):
+        rect = win32gui.GetWindowRect(hwnd)
+        client_x = screen_x - rect[0]
+        client_y = screen_y - rect[1]
+        ok = simulate_click_window(window, client_x, client_y)
+        if ok:
+            time.sleep(0.15)
+            return
+        # 注入失败退回物理点击
+        logger.warning("[输入框点击] SendMessageW 模拟失败，退回物理点击")
+    # 兜底：物理点击
+    pyautogui.click(screen_x, screen_y)
     time.sleep(0.15)
 
 

@@ -18,14 +18,37 @@ V2 优化升级：
 """
 import logging
 import re
+import threading
 import numpy as np
 import cv2
+
+from tuning import (
+    BUBBLE_MERGE_Y_GAP_FACTOR, BUBBLE_MERGE_X_ALIGN_EPS,
+    BUBBLE_MERGE_X_MIN_OVERLAP,
+    SENDER_LEFT_RATIO, SENDER_LEFT_CENTER_RATIO,
+    SENDER_RIGHT_RATIO, SENDER_RIGHT_CENTER_RATIO,
+    SENDER_FALLBACK_OTHER_RATIO, SENDER_FALLBACK_ME_RATIO,
+    SENDER_V4_RIGHT_STRONG_RATIO, SENDER_V4_RIGHT_STRONG_CENTER,
+    SENDER_V4_RIGHT_HARD_RATIO, SENDER_V4_LEFT_STRONG_RATIO,
+    SENDER_V4_LEFT_STRONG_CENTER, SENDER_V4_GREEN_CONF_POS, SENDER_V4_GREEN_CONF,
+    SENDER_HISTORY_EXPIRE_FRAMES, SENDER_HISTORY_CONFIRM_FRAMES,
+    SENDER_HISTORY_MAX_BUCKETS, SENDER_HISTORY_KEEP_BUCKETS,
+    GROUP_NICK_GAP_FACTOR_MIN, GROUP_NICK_GAP_FACTOR_MAX,
+    GROUP_NICK_GAP_ABS_MIN, GROUP_NICK_GAP_ABS_MAX,
+    GROUP_NICK_X_RATIO, GROUP_NICK_MAX_LEN,
+    GROUP_VOTE_TITLE_GROUP, GROUP_VOTE_TITLE_PERSONAL, GROUP_VOTE_STRUCT_SCALE,
+    GROUP_VOTE_STRUCT_PER_MEMBER, GROUP_VOTE_STRUCT_CAP, GROUP_VOTE_DECIDE_THRESHOLD,
+)
 
 logger = logging.getLogger(__name__)
 
 # 全局单例
 _ocr_instance = None
 _ocr_engine = None  # "wechat" or "paddle"
+
+# 线程安全锁：<ocr_engine> 的全局单例与发送者历史会被监控线程 + UI诊断线程并发访问
+_ENGINE_LOCK = threading.Lock()
+_SENDER_LOCK = threading.Lock()
 
 # ================ V2: OCR常见形近字纠错字典 ================
 # 针对微信聊天场景，修正PaddleOCR/微信OCR的常见识别错误
@@ -68,23 +91,24 @@ def _init_engine():
     """初始化OCR引擎，优先微信OCR，回退PaddleOCR"""
     global _ocr_engine
 
-    if _ocr_engine is not None:
-        return _ocr_engine
-
-    # 尝试微信OCR
-    try:
-        from wechat_ocr_engine import is_wechat_ocr_available
-        if is_wechat_ocr_available():
-            _ocr_engine = "wechat"
-            logger.info("[OCR] 使用微信内置OCR引擎（精度高/速度快）")
+    with _ENGINE_LOCK:
+        if _ocr_engine is not None:
             return _ocr_engine
-    except Exception as e:
-        logger.debug(f"[OCR] 微信OCR探测异常: {e}")
 
-    # 回退PaddleOCR
-    _ocr_engine = "paddle"
-    logger.info("[OCR] 使用PaddleOCR引擎")
-    return _ocr_engine
+        # 尝试微信OCR
+        try:
+            from wechat_ocr_engine import is_wechat_ocr_available
+            if is_wechat_ocr_available():
+                _ocr_engine = "wechat"
+                logger.info("[OCR] 使用微信内置OCR引擎（精度高/速度快）")
+                return _ocr_engine
+        except Exception as e:
+            logger.debug(f"[OCR] 微信OCR探测异常: {e}")
+
+        # 回退PaddleOCR
+        _ocr_engine = "paddle"
+        logger.info("[OCR] 使用PaddleOCR引擎")
+        return _ocr_engine
 
 
 def get_ocr():
@@ -98,38 +122,42 @@ def get_ocr():
     """
     global _ocr_instance
     if _ocr_instance is None:
-        from paddleocr import PaddleOCR
-        logger.info("正在加载 PaddleOCR 模型（首次约3-5秒）V2优化版...")
-        try:
-            _ocr_instance = PaddleOCR(
-                use_angle_cls=True,
-                lang="ch",
-                use_gpu=False,
-                show_log=False,
-                # V2: 检测参数调优 —— 更灵敏地捕捉小字、浅色字
-                det_db_thresh=0.25,          # 降低检测阈值（默认0.3），不漏掉弱文字
-                det_db_box_thresh=0.35,      # 放宽候选框阈值（默认0.5）
-                det_db_unclip_ratio=2.2,     # 扩展框的比例（默认1.6），防止文字被截断
-                det_limit_side_len=1920,     # 最大边限制，提升大图识别
-                # V2: 识别参数
-                rec_batch_num=6,             # 批量识别数提升（默认6）
-                # V2: 算法结构 — 新版本PP-OCRv4（若可用）
-                ocr_version="PP-OCRv4",
-            )
-            logger.info("PaddleOCR PP-OCRv4 模型加载完成 (V2优化参数)")
-        except Exception as e1:
-            logger.warning(f"PP-OCRv4加载失败，回退默认模型: {e1}")
-            _ocr_instance = PaddleOCR(
-                use_angle_cls=True,
-                lang="ch",
-                use_gpu=False,
-                show_log=False,
-                det_db_thresh=0.28,
-                det_db_box_thresh=0.38,
-                det_db_unclip_ratio=2.0,
-                rec_batch_num=6,
-            )
-            logger.info("PaddleOCR 默认模型加载完成 (带V2优化参数)")
+        # 双检锁：监控线程 + UI测试线程可能并发首次加载，避免重复初始化两份PaddleOCR
+        with _ENGINE_LOCK:
+            if _ocr_instance is not None:
+                return _ocr_instance
+            from paddleocr import PaddleOCR
+            logger.info("正在加载 PaddleOCR 模型（首次约3-5秒）V2优化版...")
+            try:
+                _ocr_instance = PaddleOCR(
+                    use_angle_cls=True,
+                    lang="ch",
+                    use_gpu=False,
+                    show_log=False,
+                    # V2: 检测参数调优 —— 更灵敏地捕捉小字、浅色字
+                    det_db_thresh=0.25,          # 降低检测阈值（默认0.3），不漏掉弱文字
+                    det_db_box_thresh=0.35,      # 放宽候选框阈值（默认0.5）
+                    det_db_unclip_ratio=2.2,     # 扩展框的比例（默认1.6），防止文字被截断
+                    det_limit_side_len=1920,     # 最大边限制，提升大图识别
+                    # V2: 识别参数
+                    rec_batch_num=6,             # 批量识别数提升（默认6）
+                    # V2: 算法结构 — 新版本PP-OCRv4（若可用）
+                    ocr_version="PP-OCRv4",
+                )
+                logger.info("PaddleOCR PP-OCRv4 模型加载完成 (V2优化参数)")
+            except Exception as e1:
+                logger.warning(f"PP-OCRv4加载失败，回退默认模型: {e1}")
+                _ocr_instance = PaddleOCR(
+                    use_angle_cls=True,
+                    lang="ch",
+                    use_gpu=False,
+                    show_log=False,
+                    det_db_thresh=0.28,
+                    det_db_box_thresh=0.38,
+                    det_db_unclip_ratio=2.0,
+                    rec_batch_num=6,
+                )
+                logger.info("PaddleOCR 默认模型加载完成 (带V2优化参数)")
     return _ocr_instance
 
 
@@ -344,7 +372,7 @@ def _merge_bubble_lines(ocr_results, y_gap=None, x_overlap=0.3):
     # V2: 自适应 y_gap = 估计行高 × 1.25
     if y_gap is None:
         lh = _estimate_line_height(sorted_results)
-        y_gap = lh * 1.35
+        y_gap = lh * BUBBLE_MERGE_Y_GAP_FACTOR
 
     merged = []
     current_group = [sorted_results[0]]
@@ -361,17 +389,23 @@ def _merge_bubble_lines(ocr_results, y_gap=None, x_overlap=0.3):
         curr_x1 = min(p[0] for p in curr["bbox"])
         curr_x2 = max(p[0] for p in curr["bbox"])
 
-        # V2: 用更宽的相邻容忍（负overlap时允许1个字符宽约24px）
         union_x1 = min(prev_x1, curr_x1)
         union_x2 = max(prev_x2, curr_x2)
         union_w = max(1, union_x2 - union_x1)
         inters = max(0, min(prev_x2, curr_x2) - max(prev_x1, curr_x1))
         # 左右边界对齐度：如果两行为同气泡，它们的左边界或右边界应该接近
-        left_aligned = abs(prev_x1 - curr_x1) < 36
-        right_aligned = abs(prev_x2 - curr_x2) < 36
+        left_aligned = abs(prev_x1 - curr_x1) < BUBBLE_MERGE_X_ALIGN_EPS
+        right_aligned = abs(prev_x2 - curr_x2) < BUBBLE_MERGE_X_ALIGN_EPS
+        # ★ 包含关系：一行 X 区间完全落在另一行内（多行气泡换行时续行常整体缩进/对齐）
+        #   例如首行满宽、续行首字对齐 → curr 含于 prev 或反之，直接视为同气泡
+        containment = (prev_x1 <= curr_x1 <= curr_x2 <= prev_x2) or \
+                      (curr_x1 <= prev_x1 <= prev_x2 <= curr_x2)
 
-        # 同一气泡：Y间距小于自适应阈值 且 (X有重叠 或 左右边界对齐)
-        x_ok = (inters > -24) and (inters / union_w > -0.2) or left_aligned or right_aligned
+        # 同一气泡：Y间距小于自适应阈值 且 X方向存在任一关联
+        #   （重叠 / 左右对齐 / 包含）—— 放宽原 (inters/union_w > -0.2) 硬约束：
+        #   该约束在缩放/DPI 下会把本应合并的多行气泡误杀成多条消息。
+        x_ok = (inters > BUBBLE_MERGE_X_MIN_OVERLAP) or \
+               left_aligned or right_aligned or containment
 
         # V2: sender一致性检查（已有sender字段时才启用）
         prev_sender = prev.get("sender")
@@ -821,13 +855,13 @@ def identify_senders(ocr_results, image):
         # 策略1: 位置判断
         # 对方消息：左边界在窗口左1/3区域，且文字不从右侧开始
         # 我的消息：右边界接近窗口右侧，且文字不从左侧开始
-        if left_x < w * 0.35 and center_x < w * 0.45:
+        if left_x < w * SENDER_LEFT_RATIO and center_x < w * SENDER_LEFT_CENTER_RATIO:
             r["sender"] = "other"
-        elif right_x > w * 0.65 and center_x > w * 0.55:
+        elif right_x > w * SENDER_RIGHT_RATIO and center_x > w * SENDER_RIGHT_CENTER_RATIO:
             r["sender"] = "me"
-        elif center_x < w * 0.48:
+        elif center_x < w * SENDER_FALLBACK_OTHER_RATIO:
             r["sender"] = "other"
-        elif center_x > w * 0.52:
+        elif center_x > w * SENDER_FALLBACK_ME_RATIO:
             r["sender"] = "me"
         else:
             # 策略2: 颜色判断（居中模糊情况）
@@ -1025,9 +1059,9 @@ def _group_detect_and_strip_member_name(ocr_results, image_h=None):
         heights.append(max(ys) - min(ys))
     median_line_h = sorted(heights)[len(heights) // 2] if heights else 20
 
-    # 昵称间距阈值：通常昵称行在气泡上方 ~0.8~2.5 倍行高
-    gap_min = max(3, median_line_h * 0.6)
-    gap_max = max(14, median_line_h * 3.2)
+    # 昵称间距阈值：通常昵称行在气泡上方 ~0.6~3.2 倍行高
+    gap_min = max(GROUP_NICK_GAP_ABS_MIN, median_line_h * GROUP_NICK_GAP_FACTOR_MIN)
+    gap_max = max(GROUP_NICK_GAP_ABS_MAX, median_line_h * GROUP_NICK_GAP_FACTOR_MAX)
 
     # 先收集所有单行（短文本，sender=other）的候选昵称行
     nickname_candidates = []
@@ -1038,7 +1072,7 @@ def _group_detect_and_strip_member_name(ocr_results, image_h=None):
         #  - 是纯昵称
         #  - 位置偏左（x_center < 图片宽60%）
         #  - 长度 <= 12
-        if "\n" not in txt and _is_pure_nickname_candidate(txt) and len(txt.strip()) <= 12:
+        if "\n" not in txt and _is_pure_nickname_candidate(txt) and len(txt.strip()) <= GROUP_NICK_MAX_LEN:
             nickname_candidates.append(r)
 
     # 给每条左气泡尝试匹配昵称
@@ -1064,7 +1098,7 @@ def _group_detect_and_strip_member_name(ocr_results, image_h=None):
                 continue
             # x必须偏左（不超过气泡左侧往右50%气泡宽处，避免气泡正文自己被当成昵称）
             cand_x_center = cand.get("x_center", (cand["bbox"][0][0] + cand["bbox"][1][0]) / 2)
-            if cand_x_center > bubble_left + (bubble_right - bubble_left) * 0.6:
+            if cand_x_center > bubble_left + (bubble_right - bubble_left) * GROUP_NICK_X_RATIO:
                 continue
             # 昵称和气泡不能是同一条（避免正文自匹配）
             if cand is bubble:
@@ -1134,9 +1168,9 @@ def recognize_with_group_enhance(image, contact_title=None, scale=1.0,
     vote = {"group": 0.0, "personal": 0.0, "unknown": 0.0}
 
     if title_kind == "group":
-        vote["group"] += 0.85
+        vote["group"] += GROUP_VOTE_TITLE_GROUP
     elif title_kind == "personal":
-        vote["personal"] += 0.75
+        vote["personal"] += GROUP_VOTE_TITLE_PERSONAL
     else:
         vote["unknown"] += 0.2
 
@@ -1147,7 +1181,8 @@ def recognize_with_group_enhance(image, contact_title=None, scale=1.0,
 
     if has_member_matches:
         # 成员匹配越多越可能是群聊
-        vote["group"] += min(0.95, 0.55 + 0.08 * len(unique_members))
+        vote["group"] += min(GROUP_VOTE_STRUCT_CAP,
+                             GROUP_VOTE_STRUCT_SCALE + GROUP_VOTE_STRUCT_PER_MEMBER * len(unique_members))
 
     # 如果没有成员匹配且标题明显不像群聊 → 加大私聊权重
     if not has_member_matches and title_kind == "personal":
@@ -1156,7 +1191,7 @@ def recognize_with_group_enhance(image, contact_title=None, scale=1.0,
     # 选出最高票
     best_kind = max(vote, key=vote.get)
     best_score = vote[best_kind]
-    if best_score < 0.40:
+    if best_score < GROUP_VOTE_DECIDE_THRESHOLD:
         chat_kind = "unknown"
     else:
         chat_kind = best_kind
@@ -1273,11 +1308,12 @@ def identify_senders_v4(ocr_results, image):
 
     h, w = image.shape[:2]
     # 帧计数 + 过期清理（超过8帧未更新的位置桶视为失效：滚动/切换聊天后自然过期）
-    _sender_frame += 1
-    _cur_frame = _sender_frame
-    if _sender_history:
-        for _k in [k for k, v in _sender_history.items() if _cur_frame - v[2] > 8]:
-            del _sender_history[_k]
+    with _SENDER_LOCK:
+        _sender_frame += 1
+        _cur_frame = _sender_frame
+        if _sender_history:
+            for _k in [k for k, v in _sender_history.items() if _cur_frame - v[2] > SENDER_HISTORY_EXPIRE_FRAMES]:
+                del _sender_history[_k]
 
     for r in ocr_results:
         bbox = r.get("bbox")
@@ -1297,8 +1333,10 @@ def identify_senders_v4(ocr_results, image):
         right_ratio = right_x / max(1, w)
         left_ratio = left_x / max(1, w)
 
-        strong_me_by_pos = (right_ratio > 0.68 and center_x / max(1, w) > 0.60)
-        strong_other_by_pos = (left_ratio < 0.30 and center_x / max(1, w) < 0.42)
+        strong_me_by_pos = (right_ratio > SENDER_V4_RIGHT_STRONG_RATIO and
+                            center_x / max(1, w) > SENDER_V4_RIGHT_STRONG_CENTER)
+        strong_other_by_pos = (left_ratio < SENDER_V4_LEFT_STRONG_RATIO and
+                               center_x / max(1, w) < SENDER_V4_LEFT_STRONG_CENTER)
 
         final_sender = base_sender
         conf = base_conf
@@ -1306,13 +1344,13 @@ def identify_senders_v4(ocr_results, image):
         if is_green:
             # 绿色气泡：不管V3判了啥，都强修me
             final_sender = "me"
-            conf = 0.92 if strong_me_by_pos else 0.85
+            conf = SENDER_V4_GREEN_CONF_POS if strong_me_by_pos else SENDER_V4_GREEN_CONF
         else:
             # 非绿色：综合位置
             if strong_me_by_pos and base_sender != "me":
                 # 位置极右但没采样到绿（可能是文字部分刚好没覆盖到绿色）
                 # → 放宽：如果 right_x 超过窗口 72%，也判定 me
-                if right_ratio > 0.72:
+                if right_ratio > SENDER_V4_RIGHT_HARD_RATIO:
                     final_sender = "me"
                     conf = 0.70
                 else:
@@ -1331,19 +1369,21 @@ def identify_senders_v4(ocr_results, image):
         # V4.5 历史一致性：按位置桶跨帧投票（同一位置连续>=2帧判定一致 -> 采用并提置信）
         bucket = (int(round(left_x / max(1, w) * 60)),
                   int(round(r.get("y_center", 0) / max(1, h) * 60)))
-        entry = _sender_history.get(bucket)
-        if entry is None:
-            _sender_history[bucket] = [final_sender, 1, _cur_frame]
-        elif entry[0] == final_sender:
-            entry[1] += 1
-            entry[2] = _cur_frame
-            if entry[1] >= 2:
-                final_sender = entry[0]
-                conf = max(conf, 0.90)
-        else:
-            _sender_history[bucket] = [final_sender, 1, _cur_frame]
-        if len(_sender_history) > 400:
-            _sender_history = dict(list(_sender_history.items())[-200:])
+        # 加锁：监控线程与UI诊断线程可能并发写 _sender_history
+        with _SENDER_LOCK:
+            entry = _sender_history.get(bucket)
+            if entry is None:
+                _sender_history[bucket] = [final_sender, 1, _cur_frame]
+            elif entry[0] == final_sender:
+                entry[1] += 1
+                entry[2] = _cur_frame
+                if entry[1] >= SENDER_HISTORY_CONFIRM_FRAMES:
+                    final_sender = entry[0]
+                    conf = max(conf, 0.90)
+            else:
+                _sender_history[bucket] = [final_sender, 1, _cur_frame]
+            if len(_sender_history) > SENDER_HISTORY_MAX_BUCKETS:
+                _sender_history = dict(list(_sender_history.items())[-SENDER_HISTORY_KEEP_BUCKETS:])
 
         r["sender"] = final_sender
         r["sender_confidence"] = round(conf, 3)

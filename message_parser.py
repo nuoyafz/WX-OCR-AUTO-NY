@@ -6,6 +6,8 @@ import logging
 import time
 from collections import deque
 
+from tuning import BUBBLE_GROUP_GAP_PX
+
 logger = logging.getLogger(__name__)
 
 
@@ -52,8 +54,8 @@ class MessageParser:
     def _group_by_bubble(self, ocr_results):
         """
         根据Y坐标将OCR结果分组为消息气泡。
-        气泡之间通常有间隔（>40px），同一气泡内文本Y坐标接近。
-        放宽到40px以适应屏幕外截图的Y坐标波动。
+        气泡之间通常有间隔（>BUBBLE_GROUP_GAP_PX），同一气泡内文本Y坐标接近。
+        间距阈值统一取自 tuning.BUBBLE_GROUP_GAP_PX（默认40px，适应屏幕外Y波动）。
         """
         if not ocr_results:
             return []
@@ -65,7 +67,7 @@ class MessageParser:
             prev = ocr_results[i - 1]
             curr = ocr_results[i]
             gap = curr["y_center"] - prev["y_center"]
-            if gap > 40:
+            if gap > BUBBLE_GROUP_GAP_PX:
                 groups.append(current_group)
                 current_group = [curr]
             else:

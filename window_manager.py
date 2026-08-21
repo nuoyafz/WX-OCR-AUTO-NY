@@ -44,6 +44,16 @@ def find_wechat_window():
         def _enum_callback(hwnd, _):
             if not win32gui.IsWindow(hwnd):
                 return True
+            # ★ 排除工具自身进程窗口（彻底防止 OCR 把工具自己的界面当成微信）：
+            #   微信是独立进程(WeChat.exe)，工具是 Python 进程，按 PID 排除最稳。
+            try:
+                import os as _os
+                import win32process as _wp
+                _tid, _pid = _wp.GetWindowThreadProcessId(hwnd)
+                if _pid == _os.getpid():
+                    return True
+            except Exception:
+                pass
             class_name = win32gui.GetClassName(hwnd)
             title = win32gui.GetWindowText(hwnd)
 
@@ -198,7 +208,12 @@ def get_contact_name(window):
     import re as _re
     cleaned = _re.sub(r'\s*[（(]\s*\d+\s*[)）]\s*$', '', raw).strip()
 
-    return cleaned or raw or title
+    # 微信4.x 所有聊天窗口的系统标题恒为"微信"，无法提供联系人/群名，
+    # 返回空字符串，由上层回退到「顶部标题栏OCR / 红点匹配名」取真实会话名，
+    # 避免把群聊/私聊全部误存为"微信"。
+    if not cleaned or cleaned == "微信":
+        return ""
+    return cleaned
 
 
 def analyze_chat_context(window):
@@ -781,6 +796,64 @@ def post_background_click_client(hwnd_or_window, client_x, client_y):
 def post_background_scroll(hwnd_or_window, client_x, client_y, delta=3):
     """兼容旧接口 — 委托给 scroll_offscreen_window"""
     return scroll_offscreen_window(hwnd_or_window, client_x, client_y, delta)
+
+
+def simulate_click_window(window, client_x, client_y):
+    """
+    纯消息模拟点击（可见模式专用，光标完全不移动）：
+    用 SendMessageW 向窗口过程注入 WM_LBUTTONDOWN/UP，不依赖真实光标位置，
+    因此用户移动鼠标也不会误点。
+
+    与 click_offscreen_window 的区别：
+    - 不调用 _ensure_offscreen_visible（不把窗口搬离屏幕）
+    - 不调用 SetForegroundWindow（不抢夺用户当前前台应用）
+    仅用 SendMessageW 直接投递鼠标消息到 hwnd 的窗口过程（同步阻塞），
+    并先发 WM_ACTIVATE/WM_SETFOCUS 让 Qt 处理合成输入。
+    """
+    import ctypes
+    import win32gui
+    import win32con
+    import time
+    u32 = ctypes.windll.user32
+
+    hwnd = getattr(window, "_hWnd", None)
+    if not hwnd or not win32gui.IsWindow(hwnd):
+        try:
+            hwnd = _get_hwnd(window)
+        except Exception:
+            pass
+    if not hwnd or not win32gui.IsWindow(hwnd):
+        logger.warning("[模拟点击] 无效窗口句柄")
+        return False
+
+    try:
+        _acquire_interaction()
+        time.sleep(0.05)
+
+        cx = int(client_x) & 0xFFFF
+        cy = int(client_y) & 0xFFFF
+        lparam = (cy << 16) | cx
+        MK_LBUTTON = 0x0001
+
+        # 让 Qt 处理合成输入（不抢真实前台/光标）
+        u32.SendMessageW(hwnd, 0x0006, 1, 0)        # WM_ACTIVATE(WA_ACTIVE)
+        u32.SendMessageW(hwnd, 0x0007, 0, 0)        # WM_SETFOCUS
+        u32.SendMessageW(hwnd, 0x0200, 0, lparam)   # WM_MOUSEMOVE
+        u32.SendMessageW(hwnd, 0x0201, MK_LBUTTON, lparam)  # WM_LBUTTONDOWN
+        u32.SendMessageW(hwnd, 0x0202, 0, lparam)   # WM_LBUTTONUP
+        u32.SendMessageW(hwnd, 0x0200, 0, lparam)   # WM_MOUSEMOVE
+
+        time.sleep(0.3)
+        _release_interaction(window)
+        logger.info(f"[模拟点击] ✔ SendMessageW 注入完成: 客户区({cx},{cy})，真实光标未移动")
+        return True
+    except Exception as e:
+        logger.error(f"[模拟点击] 失败: {e}")
+        try:
+            _release_interaction(window)
+        except Exception:
+            pass
+        return False
 
 
 def edge_click_window(window, client_x, client_y, verify_func=None):
