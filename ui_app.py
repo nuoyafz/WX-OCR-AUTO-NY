@@ -186,7 +186,17 @@ class WeChatAIApp(ctk.CTk):
             self.sidebar, text="● 待机",
             font=ctk.CTkFont(size=11), text_color=WC_COLORS["text_muted"],
         )
-        self.sidebar_status.grid(row=10, column=0, pady=(30, 15))
+        self.sidebar_status.grid(row=10, column=0, pady=(30, 6))
+
+        # V3.1: 关于入口（侧栏底部）
+        about_btn = ctk.CTkButton(
+            self.sidebar, text="ⓘ", width=40, height=34,
+            fg_color="transparent", hover_color=WC_COLORS["sidebar_hover"],
+            corner_radius=8, font=ctk.CTkFont(size=16, weight="bold"),
+            text_color=WC_COLORS["text_muted"],
+            command=self._show_about_dialog,
+        )
+        about_btn.grid(row=11, column=0, pady=(0, 14))
 
         # ====== 主内容区 ======
         self.main_content = ctk.CTkFrame(self, fg_color=WC_COLORS["bg"], corner_radius=0)
@@ -1653,6 +1663,168 @@ class WeChatAIApp(ctk.CTk):
         row.pack(side="top", fill="x", padx=4, pady=2)
         return row
 
+    def _build_usage_card(self, parent):
+        """V3.1: 消息区置顶「使用说明」卡片，点击弹出使用指南。"""
+        card = ctk.CTkFrame(parent, fg_color=WC_COLORS["accent_light"],
+                           corner_radius=10, border_width=1, border_color=WC_COLORS["accent"])
+        card.pack(side="top", fill="x", padx=8, pady=(6, 4))
+
+        header = ctk.CTkFrame(card, fg_color="transparent")
+        header.pack(fill="x", padx=12, pady=(8, 2))
+
+        ctk.CTkLabel(header, text="📖 使用说明",
+                     font=ctk.CTkFont(size=13, weight="bold"),
+                     text_color=WC_COLORS["accent"]).pack(side="left")
+
+        ctk.CTkButton(header, text="点击查看 ▸", width=92, height=26,
+                      font=ctk.CTkFont(size=11),
+                      fg_color=WC_COLORS["accent"], hover_color=WC_COLORS["accent_hover"],
+                      corner_radius=8, command=self._show_usage_dialog).pack(side="right")
+
+        ctk.CTkLabel(card, text="NOYA Chat 微信助手 v3.1 · 截图OCR + AI + Obsidian知识库",
+                     font=ctk.CTkFont(size=10),
+                     text_color=WC_COLORS["text_muted"]).pack(anchor="w", padx=12, pady=(0, 8))
+
+    def _show_usage_dialog(self):
+        """V3.1: 使用说明弹窗（覆盖核心操作流程）。"""
+        dlg = ctk.CTkToplevel(self)
+        dlg.title("NOYA Chat 使用说明")
+        dlg.geometry("560x640")
+        dlg.transient(self)
+        dlg.grab_set()
+        dlg.focus_force()
+        try:
+            dlg.after(50, lambda: dlg.iconify() or dlg.deiconify())
+        except Exception:
+            pass
+
+        scroll = ctk.CTkScrollableFrame(dlg, fg_color=WC_COLORS["bg"])
+        scroll.pack(fill="both", expand=True, padx=12, pady=12)
+
+        def _title(t):
+            ctk.CTkLabel(scroll, text=t, font=ctk.CTkFont(size=15, weight="bold"),
+                         text_color=WC_COLORS["accent"]).pack(anchor="w", pady=(10, 4))
+
+        def _line(t):
+            ctk.CTkLabel(scroll, text=t, font=ctk.CTkFont(size=12),
+                         text_color=WC_COLORS["text"], wraplength=500,
+                         justify="left", anchor="w").pack(anchor="w", pady=1)
+
+        ctk.CTkLabel(scroll, text="🤖 NOYA Chat 微信助手 · 使用说明",
+                     font=ctk.CTkFont(size=18, weight="bold"),
+                     text_color=WC_COLORS["text"]).pack(anchor="w", pady=(4, 10))
+
+        _title("1. 启动监控")
+        _line("· 进入「📡 监控」页，点击「▶ 开始监控」按钮。")
+        _line("· 微信需登录并保持可见（最小化到托盘时程序会自动把窗口移到屏幕外渲染，不影响使用）。")
+        _line("· 支持三种模式：仅当前窗口 / 红点监控（自动切未读）/ 轮询扫描，在「⚙️ 设置」选择。")
+
+        _title("2. 识别与归档")
+        _line("· 程序通过截图 + PaddleOCR 实时识别聊天文字，自动区分自己/对方气泡。")
+        _line("· 全部聊天数据自动存入本地 SQLite，并同步到 Obsidian 知识库（需配置 vault 路径）。")
+        _line("· 重要消息、待办、情绪、分类自动抽取，并打 ⭐ 标记。")
+
+        _title("3. 自动回复")
+        _line("· 「💬 自动回复」页开启「启用自动回复」；建议同时开启「预览确认模式」。")
+        _line("· 预览模式下 AI 回复会粘贴到微信输入框，需你手动点发送，规避误发风险。")
+        _line("· 支持多角色（技术顾问/商务/好友/段子手），可在设置按联系人独立设定。")
+
+        _title("4. AI 赋能（Obsidian）")
+        _line("· AI 会话摘要 / 联系人画像 / 关系图谱 / 项目笔记：开启 LLM API Key 后自动生成。")
+        _line("· 每日简报：程序退出时自动汇总当日要事，写入「每日简报/<日期>.md」。")
+        _line("· 社交图谱 .canvas 文件模式即可用，无需安装插件。")
+
+        _title("5. 数据统计")
+        _line("· 「📊 数据」页点「🔄 刷新统计」查看多维度数据 + 可视化图表（无需启动监控也能看历史）。")
+        _line("· 支持「今日报告」「周报」一键生成。")
+
+        _title("6. 快捷键")
+        _line("· Ctrl+T：全局启停监控（任意窗口可用）。")
+        _line("· Ctrl+F：聚焦搜索；Ctrl+I：标记重要；Ctrl+,：打开设置。")
+
+        _title("7. 提示")
+        _line("· 全部为本地处理，数据不上传第三方。")
+        _line("· 自动发送存在账号风控风险，默认关闭，优先用预览模式。")
+        _line("· 更多见 GitHub README 与「关于」页面。")
+
+        ctk.CTkButton(dlg, text="知道了", width=120, height=34,
+                      fg_color=WC_COLORS["accent"], hover_color=WC_COLORS["accent_hover"],
+                      command=dlg.destroy).pack(pady=10)
+
+    def _show_about_dialog(self):
+        """V3.1: 关于页面——软件简介 + 作者介绍 + 网站。"""
+        import webbrowser
+        dlg = ctk.CTkToplevel(self)
+        dlg.title("关于 NOYA Chat")
+        dlg.geometry("480x560")
+        dlg.transient(self)
+        dlg.grab_set()
+        dlg.focus_force()
+
+        # 顶部炫彩条
+        try:
+            self._pixel_stripe(dlg, ["#2D9CDB", "#27AE60", "#9B51E0", "#FF5B5B", "#F2C94C"], height=6, side="top")
+        except Exception:
+            pass
+
+        main = ctk.CTkFrame(dlg, fg_color=WC_COLORS["bg"])
+        main.pack(fill="both", expand=True, padx=20, pady=16)
+
+        ctk.CTkLabel(main, text="🤖", font=ctk.CTkFont(size=54)).pack(pady=(6, 0))
+        ctk.CTkLabel(main, text="NOYA Chat 微信助手",
+                     font=ctk.CTkFont(size=22, weight="bold"),
+                     text_color=WC_COLORS["text"]).pack(pady=(4, 2))
+        ctk.CTkLabel(main, text="v3.1 · 本地微信消息智能中枢",
+                     font=ctk.CTkFont(size=12),
+                     text_color=WC_COLORS["accent"]).pack(pady=(0, 10))
+
+        intro = (
+            "NOYA Chat 是一款面向 Windows 的本地微信消息智能管理工具。\n"
+            "基于「窗口截图 + PaddleOCR + 大模型」实时解析聊天会话，\n"
+            "自动完成语义理解、信息抽取、智能回复，并沉淀到 Obsidian 知识库。\n\n"
+            "核心亮点：\n"
+            "· 纯视觉方案，不 hook 微信，安全合规\n"
+            "· OCR 稳定截图 + 渲染健康度校验\n"
+            "· 人格化 AI 回复（贴合关系亲密度）\n"
+            "· AI 联系人画像 / 关系图谱 / 项目笔记\n"
+            "· 每日简报 + 多维度可视化统计\n"
+            "· 全部数据本地存储，绝不上传第三方"
+        )
+        ctk.CTkLabel(main, text=intro, font=ctk.CTkFont(size=12),
+                     text_color=WC_COLORS["text"], wraplength=420,
+                     justify="left", anchor="w").pack(anchor="w", pady=4)
+
+        # 分隔
+        ctk.CTkFrame(main, fg_color=WC_COLORS["border"], height=1).pack(fill="x", pady=12)
+
+        ctk.CTkLabel(main, text="👤 关于作者",
+                     font=ctk.CTkFont(size=14, weight="bold"),
+                     text_color=WC_COLORS["text"]).pack(anchor="w", pady=(0, 6))
+        author = (
+            "我是 NOYA（漩涡鸣人），一名独立开发者，\n"
+            "热衷于把日常碎片信息变成可检索的知识资产。\n"
+            "这个工具是我个人工作流的沉淀，开源免费，欢迎 Star ⭐。"
+        )
+        ctk.CTkLabel(main, text=author, font=ctk.CTkFont(size=12),
+                     text_color=WC_COLORS["text_muted"], wraplength=420,
+                     justify="left", anchor="w").pack(anchor="w", pady=4)
+
+        # 网站按钮
+        site_btn = ctk.CTkButton(main, text="🌐 访问官网 noya.fangzhoui.cn",
+                                 width=240, height=36,
+                                 font=ctk.CTkFont(size=13, weight="bold"),
+                                 fg_color=WC_COLORS["accent"], hover_color=WC_COLORS["accent_hover"],
+                                 corner_radius=8,
+                                 command=lambda: webbrowser.open("https://noya.fangzhoui.cn/"))
+        site_btn.pack(pady=(14, 8))
+
+        ctk.CTkLabel(main, text="MIT License · 仅供个人学习研究",
+                     font=ctk.CTkFont(size=10),
+                     text_color=WC_COLORS["text_muted2"]).pack(pady=(0, 6))
+        ctk.CTkButton(main, text="关闭", width=100, height=32,
+                      fg_color=WC_COLORS["text_muted2"], hover_color=WC_COLORS["text_muted"],
+                      command=dlg.destroy).pack(pady=(4, 0))
+
     def _rebuild_message_list(self):
         """V3: 按当前选中会话重建气泡列表，最新消息在底部（微信风格）。
         - active == _contact_filter_all 或 None → 合并所有会话消息，按 _seq 正序（旧→新）。
@@ -1674,6 +1846,9 @@ class WeChatAIApp(ctk.CTk):
             if is_all:
                 # 全部会话：从 db 取最近 _MAX 条（一次查询，绝不把全量正文载入内存）
                 items = self._get_all_view_messages()
+                # V3.1: 全部会话也「最新置顶」——按 _seq 倒序后逐条 pack(side="top")
+                # （_build_message_row 用 side="top" 堆叠，倒序遍历即最新在最上方）
+                items = list(reversed(items))
             else:
                 # 单会话：按需懒加载（点开才从 db 取该会话全文）
                 items = list(reversed(self._load_conversation(active)))
@@ -1703,7 +1878,13 @@ class WeChatAIApp(ctk.CTk):
                 ).pack()
                 return
 
-            # 微信风格：最新在底部，逐条 pack
+            # V3.1: 置顶「使用说明」卡片（始终显示，点击查看软件使用指南）
+            try:
+                self._build_usage_card(self.msg_list_frame_inner)
+            except Exception:
+                pass
+
+            # 微信风格：最新在顶部，逐条 pack
             _first_err = None
             for m in items:
                 try:
@@ -2061,16 +2242,45 @@ class WeChatAIApp(ctk.CTk):
     def _build_settings_tab(self):
         tab = self.tab_settings
         tab.grid_columnconfigure(0, weight=1)
-        tab.grid_rowconfigure(0, weight=1)
+        tab.grid_rowconfigure(1, weight=1)
+
+        # V3.1: 顶部导航表（固定，点击直达各设置区块）
+        nav_bar = ctk.CTkFrame(tab, fg_color=WC_COLORS["card"], corner_radius=10)
+        nav_bar.grid(row=0, column=0, sticky="ew", padx=10, pady=(10, 4))
+        ctk.CTkLabel(nav_bar, text="⚙️ 设置导航：",
+                     font=ctk.CTkFont(size=12, weight="bold"),
+                     text_color=WC_COLORS["text"]).pack(side="left", padx=(12, 6), pady=8)
+
+        self._settings_sections = []   # (按钮文字, 区块frame属性名)
+        nav_specs = [
+            ("监控模式", "monitor_frame"),
+            ("联系人", "filter_frame"),
+            ("窗口校准", "calib_frame"),
+            ("AI抽取", "ai_frame"),
+            ("LLM", "llm_frame"),
+            ("分类", "cls_frame"),
+            ("报告", "report_frame"),
+            ("Obsidian", "obsidian_frame"),
+            ("高级", "advanced_frame"),
+        ]
+        for label, attr in nav_specs:
+            btn = ctk.CTkButton(nav_bar, text=label, width=72, height=28,
+                               font=ctk.CTkFont(size=11),
+                               fg_color=WC_COLORS["bg"], hover_color=WC_COLORS["accent_light"],
+                               border_width=1, border_color=WC_COLORS["border"],
+                               corner_radius=8,
+                               command=lambda a=attr: self._jump_to_setting(a))
+            btn.pack(side="left", padx=3, pady=6)
 
         # 使用可滚动容器，解决设置项过多无法查看的问题
         scroll = ctk.CTkScrollableFrame(tab, fg_color="transparent")
-        scroll.grid(row=0, column=0, sticky="nsew")
+        scroll.grid(row=1, column=0, sticky="nsew")
 
         # 消息监控模式
         monitor_frame = ctk.CTkFrame(scroll, fg_color=WC_COLORS["card"], corner_radius=12)
         monitor_frame.pack(fill="x", padx=20, pady=20)
         monitor_frame.grid_columnconfigure(1, weight=1)
+        self.monitor_frame = monitor_frame
 
         ctk.CTkLabel(monitor_frame, text="消息监控模式",
                      font=ctk.CTkFont(size=14, weight="bold"),
@@ -2105,6 +2315,7 @@ class WeChatAIApp(ctk.CTk):
         # 联系人过滤
         filter_frame = ctk.CTkFrame(scroll, fg_color=WC_COLORS["card"], corner_radius=8)
         filter_frame.pack(fill="x", padx=20, pady=5)
+        self.filter_frame = filter_frame
         ctk.CTkLabel(filter_frame, text="👥 联系人过滤",
                      font=ctk.CTkFont(size=14, weight="bold"),
                      text_color=WC_COLORS["text"]).pack(anchor="w", padx=15, pady=(10, 5))
@@ -2141,6 +2352,7 @@ class WeChatAIApp(ctk.CTk):
         # 校准向导
         calib_frame = ctk.CTkFrame(scroll, fg_color=WC_COLORS["card"], corner_radius=12)
         calib_frame.pack(fill="x", padx=20, pady=10)
+        self.calib_frame = calib_frame
 
         ctk.CTkLabel(calib_frame, text="窗口校准",
                      font=ctk.CTkFont(size=14, weight="bold"),
@@ -2170,6 +2382,7 @@ class WeChatAIApp(ctk.CTk):
         # 报告设置
         report_frame = ctk.CTkFrame(scroll, fg_color=WC_COLORS["card"], corner_radius=12)
         report_frame.pack(fill="x", padx=20, pady=10)
+        self.report_frame = report_frame
 
         ctk.CTkLabel(report_frame, text="定时报告",
                      font=ctk.CTkFont(size=14, weight="bold"),
@@ -2190,6 +2403,7 @@ class WeChatAIApp(ctk.CTk):
         # 分类优先级规则
         cls_frame = ctk.CTkFrame(scroll, fg_color=WC_COLORS["card"], corner_radius=12)
         cls_frame.pack(fill="x", padx=20, pady=10)
+        self.cls_frame = cls_frame
         ctk.CTkLabel(cls_frame, text="📑 分类优先级规则",
                      font=ctk.CTkFont(size=14, weight="bold"),
                      text_color=WC_COLORS["text"]).pack(anchor="w", padx=15, pady=(10, 2))
@@ -2216,6 +2430,7 @@ class WeChatAIApp(ctk.CTk):
         llm_frame = ctk.CTkFrame(scroll, fg_color=WC_COLORS["card"], corner_radius=12)
         llm_frame.pack(fill="x", padx=20, pady=20)
         llm_frame.grid_columnconfigure(1, weight=1)
+        self.llm_frame = llm_frame
 
         ctk.CTkLabel(llm_frame, text="LLM 配置",
                      font=ctk.CTkFont(size=14, weight="bold"),
@@ -2303,6 +2518,7 @@ class WeChatAIApp(ctk.CTk):
         ai_frame = ctk.CTkFrame(scroll, fg_color=WC_COLORS["card"], corner_radius=12)
         ai_frame.pack(fill="x", padx=20, pady=10)
         ai_frame.grid_columnconfigure(1, weight=1)
+        self.ai_frame = ai_frame
 
         ctk.CTkLabel(ai_frame, text="AI 智能学习",
                      font=ctk.CTkFont(size=14, weight="bold"),
@@ -2322,6 +2538,7 @@ class WeChatAIApp(ctk.CTk):
         # ==================== Obsidian 同步设置 ====================
         obsidian_frame = ctk.CTkFrame(scroll)
         obsidian_frame.pack(fill="x", padx=10, pady=10)
+        self.obsidian_frame = obsidian_frame
 
         ctk.CTkLabel(obsidian_frame, text="Obsidian 同步",
                     font=ctk.CTkFont(size=16, weight="bold")).pack(anchor="w", padx=15, pady=(10, 5))
@@ -3299,17 +3516,25 @@ class WeChatAIApp(ctk.CTk):
         # 详情文本框（滚动显示详细信息）
         self.stats_detail = ctk.CTkTextbox(stats_frame, height=100, font=ctk.CTkFont(size=11),
                                            wrap="word", fg_color=WC_COLORS["bg"])
-        self.stats_detail.pack(fill="x", padx=10, pady=(5, 10))
+        self.stats_detail.pack(fill="x", padx=10, pady=(5, 6))
         self.stats_detail.insert("1.0", "点击「刷新统计」查看详细数据...")
         self.stats_detail.configure(state="disabled")
 
+        # V3.1: 可视化图表区（matplotlib 生成炫酷统计图，无需引擎也能看历史数据）
+        ctk.CTkLabel(stats_frame, text="📈 可视化统计",
+                     font=ctk.CTkFont(size=13, weight="bold"),
+                     text_color=WC_COLORS["text"]).pack(anchor="w", padx=10, pady=(4, 2))
+        self.stats_chart = ctk.CTkLabel(stats_frame, text="（刷新后生成图表）",
+                                        fg_color=WC_COLORS["bg"], corner_radius=8,
+                                        height=220)
+        self.stats_chart.pack(fill="x", padx=10, pady=(0, 10))
+
     def _refresh_stats(self):
-        """刷新数据统计面板（增强版：多维度 + 详情 + 容错）"""
+        """刷新数据统计面板（增强版：多维度 + 详情 + 可视化 + 容错）。
+        V3.1: 不依赖引擎——无引擎时用独立存储(_get_storage)统计历史数据。
+        """
         try:
-            if not hasattr(self, 'engine') or not self.engine:
-                self._set_stats_default()
-                self._append_stats_detail("⚠️ 引擎未初始化，请先启动监控")
-                return
+            has_engine = bool(getattr(self, 'engine', None))
 
             # 默认为0
             for k in self.stats_labels:
@@ -3317,8 +3542,8 @@ class WeChatAIApp(ctk.CTk):
 
             detail_lines = []
 
-            # 1. 存储统计（SQLite数据库）
-            storage = self.engine.get_storage()
+            # 1. 存储统计（SQLite 数据库，可独立于引擎）
+            storage = self._get_storage()
             if storage:
                 try:
                     s = storage.get_stats()
@@ -3331,7 +3556,6 @@ class WeChatAIApp(ctk.CTk):
                         detail_lines.append(f"📊 数据库统计 (更新: {s.get('last_updated', '—')})")
                         detail_lines.append(f"  总消息: {s['total_messages']}  重要: {s['important_messages']}")
                         detail_lines.append(f"  联系人: {s['total_contacts']}  今日: {s['today_messages']}  本周: {s['week_messages']}")
-                        # 发送者分布
                         senders = s.get("sender_distribution", {})
                         if senders:
                             top = sorted(senders.items(), key=lambda x: x[1], reverse=True)[:5]
@@ -3351,23 +3575,30 @@ class WeChatAIApp(ctk.CTk):
                 detail_lines.append("⚠️ 存储模块未初始化")
                 detail_lines.append("")
 
-            # 2. 引擎运行时统计（实时数据）
-            try:
-                e = self.engine.get_stats()
-                self.stats_labels["提取信息"].configure(text=str(e.get("extracted", 0)))
-                self.stats_labels["已回复"].configure(text=str(e.get("replies_sent", 0)))
-                self.stats_labels["OCR次数"].configure(text=str(e.get("ocr_calls", 0)))
-                detail_lines.append("⚡ 引擎实时统计")
-                detail_lines.append(f"  截图帧数: {e.get('frames_captured', 0)}  OCR调用: {e.get('ocr_calls', 0)}")
-                detail_lines.append(f"  检测消息: {e.get('messages_detected', 0)}  提取信息: {e.get('extracted', 0)}")
-                detail_lines.append(f"  重要消息: {e.get('important', 0)}  已回复: {e.get('replies_sent', 0)}")
-                detail_lines.append("")
-            except Exception as e2:
-                detail_lines.append(f"⚠️ 引擎统计异常: {e2}")
+            # 2. 引擎运行时统计（实时数据，仅有时可用）
+            if has_engine:
+                try:
+                    e = self.engine.get_stats()
+                    self.stats_labels["提取信息"].configure(text=str(e.get("extracted", 0)))
+                    self.stats_labels["已回复"].configure(text=str(e.get("replies_sent", 0)))
+                    self.stats_labels["OCR次数"].configure(text=str(e.get("ocr_calls", 0)))
+                    detail_lines.append("⚡ 引擎实时统计")
+                    detail_lines.append(f"  截图帧数: {e.get('frames_captured', 0)}  OCR调用: {e.get('ocr_calls', 0)}")
+                    detail_lines.append(f"  检测消息: {e.get('messages_detected', 0)}  提取信息: {e.get('extracted', 0)}")
+                    detail_lines.append(f"  重要消息: {e.get('important', 0)}  已回复: {e.get('replies_sent', 0)}")
+                    detail_lines.append("")
+                except Exception as e2:
+                    detail_lines.append(f"⚠️ 引擎统计异常: {e2}")
+                    detail_lines.append("")
+            else:
+                self.stats_labels["提取信息"].configure(text="—")
+                self.stats_labels["已回复"].configure(text="—")
+                self.stats_labels["OCR次数"].configure(text="—")
+                detail_lines.append("💡 未启动监控：仅显示数据库历史统计（点击「开始监控」可查看实时数据）")
                 detail_lines.append("")
 
             # 3. UI会话索引统计（轻量，不遍历全量正文）
-            if hasattr(self, '_conv_index'):
+            if hasattr(self, '_conv_index') and self._conv_index:
                 total_msgs = sum(v.get("count", 0) for v in self._conv_index.values())
                 total_contacts = len(self._conv_index)
                 detail_lines.append(f"💾 会话索引: {total_msgs} 条消息, {total_contacts} 个联系人")
@@ -3380,12 +3611,98 @@ class WeChatAIApp(ctk.CTk):
 
             self._set_stats_detail("\n".join(detail_lines) if detail_lines else "暂无统计数据")
 
+            # 4. V3.1: 生成炫酷可视化图表（不依赖引擎）
+            self._render_stats_chart(storage)
+
         except Exception as e:
             self._set_stats_default()
             import traceback
             self._set_stats_detail(f"❌ 统计刷新异常:\n{traceback.format_exc()[-300:]}")
             try:
                 self._on_log("error", f"[统计] 刷新异常: {e}")
+            except Exception:
+                pass
+
+    def _render_stats_chart(self, storage):
+        """V3.1: 用 matplotlib 生成炫酷统计图（环形 + 柱状），内嵌到统计面板。
+        不依赖引擎：优先用传入 storage，否则用 _get_storage()。
+        """
+        try:
+            import tkinter as tk
+            from PIL import Image, ImageTk
+            import matplotlib
+            matplotlib.use("Agg")
+            import matplotlib.pyplot as plt
+            from matplotlib.patches import Wedge
+
+            st = storage or self._get_storage()
+            if st is None:
+                self.stats_chart.configure(text="（无数据，无法生成图表）")
+                return
+
+            s = st.get_stats() or {}
+            total = s.get("total_messages", 0)
+            important = s.get("important_messages", 0)
+            contacts = s.get("total_contacts", 0)
+            today = s.get("today_messages", 0)
+            week = s.get("week_messages", 0)
+            senders = s.get("sender_distribution", {}) or {}
+
+            fig = plt.figure(figsize=(5.4, 3.0), dpi=110, facecolor="#1e1e24")
+            fig.patch.set_alpha(0.0)
+
+            # ---- 左：环形图（消息构成：重要 vs 普通） ----
+            ax1 = fig.add_axes([0.04, 0.12, 0.44, 0.78])
+            ax1.set_facecolor("#1e1e24")
+            normal = max(total - important, 0)
+            vals = [important, normal] if total > 0 else [1, 0]
+            colors_donut = ["#FF5B5B", "#2D9CDB"]
+            if total > 0:
+                wedges, _ = ax1.pie(vals, colors=colors_donut, startangle=90,
+                                    wedgeprops=dict(width=0.38, edgecolor="#1e1e24", linewidth=2))
+                ax1.text(0, 0, f"{total}\n消息", ha="center", va="center",
+                         fontsize=13, fontweight="bold", color="#FFFFFF")
+            else:
+                ax1.text(0.5, 0.5, "暂无数据", ha="center", va="center", color="#888")
+            ax1.set_title("消息构成", color="#E0E0E0", fontsize=10)
+            ax1.legend(["重要 ⭐", "普通"], loc="lower center", bbox_to_anchor=(0.5, -0.18),
+                       fontsize=7, frameon=False, labelcolor="#BBBBBB")
+
+            # ---- 右：柱状图（今日/本周/联系人数/重要） ----
+            ax2 = fig.add_axes([0.56, 0.16, 0.40, 0.66])
+            ax2.set_facecolor("#1e1e24")
+            cats = ["今日", "本周", "联系人", "重要"]
+            vals2 = [today, week, contacts, important]
+            bar_colors = ["#27AE60", "#2D9CDB", "#9B51E0", "#FF5B5B"]
+            bars = ax2.bar(cats, vals2, color=bar_colors, width=0.62,
+                           edgecolor="#1e1e24", linewidth=1.5, zorder=3)
+            ax2.set_title("关键指标", color="#E0E0E0", fontsize=10)
+            ax2.spines["top"].set_visible(False)
+            ax2.spines["right"].set_visible(False)
+            ax2.spines["left"].set_color("#444")
+            ax2.spines["bottom"].set_color("#444")
+            ax2.tick_params(colors="#BBBBBB", labelsize=8)
+            ax2.set_ylim(0, max(vals2 + [1]) * 1.25)
+            for b, v in zip(bars, vals2):
+                ax2.text(b.get_x() + b.get_width()/2, v + max(vals2 + [1])*0.02,
+                         str(v), ha="center", va="bottom", fontsize=8, color="#FFFFFF", fontweight="bold")
+            ax2.grid(axis="y", color="#333", linewidth=0.6, zorder=0)
+
+            fig.canvas.draw()
+            buf = fig.canvas.buffer_rgba()
+            w, h = fig.canvas.get_width_height()
+            img = Image.frombytes("RGBA", (w, h), buf)
+            rgb = Image.new("RGB", (w, h), "#1e1e24")
+            rgb.paste(img, (0, 0), img)
+            photo = ImageTk.PhotoImage(rgb)
+            plt.close(fig)
+
+            self.stats_chart.configure(image=photo, text="")
+            self.stats_chart.image = photo
+        except Exception as _e:
+            try:
+                self._on_log("error", f"[统计图表] 生成失败: {_e}")
+                self.stats_chart.configure(text="（图表生成失败，请看日志）")
             except Exception:
                 pass
 
@@ -3530,6 +3847,38 @@ class WeChatAIApp(ctk.CTk):
             self.advanced_frame.pack(fill="x", padx=10, pady=5)
         else:
             self.advanced_frame.pack_forget()
+
+    def _jump_to_setting(self, attr):
+        """V3.1: 设置页导航——平滑滚动到指定区块。"""
+        try:
+            frame = getattr(self, attr, None)
+            if frame is None or not frame.winfo_exists():
+                return
+            # 确保 advanced 区块可见（若跳转目标是高级内部项且未展开则展开）
+            if attr == "advanced_frame" and not self.advanced_settings_var.get():
+                self.advanced_settings_var.set(True)
+                self._toggle_advanced_settings()
+            # CTkScrollableFrame 内部 canvas 滚动到目标 y
+            scroll = frame.master
+            canvas = getattr(scroll, "_parent_canvas", None)
+            if canvas is not None:
+                frame.update_idletasks()
+                # 计算目标在 canvas 滚动坐标中的位置
+                y = frame.winfo_y()
+                canvas.configure(scrollregion=canvas.bbox("all"))
+                canvas.yview_moveto(max(0.0, y / max(canvas.bbox("all")[3], 1)))
+            # 高亮提示
+            try:
+                orig = frame.cget("fg_color")
+                frame.configure(fg_color=WC_COLORS["accent_light"])
+                frame.after(600, lambda: frame.configure(fg_color=orig))
+            except Exception:
+                pass
+        except Exception as _e:
+            try:
+                self._on_log("error", f"[设置导航] 跳转失败: {_e}")
+            except Exception:
+                pass
 
     # ========== 事件处理 ==========
 
