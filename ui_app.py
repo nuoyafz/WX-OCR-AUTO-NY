@@ -857,6 +857,7 @@ class WeChatAIApp(ctk.CTk):
             keep = {k: self._contact_cards[k] for k in sys_frames}
             self._contact_cards = keep
             # 3) 从会话索引重建所有会话卡（索引里已是“最新消息预览”，无需载入正文）
+            #    联系人卡默认追加在系统卡之下（系统卡创建时已固定顺序：使用说明→全部会话）。
             active = getattr(self, "_active_contact", None)
             for contact, idx in (self._conv_index or {}).items():
                 preview = str(idx.get("preview", ""))[:26]
@@ -865,16 +866,6 @@ class WeChatAIApp(ctk.CTk):
                 self._append_contact_card(
                     contact, preview, is_group=is_group, unread=unread,
                     active=(contact == active))
-            # 4) 系统卡顺序固定：使用说明（最顶）→ 全部会话（次之）
-            try:
-                uframe = sys_frames.get(self._contact_filter_usage)
-                aframe = sys_frames.get(self._contact_filter_all)
-                if uframe and uframe.winfo_exists():
-                    uframe.pack_forget(); uframe.pack(side="top", fill="x")
-                if aframe and aframe.winfo_exists():
-                    aframe.pack_forget(); aframe.pack(side="top", fill="x")
-            except Exception:
-                pass
         except Exception as e:
             try: self._append_log("warning", f"[会话列表] 重建失败: {e}")
             except Exception: pass
@@ -1917,10 +1908,8 @@ class WeChatAIApp(ctk.CTk):
             if total_items > _MAX:
                 items = items[:_MAX]  # 截取头部（最新部分），保持「最新置顶」
 
-            if not items:
-                if is_usage:
-                    txt = "（使用说明加载中…）"
-                elif is_all:
+            if not items and not is_usage:
+                if is_all:
                     txt = "暂无聊天记录 — 点击「开始监控」识别微信聊天消息，会实时显示在这里。"
                 else:
                     txt = f"暂无与「{active}」的聊天记录 — 切换到该会话后，新消息会显示在这里。"
