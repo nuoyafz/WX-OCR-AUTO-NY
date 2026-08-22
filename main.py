@@ -723,6 +723,28 @@ class WeChatEngine:
             role = self.role_manager.get_role_for(contact)
             self._log("info", f"[角色] {role['name']} ({role['reply_style']})")
 
+            # ===== 人格化回复：注入 Obsidian AI 画像(关系/风格/亲密度) + 项目上下文 =====
+            role = dict(role)  # 浅拷贝，避免污染全局 role 配置
+            _persona_bits = []
+            if self.obsidian and self.obsidian.enabled:
+                try:
+                    _prof = self.obsidian.read_contact_profile(contact)
+                    if _prof:
+                        _persona_bits.append(_prof)
+                    _proj = self.obsidian.read_project_context(contact)
+                    if _proj:
+                        _persona_bits.append(_proj)
+                except Exception as _e:
+                    self._log("debug", f"[人格化] 读取上下文失败(忽略): {_e}")
+            if _persona_bits:
+                _extra = "\n\n".join(_persona_bits)
+                _base_sp = role.get("system_prompt", "你是一个友好的聊天助手。")
+                role["system_prompt"] = (
+                    f"{_base_sp}\n\n"
+                    f"【与对方的关系与沟通建议（来自历史记忆，请自然融入，不要生硬提及）】\n{_extra}"
+                )
+                self._log("debug", f"[人格化] 已注入画像/项目上下文 ({len(_extra)} 字)")
+
             # ===== P0: 优先取 UI 维护的对话上下文（最近 N 轮） =====
             if self._fetch_context_fn is not None and contact:
                 try:
@@ -1285,6 +1307,12 @@ class WeChatEngine:
                 self._log("info", "[Obsidian] 写缓冲已强制落盘")
             except Exception as e:
                 self._log("error", f"[Obsidian] flush失败: {e}")
+            # 退出前生成每日简报（AI 汇总当日要事；无消息则跳过）
+            try:
+                if self.obsidian.write_daily_brief():
+                    self._log("info", "[Obsidian] 每日简报已生成")
+            except Exception as e:
+                self._log("error", f"[Obsidian] 每日简报失败: {e}")
 
     def is_running(self):
         return self._running

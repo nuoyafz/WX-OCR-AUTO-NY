@@ -98,6 +98,8 @@ class ObsidianSync:
         self.ai_profile = self.ai_enabled and adv.get("ai_profile", True)
         self.ai_relationship = self.ai_enabled and adv.get("ai_relationship", True)
         self.ai_relationship_depth = int(adv.get("ai_relationship_depth", 60))
+        self.ai_project = self.ai_enabled and adv.get("ai_project", True)
+        self.project_dir = os.path.join(self.folder, "微信项目")
         if self.ai_enabled:
             logger.info("[Obsidian] AI赋能已启用（摘要/画像/关系图谱）")
         else:
@@ -116,6 +118,9 @@ class ObsidianSync:
         self._buffer_lock = threading.Lock()
         self._buffer_first_ts = {}     # key -> 首次入缓冲时间戳
         self._flush_timer = None
+        # 当日原始消息累积（按 contact 聚合），供每日简报汇总（进程退出前可用）
+        self._daily_raw = {}
+        self._daily_raw_lock = threading.Lock()
         if self._file_enabled and self.flush_interval > 0:
             self._start_flush_timer()
 
@@ -604,8 +609,167 @@ class ObsidianSync:
             # P1: Canvas
             if self.enable_canvas:
                 self._update_canvas(contact, msgs)
+            # 当日原始消息累积（供每日简报）
+            with self._daily_raw_lock:
+                self._daily_raw.setdefault(contact, [])
+                self._daily_raw[contact].extend(msgs)
+            # AI 项目维度抽取（命中项目关键词或群聊才跑，控成本）
+            if self.ai_project:
+                self._maybe_update_projects(contact, msgs)
         if self._api_enabled:
             self._api_write_buffered(contact, date_str, msgs)
+
+    # ------------------------------------------------------------------
+    # AI 赋能：项目维度（独立于联系人/群，作为知识库节点 + 图谱节点）
+    # ------------------------------------------------------------------
+    _PROJECT_KW = ("项目", "进度", "上线", "需求", "周报", "排期", "里程碑",
+                   "交付", "任务", "迭代", "版本", "目标", "deadline", "截止")
+
+    def _maybe_update_projects(self, contact, msgs):
+        """轻量触发：消息疑似涉及项目才调 LLM 抽取，避免每条都跑。"""
+        try:
+            text = " ".join((m.get("content") or m.get("raw_text") or "") for m in msgs)
+            is_group = any(bool(m.get("is_group")) for m in msgs)
+            hit = any(k in text for k in self._PROJECT_KW) or is_group
+            if not hit:
+                return
+            projects = self._extract_projects_ai(contact, msgs)
+            if not projects:
+                return
+            related = set()
+            for m in msgs:
+                gm = m.get("group_member")
+                if gm:
+                    related.add(gm)
+                if m.get("sender") != "me":
+                    related.add(contact)
+            for pj in projects:
+                name = (pj.get("name") or "").strip()
+                if not name or len(name) > 40:
+                    continue
+                self._update_project(name, pj, list(related))
+        except Exception as e:
+            logger.warning(f"[Obsidian] 项目抽取失败(忽略): {e}")
+
+    def _extract_projects_ai(self, contact, msgs):
+        """从消息/群名抽项目结构化信息。返回 list[dict] 或 []。"""
+        recent = sorted(msgs, key=lambda m: str(m.get("timestamp", "")))[:self.ai_relationship_depth]
+        lines = []
+        for m in recent:
+            who = "我" if m.get("sender") == "me" else (m.get("group_member") or contact)
+            c = (m.get("content") or m.get("raw_text") or "").strip()
+            if c:
+                lines.append(f"{who}: {c[:120]}")
+        if not lines:
+            return []
+        transcript = "\n".join(lines)
+        sys_p = ("你是项目管理助手。从微信聊天中识别涉及的项目/事项，"
+                 "返回 JSON 数组，每项：{\"name\":\"项目名称(简洁)\",\"goal\":\"目标\","
+                 "\"progress\":\"当前进展\",\"related\":\"相关人(逗号分隔)\",\"risk\":\"风险/阻塞(可空)\"}。"
+                 "只输出确实在聊的项目，无则返回 []。不要编造。")
+        usr_p = f"聊天对象/群：{contact}\n\n对话：\n{transcript}"
+        raw = self._ai_json_call(sys_p, usr_p, max_tokens=400)
+        if isinstance(raw, list):
+            return [r for r in raw if isinstance(r, dict)]
+        if isinstance(raw, dict):
+            return [raw]
+        return []
+
+    def _update_project(self, name, info, related_contacts):
+        """写出/更新 微信项目/<name>.md，并把项目节点连入社交图谱。"""
+        try:
+            proj_dir = os.path.join(self.vault_path, self.project_dir)
+            os.makedirs(proj_dir, exist_ok=True)
+            fpath = os.path.join(proj_dir, f"{self._sanitize_filename(name)}.md")
+            ts = datetime.now().strftime("%Y-%m-%d %H:%M")
+            goal = info.get("goal", "") or ""
+            progress = info.get("progress", "") or ""
+            risk = info.get("risk", "") or ""
+            rel_links = " ".join(
+                f"[[{self._sanitize_filename(c)}]]" for c in related_contacts if c
+            ) or "（无）"
+            front = (f"---\nproject: {self._quote_yaml(name)}\n"
+                      f"tags: [微信项目]\nupdated: {ts}\n---\n\n")
+            body = (
+                f"# 🚀 {name}\n\n"
+                f"> 自动生成的项目笔记（微信AI助手维护）\n\n"
+                f"## 🎯 目标与进展\n\n"
+                f"- **目标**：{goal}\n- **进展**：{progress}\n"
+                f"{('- **风险**：' + risk + '\n') if risk else ''}\n"
+                f"## 👥 相关人\n\n{rel_links}\n\n"
+                f"## 🔗 反向链接\n\n- 会话记录：[[{self.folder}/联系人/{self._sanitize_filename(related_contacts[0]) if related_contacts else ''}]]\n"
+            )
+            # 已存在则只刷新 updated 与进展段（简单重写目标进展段）
+            if os.path.exists(fpath):
+                try:
+                    with open(fpath, "r", encoding="utf-8") as f:
+                        old = f.read()
+                    old = re.sub(r"updated: .*", f"updated: {ts}", old)
+                    old = re.sub(r"- \*\*进展\*\*：.*", f"- **进展**：{progress}", old)
+                    self._atomic_write(fpath, old)
+                except Exception:
+                    self._atomic_write(fpath, front + body)
+            else:
+                self._atomic_write(fpath, front + body)
+            # 项目节点连入图谱
+            self._add_project_to_canvas(name, related_contacts)
+        except Exception as e:
+            self._report_error(f"写项目笔记失败({name}): {e}")
+
+    def _add_project_to_canvas(self, name, related_contacts):
+        """把项目节点加入 .canvas，并与相关联系人连边。"""
+        try:
+            canvas_path = os.path.join(self.vault_path, self.folder, f"{self.canvas_name}.canvas")
+            nodes, edges = [], []
+            if os.path.exists(canvas_path):
+                try:
+                    with open(canvas_path, "r", encoding="utf-8") as f:
+                        data = json.load(f)
+                    nodes = data.get("nodes", [])
+                    edges = data.get("edges", [])
+                except Exception:
+                    nodes, edges = [], []
+            pnode_id = f"proj-{abs(hash(name)) % 10**8}"
+            if not any(nd.get("id") == pnode_id for nd in nodes):
+                nodes.append({
+                    "id": pnode_id, "type": "text",
+                    "text": f"[[{self.folder}/微信项目/{self._sanitize_filename(name)}|🚀{name}]]",
+                    "x": (len(nodes) % 4) * 260 + 120, "y": (len(nodes) // 4) * 200 + 120,
+                    "width": 220, "height": 60,
+                    "color": "rgba(90,160,240,0.25)",
+                })
+            # 连边到相关联系人节点（按联系人名匹配现有节点 text）
+            for c in related_contacts:
+                if not c:
+                    continue
+                cnode_id = f"node-{abs(hash(c)) % 10**8}"
+                edge_id = f"e-{pnode_id}-{cnode_id}"
+                if not any(e.get("id") == edge_id for e in edges):
+                    edges.append({
+                        "id": edge_id, "fromNode": pnode_id, "toNode": cnode_id,
+                        "label": "相关", "color": "rgba(90,160,240,0.5)",
+                    })
+            payload = {"nodes": nodes, "edges": edges}
+            if self._file_enabled:
+                os.makedirs(os.path.dirname(canvas_path), exist_ok=True)
+                tmp, tmp_path = tempfile.mkstemp(dir=os.path.dirname(canvas_path), suffix=".tmp")
+                try:
+                    with os.fdopen(tmp, "w", encoding="utf-8") as f:
+                        json.dump(payload, f, ensure_ascii=False, indent=2)
+                        f.flush(); os.fsync(f.fileno())
+                    os.replace(tmp_path, canvas_path)
+                except Exception:
+                    try: os.remove(tmp_path)
+                    except Exception: pass
+            if self._api_enabled:
+                url = f"{self.api_url}/vault/{self.folder}/{self.canvas_name}.canvas"
+                headers = {"Authorization": f"Bearer {self.api_key}",
+                           "Content-Type": "application/json"}
+                requests.put(url, headers=headers,
+                             data=json.dump(payload, ensure_ascii=False) if False else
+                             json.dumps(payload, ensure_ascii=False).encode("utf-8"), timeout=10)
+        except Exception as e:
+            logger.warning(f"[Obsidian] 项目图谱更新失败: {e}")
 
     def _write_contact_daily_file(self, contact, date_str, msgs):
         """写出 联系人/<contact>/<contact>-<date>.md（全量重写该文件）"""
@@ -640,6 +804,86 @@ class ObsidianSync:
                 self._atomic_write(fpath, content)
         except Exception as e:
             self._report_error(f"写每日聚合失败({date_str}): {e}")
+
+    # ------------------------------------------------------------------
+    # 每日简报：AI 汇总当日所有联系人要事（全局视角）
+    # ------------------------------------------------------------------
+    def write_daily_brief(self, date_str=None):
+        """汇总当日（进程运行期间）所有联系人的消息，生成"今日要事清单"。
+        优先 AI 版（LLM 提炼重点/待办/风险），失败回退规则统计版。
+        写入 <folder>/每日简报/<date>.md。返回 True/False。"""
+        if not self._file_enabled:
+            logger.info("[Obsidian] 文件模式未启用，跳过每日简报")
+            return False
+        date_str = date_str or datetime.now().strftime("%Y-%m-%d")
+        with self._daily_raw_lock:
+            snapshot = {c: list(msgs) for c, msgs in self._daily_raw.items() if msgs}
+        if not snapshot:
+            logger.info(f"[Obsidian] 当日无消息，跳过简报 {date_str}")
+            return False
+        try:
+            brief_dir = os.path.join(self.vault_path, self.folder, "每日简报")
+            os.makedirs(brief_dir, exist_ok=True)
+            fpath = os.path.join(brief_dir, f"{date_str}.md")
+
+            # 构造每联系人摘要素材
+            contact_summaries = []
+            for contact, msgs in snapshot.items():
+                is_group = any(bool(m.get("is_group")) for m in msgs)
+                others = [m for m in msgs if m.get("sender") != "me"]
+                imp = [m for m in msgs if m.get("is_important")]
+                tasks = []
+                for m in msgs:
+                    if m.get("extracted_tasks"):
+                        tasks.extend(m["extracted_tasks"])
+                lines = [f"### {contact}（{'群聊' if is_group else '私聊'}，{len(others)}条对方消息）"]
+                if imp:
+                    lines.append("重点：" + "；".join(f"{m.get('content','')[:30]}" for m in imp[:3]))
+                if tasks:
+                    lines.append("待办：" + "；".join(str(t)[:30] for t in tasks[:5]))
+                # 最近3条对方消息原文（给 LLM 上下文）
+                recent = [m for m in reversed(msgs) if m.get("sender") != "me"][:3]
+                for m in reversed(recent):
+                    c = (m.get("content") or m.get("raw_text") or "").strip()
+                    if c:
+                        lines.append(f"- {c[:80]}")
+                contact_summaries.append("\n".join(lines))
+
+            brief_body = self._build_daily_brief_ai(date_str, contact_summaries) or \
+                self._build_daily_brief_rule(date_str, contact_summaries)
+
+            header = (f"---\ndate: {date_str}\nsource: NOYA-Chat\ntype: 每日简报\n"
+                      f"tags: [微信, 每日简报]\nupdated: {datetime.now().strftime('%Y-%m-%d %H:%M')}\n---\n\n")
+            content = header + brief_body + "\n"
+            self._atomic_write(fpath, content)
+            logger.info(f"[Obsidian] 每日简报已生成: {fpath}")
+            return True
+        except Exception as e:
+            self._report_error(f"每日简报生成失败: {e}")
+            return False
+
+    def _build_daily_brief_ai(self, date_str, contact_summaries):
+        if not self.ai_summary:
+            return None
+        joined = "\n\n".join(contact_summaries)
+        sys_p = ("你是个人微信助理。根据今日各联系人的聊天要点，生成一份「每日简报」。"
+                 "结构：1)今日总览(几人/几件要事) 2)需我方跟进的待办(逐条，标注来自谁) "
+                 "3)重要/风险事项 4)值得主动联系的人。用'- '分点，简洁，不超过350字。"
+                 "不要编造未提及的信息。")
+        usr_p = f"日期：{date_str}\n\n各联系人要点：\n{joined}"
+        ai = self._ai_call(sys_p, usr_p, max_tokens=500, temperature=0.3)
+        if ai:
+            return (f"# 📋 {date_str} 每日简报（AI）\n\n" + ai.strip() +
+                    f"\n\n---\n\n## 📇 各联系人原始要点\n\n" + joined)
+        return None
+
+    def _build_daily_brief_rule(self, date_str, contact_summaries):
+        total_contacts = len(contact_summaries)
+        body = [f"# 📋 {date_str} 每日简报", "",
+                f"> 共 **{total_contacts}** 位联系人产生消息", "",
+                "## 📇 各联系人要点", ""]
+        body.extend(contact_summaries)
+        return "\n".join(body) + "\n"
 
     def _append_under_heading(self, filepath, heading, line):
         """在指定标题块下追加一行（标题不存在则创建）。原子读写。"""
@@ -999,6 +1243,67 @@ class ObsidianSync:
             except Exception:
                 pass
         return "\n\n".join(parts) if parts else None
+
+    # ------------------------------------------------------------------
+    # AI 赋能读取：画像 + 项目上下文（供人格化回复注入 system prompt）
+    # ------------------------------------------------------------------
+    def read_contact_profile(self, contact):
+        """读取联系人 AI 画像（身份/关系/风格/亲密度），返回精简字符串或 None。"""
+        if not self.ai_profile:
+            return None
+        parts = []
+        profile_path = os.path.join(self.vault_path, self.folder, "微信联系人",
+                                    f"{self._sanitize_filename(contact)}.md")
+        if self._file_enabled and os.path.exists(profile_path):
+            try:
+                with open(profile_path, "r", encoding="utf-8") as f:
+                    text = f.read()
+                # 只截取 AI 画像块，避免把整篇历史塞进 prompt
+                import re as _re
+                m = _re.search(r"<!--AI_PROFILE_START-->(.*?)<!--AI_PROFILE_END-->",
+                               text, _re.DOTALL)
+                block = m.group(1).strip() if m else ""
+                if not block:
+                    # 回退：取 ## 🤖 AI 画像 段
+                    m2 = _re.search(r"## 🤖 AI 画像\s*\n(.*?)(?:\n## |\Z)", text, _re.DOTALL)
+                    block = m2.group(1).strip() if m2 else ""
+                if block:
+                    parts.append(f"[联系人画像 {contact}]\n{block[:600]}")
+            except Exception:
+                pass
+        return "\n\n".join(parts) if parts else None
+
+    def read_project_context(self, contact):
+        """读取与某联系人相关的项目笔记（AI 抽取的项目维度），返回精简字符串或 None。"""
+        if not self.ai_project:
+            return None
+        try:
+            proj_base = os.path.join(self.vault_path, self.project_dir)
+            if not os.path.isdir(proj_base):
+                return None
+            # 项目笔记里若提到该联系人（双向链接或正文），则纳入上下文
+            hits = []
+            for fn in os.listdir(proj_base):
+                if not fn.endswith(".md"):
+                    continue
+                fpath = os.path.join(proj_base, fn)
+                try:
+                    with open(fpath, "r", encoding="utf-8") as f:
+                        txt = f.read()
+                except Exception:
+                    continue
+                if contact in txt:
+                    name = fn[:-3]
+                    # 只取"目标/进展"段，控制 token
+                    import re as _re
+                    m = _re.search(r"## 🎯 目标与进展\s*\n(.*?)(?:\n## |\Z)", txt, _re.DOTALL)
+                    seg = m.group(1).strip()[:400] if m else txt[:400]
+                    hits.append(f"[项目 {name}]\n{seg}")
+                    if len(hits) >= 3:
+                        break
+            return "\n\n".join(hits) if hits else None
+        except Exception:
+            return None
 
     # ------------------------------------------------------------------
     # 统一入口
