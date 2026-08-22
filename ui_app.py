@@ -866,6 +866,23 @@ class WeChatAIApp(ctk.CTk):
                 self._append_contact_card(
                     contact, preview, is_group=is_group, unread=unread,
                     active=(contact == active))
+            # === 临时诊断（定位联系人卡不显示）===
+            try:
+                self._debug_log(
+                    f"[重建会话列表] _conv_index={len(self._conv_index or {})} "
+                    f"sys_in_cards={all(k in self._contact_cards for k in (self._contact_filter_usage, self._contact_filter_all))} "
+                    f"total_cards={len(self._contact_cards)} "
+                    f"clf_children={len(self.contact_list_frame.winfo_children())}")
+            except Exception:
+                pass
+            # 强制刷新 CTkScrollableFrame 的 canvas scrollregion，确保新卡进入可视区
+            try:
+                self.contact_list_frame.update_idletasks()
+                _cv = getattr(self.contact_list_frame, "_parent_canvas", None)
+                if _cv is not None:
+                    _cv.configure(scrollregion=_cv.bbox("all"))
+            except Exception:
+                pass
         except Exception as e:
             try: self._append_log("warning", f"[会话列表] 重建失败: {e}")
             except Exception: pass
