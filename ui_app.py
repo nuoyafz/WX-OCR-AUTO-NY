@@ -23,6 +23,27 @@ from tkinter import messagebox, filedialog
 from datetime import datetime
 from ui_theme import WC_COLORS
 
+# ==========================================================================
+# 便携模式基准目录（打包 exe 后关键）
+#   开发态：__file__ 所在目录（项目根）。
+#   打包态(sys._MEIPASS 存在)：PyInstaller 会把只读资源解压到临时目录
+#   _MEIPASS，该目录只读且重启清空，不能写配置/历史。因此可写数据必须
+#   重定向到 exe 同目录（APP_BASE），保证 config.yaml / data / debug 等
+#   持久化在用户机器上、不被清掉。
+# ==========================================================================
+import sys as _sys
+if getattr(_sys, "frozen", False) and hasattr(_sys, "_MEIPASS"):
+    # 打包后：sys.executable 即 dist/微信AI助手.exe，其目录可写
+    APP_BASE = os.path.dirname(os.path.abspath(_sys.executable))
+else:
+    APP_BASE = os.path.dirname(os.path.abspath(__file__))
+
+
+def _app_path(*parts):
+    """拼可写路径（配置/历史/缓存），始终落在 APP_BASE。"""
+    return os.path.join(APP_BASE, *parts)
+
+
 ctk.set_appearance_mode("light")
 # macOS 风格：干净白 + Apple蓝 #007AFF + 大圆角 + 极细分隔
 # 不调用 set_default_color_theme 避免污染 accent 色系
@@ -82,7 +103,18 @@ class WeChatAIApp(ctk.CTk):
 
     def _load_config(self):
         import yaml
-        config_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), self.config_path)
+        config_path = _app_path(self.config_path)
+        # 打包态首启：exe 同目录可能还没有 config.yaml，从包内模板复制
+        if not os.path.exists(config_path):
+            bundled = os.path.join(getattr(_sys, "_MEIPASS", ""), self.config_path)
+            if os.path.exists(bundled):
+                try:
+                    os.makedirs(os.path.dirname(config_path), exist_ok=True)
+                    with open(bundled, "r", encoding="utf-8") as src, \
+                            open(config_path, "w", encoding="utf-8") as dst:
+                        dst.write(src.read())
+                except Exception:
+                    pass
         try:
             with open(config_path, "r", encoding="utf-8") as f:
                 self.config_data = yaml.safe_load(f) or {}
@@ -464,8 +496,7 @@ class WeChatAIApp(ctk.CTk):
         # 按联系人划分的消息池：contact -> [msg_data, ...]，最新在前（索引0）。
         # 点击会话卡时据此重建右侧消息列表，避免 pack_forget 过滤导致的空白/顺序错乱。
         # 持久化到 data/messages_history.json（防抖写盘），重启后保留历史。
-        self._history_path = os.path.join(
-            os.path.dirname(os.path.abspath(__file__)), "data", "messages_history.json")
+        self._history_path = _app_path("data", "messages_history.json")
         self._history_save_job = None      # after() 句柄（防抖）
         self._history_dirty = False
         self._messages_store = {}      # 仅缓存"已打开/实时"的联系人全文（懒加载，不再全量驻留）
@@ -1015,6 +1046,21 @@ class WeChatAIApp(ctk.CTk):
         # 切换会话 → 重建消息列表（最新在顶）
         try:
             self._rebuild_message_list()
+        except Exception as _e:
+            try:
+                import traceback as _tb
+                self._debug_log(f"[切换会话] {contact!r} 重建异常: {_tb.format_exc()}")
+            except Exception:
+                pass
+
+        # 点击卡片“直接跳到消息”：强制刷新布局 + 立即滚到最新（底部），
+        # 不依赖 after 异步，消除切换时序窗口导致的“点开看不见/空白”。
+        try:
+            self.msg_list_frame.update_idletasks()
+            _cv = getattr(self.msg_list_frame, "_parent_canvas", None)
+            if _cv is not None:
+                _cv.configure(scrollregion=_cv.bbox("all"))
+                _cv.yview_moveto(1.0)
         except Exception:
             pass
 
@@ -1202,7 +1248,7 @@ class WeChatAIApp(ctk.CTk):
             # 4) 文件保存对话框
             safe_name = "".join(c for c in str(contact) if c.isalnum() or c in "_-()[] ").strip() or "导出"
             default_name = f"{safe_name}_聊天记录_{datetime.now().strftime('%Y%m%d_%H%M%S')}.md"
-            default_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "exports")
+            default_dir = _app_path("exports")
             os.makedirs(default_dir, exist_ok=True)
             path = filedialog.asksaveasfilename(
                 title=f"导出「{contact}」聊天记录",
@@ -1329,6 +1375,15 @@ class WeChatAIApp(ctk.CTk):
             self._flush_history()
         except Exception:
             pass
+
+        # ★ 同步清引擎的跨轮去重缓存：否则被删消息的 hash 仍留在 reddot_seen.json，
+        # 下次重扫仍判“已见过”→ 永久跨轮去重回不来（用户删历史的目的就是让它们重新出现）。
+        eng = getattr(self, "engine", None)
+        if eng is not None:
+            try:
+                eng.clear_reddot_seen(contacts)
+            except Exception as e:
+                self._on_log("warning", f"[删除] 清空去重缓存失败: {e}")
 
         self._on_log("info", f"[删除] 已删除 {len(contacts)} 个会话共 {total_removed} 条消息")
 
@@ -1642,23 +1697,38 @@ class WeChatAIApp(ctk.CTk):
                 return
 
             # 微信风格：最新在底部，逐条 pack
+            _first_err = None
             for m in items:
                 try:
                     self._build_message_row(self.msg_list_frame_inner, m)
+                except Exception as _e:
+                    if _first_err is None:
+                        _first_err = _e
+
+            # 首条构建失败的异常记录到调试日志（不再静默吞掉）
+            if _first_err is not None:
+                try:
+                    self._debug_log(f"[重建消息列表] _build_message_row 失败: {_first_err!r}")
                 except Exception:
                     pass
 
-            # 自动滚动到底部（最新消息可见）
+            # 关键修复：强制刷新布局 + 重算 CTkScrollableFrame 的 canvas scrollregion，
+            # 否则从“全部会话”切到单卡时，旧内容被销毁但视口不刷新，表现成“空白”。
             try:
-                self.msg_list_frame_inner.after(
-                    50, lambda: self.msg_list_frame._parent_canvas.yview_moveto(1.0))
+                self.msg_list_frame.update_idletasks()
+                _canvas = getattr(self.msg_list_frame, "_parent_canvas", None)
+                if _canvas is not None:
+                    _canvas.configure(scrollregion=_canvas.bbox("all"))
+                    _canvas.yview_moveto(1.0)
             except Exception:
                 pass
 
         except Exception:
             import traceback as _tb
             try:
-                logger.warning("[重建消息列表] 异常: %s", _tb.format_exc()[-200:])
+                _msg = _tb.format_exc()
+                logger.warning("[重建消息列表] 异常: %s", _msg[-500:])
+                self._debug_log("[重建消息列表] 异常:\n" + _msg)
             except Exception:
                 pass
 
@@ -1889,7 +1959,7 @@ class WeChatAIApp(ctk.CTk):
     def _save_classification_rules(self):
         try:
             cats = self._collect_classification_cats()
-            cfg_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "config.yaml")
+            cfg_path = _app_path("config.yaml")
             with open(cfg_path, "r", encoding="utf-8") as f:
                 text = f.read()
             # 保留原有的 enabled 开关；若不存在则默认 true
@@ -2999,13 +3069,25 @@ class WeChatAIApp(ctk.CTk):
                 text_color=status_color,
             )
 
+        # —— 自动弹出：收到对方(非自己)新消息且当前不在该会话时，把会话切到前台 ——
+        # 像微信一样弹到主聊天区，避免"卡片出来了但主区看不到消息"。自己发的(me)不弹，
+        # 全部会话视图(is_all)本就显示、也不弹（不打断当前视图）。
+        auto_popped = False
+        if sender != "me" and self._active_contact not in (None, contact, self._contact_filter_all):
+            try:
+                self._set_active_contact(contact)   # 重建主区(已包含本条气泡)
+                auto_popped = True
+            except Exception:
+                pass
+
         # —— 增量插入新气泡（微信风格：底部插入，不重建）——
         try:
             active = self._active_contact
             is_all = (active is None) or (active == self._contact_filter_all)
             is_shown = is_all or (active == contact)
-            if is_shown:
+            if is_shown and not auto_popped:
                 # 增量插入到底部，不触发全量重建
+                # （若本回合已自动切到该会话，_set_active_contact 重建时已含本条，跳过避免重复气泡）
                 self._append_message_row(stored)
                 try:
                     self.msg_list_frame._parent_canvas.yview_moveto(1.0)
@@ -3644,7 +3726,7 @@ class WeChatAIApp(ctk.CTk):
                 import os
                 import numpy as np
                 from PIL import Image
-                debug_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "debug")
+                debug_dir = _app_path("debug")
                 os.makedirs(debug_dir, exist_ok=True)
                 debug_path = os.path.join(debug_dir, "screenshot_debug.png")
 
@@ -3856,7 +3938,7 @@ class WeChatAIApp(ctk.CTk):
         self._on_log("info", f"自动回复已{'开启' if enabled else '关闭'}")
         try:
             import yaml
-            config_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), self.config_path)
+            config_path = _app_path(self.config_path)
             with open(config_path, "r", encoding="utf-8") as f:
                 raw = yaml.safe_load(f) or {}
             raw.setdefault("auto_reply", {})["enabled"] = enabled
@@ -3876,7 +3958,7 @@ class WeChatAIApp(ctk.CTk):
         self._on_log("info", f"预览确认模式: {'开启' if enabled else '关闭'}（生成回复后{'需手动确认' if enabled else '自动发送'}）")
         try:
             import yaml
-            config_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), self.config_path)
+            config_path = _app_path(self.config_path)
             with open(config_path, "r", encoding="utf-8") as f:
                 raw = yaml.safe_load(f) or {}
             raw.setdefault("auto_reply", {})["preview_mode"] = enabled
@@ -4014,7 +4096,7 @@ class WeChatAIApp(ctk.CTk):
     def _open_rules_file(self):
         """打开规则库文件进行编辑"""
         import subprocess, os
-        rules_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "learned_rules.json")
+        rules_path = _app_path("learned_rules.json")
         if os.path.exists(rules_path):
             subprocess.Popen(["notepad", rules_path])
         else:
@@ -4024,7 +4106,7 @@ class WeChatAIApp(ctk.CTk):
         """重置AI训练"""
         try:
             import json, os
-            rules_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "learned_rules.json")
+            rules_path = _app_path("learned_rules.json")
             if os.path.exists(rules_path):
                 with open(rules_path, "r", encoding="utf-8") as f:
                     rules = json.load(f)
@@ -4148,7 +4230,7 @@ class WeChatAIApp(ctk.CTk):
                 _filt[k] = v.get()
             self.config_data["obsidian"] = obsidian_cfg
 
-            config_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), self.config_path)
+            config_path = _app_path(self.config_path)
             with open(config_path, "w", encoding="utf-8") as f:
                 yaml.dump(self.config_data, f, allow_unicode=True, default_flow_style=False)
 
@@ -4491,6 +4573,18 @@ class WeChatAIApp(ctk.CTk):
         except Exception:
             pass
         self._on_log("info", "[预览窗口] 已关闭")
+
+    def _debug_log(self, message):
+        """把 UI 调试信息追加到 ui_debug.log（APP_BASE 下，打包/开发通用），
+        用于定位“点击会话卡后中栏空白”等仅在真实显示环境才暴露的问题。"""
+        try:
+            import datetime as _dt
+            _p = os.path.join(APP_BASE, "ui_debug.log")
+            _ts = _dt.datetime.now().strftime("%H:%M:%S.%f")[:-3]
+            with open(_p, "a", encoding="utf-8") as _f:
+                _f.write(f"[{_ts}] {message}\n")
+        except Exception:
+            pass
 
     def _on_log(self, level, message=None):
         if message is None:
@@ -4948,7 +5042,7 @@ class WeChatAIApp(ctk.CTk):
         """打开报告目录"""
         import subprocess
         import os
-        report_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "reports")
+        report_dir = _app_path("data", "reports")
         os.makedirs(report_dir, exist_ok=True)
         try:
             subprocess.Popen(f'explorer "{report_dir}"')
@@ -4974,8 +5068,58 @@ class WeChatAIApp(ctk.CTk):
             self._on_log("error", f"[校准] 启动失败: {e}")
 
 
+def _install_crash_handler():
+    """全局崩溃捕获：把任何未捕获异常（含 tkinter 回调里的）写 crash.log 并弹窗。
+    解决“点击后静默闪退无信息”的问题。"""
+    import sys as _s
+    import tkinter as _tk
+
+    crash_path = os.path.join(APP_BASE, "crash.log")
+
+    # faulthandler：C 扩展崩溃（paddle/opencv segfault）时，写出崩溃瞬间正在执行的
+    # Python 代码行（sys.excepthook 抓不到 C 崩溃，进程直接被 OS 杀）。这是定位
+    # “点开始监控就静默闪退”的唯一可靠手段。
+    try:
+        import faulthandler
+        _fh = open(crash_path, "a", encoding="utf-8")
+        # 仅启用 faulthandler：真正的 C 扩展崩溃（paddle/opencv segfault）时，
+        # 会自动把崩溃瞬间 traceback 写进 crash.log，且不杀进程。
+        # 注意：绝不能加 dump_traceback_later(N, exit=True) —— GUI 主循环本就
+        # 长期阻塞等待事件（用户不操作就一直 running），会被误判“卡死”而自杀退出。
+        faulthandler.enable(_fh)
+    except Exception:
+        pass
+
+    def _handler(_exc_type, _exc_val, _exc_tb):
+        import traceback as _tb
+        try:
+            msg = "".join(_tb.format_exception(_exc_type, _exc_val, _exc_tb))
+        except Exception:
+            msg = f"{_exc_type}: {_exc_val}\n"
+        try:
+            with open(crash_path, "a", encoding="utf-8") as _f:
+                _f.write("=" * 60 + "\n" + msg + "\n")
+        except Exception:
+            pass
+        try:
+            ctk.messagebox.showerror(
+                "程序异常（已记录到 crash.log）",
+                f"发生未捕获异常，请截图下方内容或打开 crash.log 发给我：\n\n{str(_exc_val)[:600]}")
+        except Exception:
+            pass
+
+    # 主线程未捕获异常
+    _s.excepthook = _handler
+    # tkinter after/bind 回调里的异常（默认被静默忽略，是“闪退”的常见真凶）
+    try:
+        _tk.Tk.report_callback_exception = staticmethod(_handler)
+    except Exception:
+        pass
+
+
 def run_ui(config_path="config.yaml"):
     """启动UI应用"""
+    _install_crash_handler()
     app = WeChatAIApp(config_path)
     app.mainloop()
 

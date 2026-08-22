@@ -587,6 +587,12 @@ def capture_via_printwindow(hwnd):
                     logger.warning("[PrintWindow] %s 截到纯色(std=%.1f)，降级重试", method, std_val)
                     continue
 
+                # ★ 渲染健康度快筛：半渲染（大面积未绘制）骗过 mean/std，
+                #   用局部方差判定“是否真的画完了”，否则降级重试。
+                if not is_render_healthy(img):
+                    logger.warning("[PrintWindow] %s 渲染不健康(半渲染/纯色)，降级重试", method)
+                    continue
+
                 # ★ 记录截图内容是否为客户区（决定坐标是否需减去标题栏高）
                 global _last_pw_client_only
                 _last_pw_client_only = bool(flags & PW_CLIENTONLY)
@@ -959,11 +965,118 @@ def is_image_blank(image, threshold=10):
     """
     检查图像是否基本为空（被遮挡或黑屏）。
     返回 True 表示图像可能无效。
+    注意：空数组/0尺寸图像的 np.mean 会返回 nan，而 nan < threshold 恒为 False，
+    会漏判并把异常图像送进 paddle OCR → C 级崩溃（表现为“点开始就闪退”）。
+    这里对 size==0 / 非有限值显式判为 blank，堵住该漏洞。
     """
     if image is None:
         return True
-    avg_brightness = np.mean(image)
-    return avg_brightness < threshold
+    try:
+        arr = np.asarray(image)
+        if arr.size == 0:
+            return True
+        avg_brightness = float(np.mean(arr))
+        if not np.isfinite(avg_brightness):
+            return True
+        return avg_brightness < threshold
+    except Exception:
+        return True
+
+
+def is_render_healthy(image, local_var_min=2.0, blank_threshold=10):
+    """
+    渲染健康度校验：判断一张窗口截图是否“真的画完了”，而非黑图/纯色/半渲染残影。
+
+    微信在最小化/隐藏/刚还原时 GPU 可能只提交了部分内容（半渲染），
+    此时 mean/std 可能是“正常”值，骗过 is_image_blank，导致：
+      1) OCR 把残影/未绘制区当成消息 → 误识别；
+      2) 异常图像直达 paddle OCR → C 级 segfault（点开始就闪退）。
+    本函数用“局部方差”刻画画面纹理丰富度：正常微信聊天界面充满文字/
+    气泡/分割线，局部方差高；半渲染图大面积纯色未绘制，局部方差极低。
+
+    Args:
+        image: numpy.ndarray (BGR 或灰度)
+        local_var_min: 局部方差下限，低于此值视为“没画完/纯色”
+        blank_threshold: 透传给 is_image_blank 的亮度阈值
+
+    Returns:
+        True 表示画面健康（已渲染完成、有内容）；False 表示可疑需重截。
+    """
+    if image is None:
+        return False
+    try:
+        arr = np.asarray(image)
+        if arr.size == 0:
+            return False
+        if arr.ndim == 3:
+            gray = arr.mean(axis=2).astype(np.float32)
+        else:
+            gray = arr.astype(np.float32)
+
+        # 1) 整体亮度/标准差（复用黑图/纯色判据）
+        if not np.isfinite(float(gray.mean())):
+            return False
+        if is_image_blank(image, threshold=blank_threshold):
+            return False
+        if float(gray.std()) < 5:
+            return False
+
+        # 2) 局部方差：用 box blur 近似，差分 RMS 刻画纹理丰富度
+        h, w = gray.shape
+        if h < 8 or w < 8:
+            return False
+        # 简单下采样 + 与自身错位差分，等价于局部对比度
+        step = max(1, min(h, w) // 200)  # 控制开销
+        small = gray[::step, ::step]
+        # 水平/垂直相邻像素差的绝对值均值 → 边缘/纹理密度
+        dx = np.abs(np.diff(small, axis=1)).mean()
+        dy = np.abs(np.diff(small, axis=0)).mean()
+        local_var = float((dx + dy) * 0.5)
+        logger.info("[渲染健康] 局部方差=%.2f (阈值>=%.2f)", local_var, local_var_min)
+        if local_var < local_var_min:
+            # 大面积纯色/未绘制 → 半渲染嫌疑
+            return False
+        return True
+    except Exception:
+        # 校验本身出错时，保守放行（不阻断主流程），由 OCR 端兜底
+        return True
+
+
+def capture_via_printwindow_stable(hwnd, max_retries=3, retry_gap=0.4):
+    """
+    PrintWindow 稳定截图：在 capture_via_printwindow 基础上叠加“渲染健康度
+    + 两帧一致性”校验，半渲染/黑图/残影自动重截，最多重试 max_retries 次。
+    解决“刚还原窗口就截到半渲染图 → OCR 误识别 / paddle 段错误”的问题。
+    """
+    prev = None
+    for attempt in range(max_retries):
+        img = capture_via_printwindow(hwnd)
+        if img is None:
+            logger.warning("[稳定截图] 第%d次 PrintWindow 返回 None", attempt + 1)
+            time.sleep(retry_gap)
+            continue
+        # 健康度校验：没画完直接重截
+        if not is_render_healthy(img):
+            logger.warning("[稳定截图] 第%d次 渲染不健康(半渲染/纯色)，重截", attempt + 1)
+            time.sleep(retry_gap)
+            continue
+        # 两帧一致性：与上一张几乎一致才算稳定（避免截到“正在变”的中间帧）
+        if prev is not None and is_similar_to(img, prev, diff_threshold=0.015):
+            logger.info("[稳定截图] ✔ 第%d次 渲染健康且前后帧一致", attempt + 1)
+            return img
+        if prev is None:
+            # 第一帧健康，再截一帧做一致性比对
+            prev = img
+            time.sleep(retry_gap * 0.5)
+            continue
+        # 两帧差异偏大（画面还在动）→ 以最新这帧为基准，再截一次确认
+        logger.info("[稳定截图] 第%d次 前后帧差异偏大，再确认", attempt + 1)
+        prev = img
+        time.sleep(retry_gap * 0.5)
+        continue
+    # 重试耗尽：返回最后一次结果（哪怕不完全稳定），由上层 OCR/blank 兜底
+    logger.warning("[稳定截图] 重试%d次后返回最后结果(可能不稳定)", max_retries)
+    return capture_via_printwindow(hwnd)
 
 
 def is_similar_to(image1, image2, diff_threshold=0.02):

@@ -17,6 +17,7 @@ import io
 import time
 import signal
 import os
+import random
 import hashlib
 import json
 import re
@@ -43,6 +44,18 @@ from contact_scanner import ContactScanner
 from sender import send_text
 from ai_trainer import AITrainer
 from obsidian_sync import ObsidianSync
+
+# 便携模式基准目录：打包后为 exe 同目录（可写），开发态为 __file__ 目录
+if getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS"):
+    APP_BASE = os.path.dirname(os.path.abspath(sys.executable))
+else:
+    APP_BASE = os.path.dirname(os.path.abspath(__file__))
+
+
+def app_path(*parts):
+    """拼可写路径，始终落在 APP_BASE（exe 同目录 / 项目根）。"""
+    return os.path.join(APP_BASE, *parts)
+
 
 logger = logging.getLogger(__name__)
 
@@ -121,8 +134,7 @@ class WeChatEngine:
         self._mouse_still_count = 0
         # 红点路径跨轮去重：{contact: set(md5(sender|content))}，防止冷却后重扫重复上报历史消息
         # 持久化到 data/reddot_seen.json，重启不丢失
-        self._reddot_seen_path = os.path.join(
-            os.path.dirname(os.path.abspath(__file__)), "data", "reddot_seen.json")
+        self._reddot_seen_path = app_path("data", "reddot_seen.json")
         self._reddot_msg_seen = self._load_reddot_seen()
 
         self.stats = {
@@ -772,6 +784,29 @@ class WeChatEngine:
             self._log("error", f"[屏幕外发送] 失败: {e}")
             return False
 
+    def _verify_contact_switched(self, contact):
+        """点击后验证闭环：重扫侧栏确认目标联系人红点已消失（会话切入成功且已读）。
+
+        返回 True=验证成功（红点消失）；False=红点仍在 / 截图失败或黑图 / 异常。
+        这是根治『误点已读』的核心：点击后不再乐观认为成功，而是实测红点是否真的消失。
+        """
+        try:
+            time.sleep(0.6)  # 等微信切换会话 + 红点消失动画
+            _sidebar = self.red_dot_monitor.capture_sidebar(self.window)
+            if _sidebar is None or float(_sidebar.mean()) < 5:
+                self._log("warning", f"[验证] {contact} 侧栏截图失败/黑图 → 验证不通过")
+                return False
+            _unread = self.red_dot_monitor.get_unread_contacts(self.window)
+            _names = {u.get("contact") for u in _unread}
+            if contact in _names:
+                self._log("warning", f"[验证] {contact} 红点仍在 → 点击可能未生效")
+                return False
+            self._log("info", f"[验证] {contact} 红点已消失 → 切换成功")
+            return True
+        except Exception as e:
+            self._log("warning", f"[验证] {contact} 异常: {e}")
+            return False
+
     def _verify_wechat_focus(self):
         """发送前校验：微信窗口必须是当前前台窗口，否则取消发送。
 
@@ -857,6 +892,31 @@ class WeChatEngine:
                     f, ensure_ascii=False, indent=1)
         except Exception as e:
             self._log("warning", f"[红点] 保存去重历史失败: {e}")
+
+    def clear_reddot_seen(self, contacts=None):
+        """删除历史/会话时同步清跨轮去重缓存，让被删消息能重新被识别为新消息。
+        contacts=None 清空全部；否则只清指定联系人（规范化+原样）。
+        同时清 monitor 的会话级嫌疑黑名单，使被删会话可重新被检测。
+        """
+        import re
+        if contacts is None:
+            self._reddot_msg_seen = {}
+            self._log("info", "[红点] 已清空全部跨轮去重缓存")
+        else:
+            for c in contacts:
+                self._reddot_msg_seen.pop(c, None)
+                self._reddot_msg_seen.pop(re.sub(r'\s+', '', c), None)
+            self._log("info", f"[红点] 已清空 {len(contacts)} 个联系人的跨轮去重缓存")
+        try:
+            self._save_reddot_seen()
+        except Exception:
+            pass
+        # 同步清嫌疑黑名单（被删会话不应再被当"误点已读"永久屏蔽）
+        if getattr(self, "red_dot_monitor", None):
+            try:
+                self.red_dot_monitor.clear_suspect(contacts)
+            except Exception:
+                pass
 
     def _get_valid_hwnd(self):
         """获取有效的微信窗口句柄（统一入口）"""
@@ -1287,7 +1347,7 @@ class WeChatEngine:
 
                 # 1. 截图
                 try:
-                    from screenshot import capture_via_printwindow, capture_chat_bottom, capture_minimized_window
+                    from screenshot import capture_via_printwindow_stable, capture_chat_bottom, capture_minimized_window
                     from window_manager import is_window_minimized
                     hwnd = getattr(self.window, '_hWnd', None)
                     image = None
@@ -1314,7 +1374,7 @@ class WeChatEngine:
                                                f"屏幕外={rl<=-1000}")
                                 # offscreen模式：无论窗口在哪都用PrintWindow（避免mss截到程序UI）
                                 if self.minimize_mode == "offscreen":
-                                    full_img = capture_via_printwindow(hwnd)
+                                    full_img = capture_via_printwindow_stable(hwnd)
                                     if full_img is None or (hasattr(full_img, 'mean') and full_img.mean() < 5):
                                         self._log("info", "[截图] PrintWindow无效，尝试BitBlt...")
                                         from screenshot import capture_via_bitblt
@@ -1325,7 +1385,7 @@ class WeChatEngine:
                                     full_img = capture_region(win_rect)
                                 else:
                                     # 非offscreen模式：屏幕外 → PrintWindow
-                                    full_img = capture_via_printwindow(hwnd)
+                                    full_img = capture_via_printwindow_stable(hwnd)
 
                                 # 回退1已合并到上面（offscreen模式自动尝试BitBlt）
 
@@ -1919,7 +1979,11 @@ class WeChatEngine:
 
         if not hasattr(self, '_click_retry_counts'):
             self._click_retry_counts = {}
+        if not hasattr(self, '_last_click_ts'):
+            self._last_click_ts = 0.0
         MAX_CLICK_RETRIES = 3
+        # 行为限速：两次成功点击之间保留拟人间隔，避免机械秒点（防风控+体验）
+        MIN_CLICK_GAP = 1.5
 
         _was_offscreen = False
         if self.minimize_mode == "offscreen":
@@ -2013,11 +2077,15 @@ class WeChatEngine:
             self._log("info", f"[红点] 切换到 {contact} (未读:{unread_count}, 方式:{method})")
 
             hwnd = getattr(self.window, "_hWnd", None)
+            # 点击前节流：距上次成功点击过近则补足间隔并加随机抖动
+            _gap = time.time() - self._last_click_ts
+            if _gap < MIN_CLICK_GAP:
+                time.sleep(MIN_CLICK_GAP - _gap + random.uniform(0.0, 0.9))
             try:
                 if hwnd and _was_offscreen:
                     from window_manager import edge_click_window
-                    # 优先用匹配到的"联系人名"中心Y（更精准），回退到红点像素Y
-                    _click_y = item.get("name_y", item["red_dot_y"])
+                    # 优先用红点像素Y（几何稳定、无OCR误差），回退到OCR名字Y
+                    _click_y = item.get("red_dot_y", item.get("name_y"))
                     click_cx, click_cy = self.red_dot_monitor.get_click_client_position(
                         self.window, _click_y, None
                     )
@@ -2036,8 +2104,8 @@ class WeChatEngine:
                         continue
                     self._log("info", "[红点] 后台点击完成（待验证切换）")
                 else:
-                    # 优先用匹配到的"联系人名"中心Y（更精准），回退到红点像素Y
-                    _click_y = item.get("name_y", item["red_dot_y"])
+                    # 优先用红点像素Y（几何稳定、无OCR误差），回退到OCR名字Y
+                    _click_y = item.get("red_dot_y", item.get("name_y"))
                     click_cx, click_cy = self.red_dot_monitor.get_click_client_position(
                         self.window, _click_y, None
                     )
@@ -2062,7 +2130,25 @@ class WeChatEngine:
                     self._log("warning", f"[红点] {contact} 点击重试{retries}次失败，强制跳过")
                 continue
 
-            time.sleep(2.5)  # 等待聊天窗口加载完成（增加等待让页面充分加载）
+            # === P0 点击后验证闭环 ===
+            # 点击后实测目标联系人红点是否消失，失败则重试/放弃，杜绝『误点已读』。
+            # 验证失败 → 跳过本次消息处理与标记（红点仍在，下一轮会再点）。
+            _verified = self._verify_contact_switched(contact)
+            if not _verified:
+                self._click_retry_counts[contact] = self._click_retry_counts.get(contact, 0) + 1
+                _retries = self._click_retry_counts[contact]
+                if _retries >= MAX_CLICK_RETRIES:
+                    self._log("warning", f"[红点] {contact} 点击验证失败{_retries}次，强制放弃")
+                    self.red_dot_monitor.mark_processed(contact)
+                    self._click_retry_counts[contact] = 0
+                else:
+                    self._log("warning", f"[红点] {contact} 点击验证失败 (重试{_retries}/{MAX_CLICK_RETRIES})")
+                continue  # 不处理错误消息、不标记 → 红点仍在，留待下轮再点
+
+            # 验证成功 → 记录本次成功点击时间戳（供下一次点击节流用）
+            self._last_click_ts = time.time()
+
+            time.sleep(random.uniform(2.2, 4.5))  # 拟人窗口加载等待（随机区间，避免机械定长）
 
             # 重新获取当前会话真实名称：窗口标题(微信4.x恒为"微信")→顶部标题栏OCR→红点匹配名
             # ★ 关键修复：红点匹配名(item["contact"])是点击前就从侧边栏确定的真实名，
@@ -2087,8 +2173,8 @@ class WeChatEngine:
             full_ratio = self.wechat_config.get("capture_ratio_full", 0.85)
             hwnd = getattr(self.window, "_hWnd", None)
             if hwnd:
-                from screenshot import capture_via_printwindow
-                _full_img = capture_via_printwindow(hwnd)
+                from screenshot import capture_via_printwindow_stable
+                _full_img = capture_via_printwindow_stable(hwnd)
                 if _full_img is not None and _full_img.mean() >= 5 and _full_img.shape[1] >= 300:
                     from screenshot import crop_chat_region_img
                     image = crop_chat_region_img(_full_img, bottom_ratio=full_ratio)
@@ -2219,6 +2305,11 @@ class WeChatEngine:
 
             self._log("info", f"[红点] {new_contact}: 共识别 {len(unique_results)} 条文本")
 
+            # 统计本轮"新消息/跨轮去重"条数：若点击后没有任何新消息(全部跨轮去重)，
+            # 说明红点大概率假性命中或早已读过 → 标记嫌疑，本会话内不再点击（根治误点已读）。
+            _new_count = 0
+            _dup_count = 0
+
             # AI训练引擎辅助识别新消息
              # 二次黑名单检查：侧边栏OCR可能只提取部分联系人名，用聊天内容再检查
             all_text = " ".join(str(r.get("text", "")) for r in unique_results)
@@ -2293,6 +2384,7 @@ class WeChatEngine:
                     _seen_set = self._reddot_msg_seen.setdefault(new_contact, set())
                     if _rk in _seen_set:
                         self._log("info", f"[红点] 跨轮去重: {new_contact}: {content[:30]}")
+                        _dup_count += 1
                         continue
                     _seen_set.add(_rk)
                     if len(_seen_set) > 200:
@@ -2301,6 +2393,7 @@ class WeChatEngine:
                     _rk = f"{new_contact}_{_sender}_{content}"
 
                 self.stats["messages_detected"] += 1
+                _new_count += 1
 
                 # 实时通知UI：先发基础卡（快速反馈），提取完成后用同一msg_key原位更新
                 _ts = datetime.now().strftime("%H:%M:%S")
@@ -2376,6 +2469,18 @@ class WeChatEngine:
             # 标记已处理（真正处理成功才进冷却，并清零重试计数）
             self.red_dot_monitor.mark_processed(contact)
             self._click_retry_counts[contact] = 0
+
+            # ★ 误点已读防护：本轮点击后若没有任何新消息(全部跨轮去重)，
+            # 说明红点假性命中(红头像/红色UI)或早已读过 → 标记嫌疑，本会话内不再点击。
+            # 仅当确实出现过消息(dup>0)才判嫌疑，避免把"OCR黑图/半渲染导致0条"误屏蔽。
+            if _dup_count > 0 and _new_count == 0:
+                self._log("warning",
+                    f"[红点] {new_contact} 点击后 0 条新消息(全部跨轮去重{_dup_count}条) "
+                    f"→ 疑似误点已读，本会话内不再点击")
+                try:
+                    self.red_dot_monitor.mark_suspect(new_contact)
+                except Exception:
+                    pass
 
         # 切回原窗口（点击侧边栏第一个或原始联系人）
         try:

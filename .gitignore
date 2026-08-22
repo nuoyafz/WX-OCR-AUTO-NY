@@ -5,6 +5,14 @@ config.yaml
 *.key
 *.pem
 
+# === 打包产物（体积大，不入库）===
+dist/
+dist.zip
+build_exe.spec
+
+# === 本地记忆（项目内工作日志，不入库）===
+.workbuddy/memory/
+
 # === Python 缓存 ===
 __pycache__/
 *.py[cod]

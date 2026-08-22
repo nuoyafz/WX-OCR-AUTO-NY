@@ -61,6 +61,10 @@ class RedDotMonitor:
         # 黑名单联系人（由 main 注入，含通配符*）：在诊断与待处理计数中排除，
         # 避免"公众号/文件传输助手"等常驻红点污染"匹配=N"造成误判焦虑
         self.blacklist = []
+        # ★ 会话级嫌疑黑名单：被 main 判定为"点开后无任何新消息(全部跨轮去重)"的联系人，
+        # 说明红点大概率假性命中(红头像/红色UI元素)或早已读过 → 本会话内不再点击，
+        # 根治"反复误点已读会话"。重启或清空缓存时重置。
+        self._suspect = set()
         # 侧边栏截图在客户区中的实际原点 + 客户区实际尺寸（PrintWindow实测，避免外框/DPI偏差）
         self._sidebar_client_origin = None  # (x, y) 截图左上角在客户区中的坐标
         self._detected_sidebar_top = None  # 侧栏自适应：检测到的列表真实上边界（位图Y，None=未启用）
@@ -370,13 +374,27 @@ class RedDotMonitor:
                 continue
             roi = image[y:y+ch, x:x+cw]
             white_ratio = 0.0
+            _max_cc_ratio = 0.0
             if roi.size > 0:
                 roi_hsv = cv2.cvtColor(roi, cv2.COLOR_BGR2HSV)
                 white_mask = cv2.inRange(roi_hsv, np.array([0, 0, 200]), np.array([180, 60, 255]))
-                white_ratio = cv2.countNonZero(white_mask) / max(roi.shape[0] * roi.shape[1], 1)
-            # 必须有白色数字才算是未读徽章
-            if white_ratio < 0.03:
-                rejected.append(f"white={white_ratio:.2f}(无白字)")
+                _tot = max(roi.shape[0] * roi.shape[1], 1)
+                white_ratio = cv2.countNonZero(white_mask) / _tot
+                # ★ 数字ROI确认：白字须聚成单个足够大的连通域(数字笔画)，
+                #   排除零散白边/白点把"红色头像/红色UI元素"误判为带数字的未读徽章。
+                if white_ratio >= 0.06:
+                    try:
+                        _num, _labels, _stats, _cents = cv2.connectedComponentsWithStats(
+                            white_mask, 8)
+                        if _num > 1:
+                            _max_cc_ratio = float(_stats[1:, cv2.CC_STAT_AREA].max()) / _tot
+                    except Exception:
+                        pass
+            # 必须有白色数字才算是未读徽章（阈值过低会把红色头像/红色UI元素误判为未读，
+            # 典型症状：反复误点已读会话。0.03→0.06 收紧，真实数字徽章白字占比通常>10%）。
+            # 数字笔画需聚成单个足够大的连通域(_max_cc_ratio>=0.02)，零散白点不计数。
+            if white_ratio < 0.06 or _max_cc_ratio < 0.02:
+                rejected.append(f"white={white_ratio:.2f}/cc={_max_cc_ratio:.2f}(无数字)")
                 continue
             red_dots.append({
                 "x": x, "y": y, "w": cw, "h": ch,
@@ -623,6 +641,10 @@ class RedDotMonitor:
                 if _bl_skip:
                     logger.info(f"[红点] 黑名单联系人跳过(诊断): {name}")
                     continue
+                # 会话级嫌疑：点开后无任何新消息(全部跨轮去重)的联系人，本会话不再点击
+                if self.is_suspect(name):
+                    logger.warning(f"[红点] 嫌疑联系人跳过(曾误点已读): {name}")
+                    continue
                 norm_name = re.sub(r'\s+', '', name)
                 if norm_name in seen_names:
                     logger.info(f"[红点] 去重: 重复的联系人 '{name}'，跳过")
@@ -675,6 +697,32 @@ class RedDotMonitor:
         self._processed[norm_name] = time.time()
         self._processed[contact_name] = time.time()  # 同时存储原始名，兼容
         logger.info(f"[红点] 已标记处理: {contact_name} (规范化={norm_name}), 冷却{self._cooldown}s")
+
+    # ================================================================
+    # 会话级嫌疑黑名单（根治"反复误点已读会话"）
+    # ================================================================
+    def mark_suspect(self, contact_name):
+        """标记某联系人为嫌疑(点开后无任何新消息)。本会话内不再点击。"""
+        import re
+        norm_name = re.sub(r'\s+', '', contact_name)
+        self._suspect.add(norm_name)
+        self._suspect.add(contact_name)
+        logger.warning(f"[红点] 标记嫌疑(无新消息疑似误点): {contact_name} → 本会话内不再点击")
+
+    def is_suspect(self, contact_name):
+        import re
+        norm_name = re.sub(r'\s+', '', contact_name)
+        return norm_name in self._suspect or contact_name in self._suspect
+
+    def clear_suspect(self, contacts=None):
+        """清空嫌疑黑名单。contacts=None 清空全部；否则只清指定（规范化+原样）。"""
+        import re
+        if contacts is None:
+            self._suspect = set()
+            return
+        for c in contacts:
+            self._suspect.discard(c)
+            self._suspect.discard(re.sub(r'\s+', '', c))
 
     def get_click_position(self, window, red_dot_y_in_sidebar, red_dot_x_in_sidebar=None):
         """根据红点在侧边栏截图中的位置，计算屏幕点击坐标"""
