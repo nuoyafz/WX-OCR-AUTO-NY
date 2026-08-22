@@ -68,6 +68,7 @@ class WeChatAIApp(ctk.CTk):
         #   _active_contact:        当前过滤的 contact 或 _contact_filter_all
         # ======================================================================
         self._contact_filter_all = "📋 全部会话"
+        self._contact_filter_usage = "📖 使用说明"   # 独立系统卡：点击显示使用说明聊天记录
         self._msg_rows_by_contact = {}           # contact -> list[(row_frame, msg_data)]（最新在前）
         self._all_filtered = False                # 内部保护：避免循环调用
 
@@ -517,77 +518,24 @@ class WeChatAIApp(ctk.CTk):
         self._storage_cache = None     # 自建存储对象缓存（避免 engine 未初始化时删除/查询失效）
         self._load_history()
 
-        # V3 P0-1: 顶部系统卡"📋 全部会话"（永远存在，点击显示所有会话混排）
-        #   系统卡放在 contact_list_frame 最顶部（before 第一个孩子）
-        try:
-            kids = self.contact_list_frame.winfo_children()
-            before = kids[0] if kids else None
-        except Exception:
-            before = None
+        # V3.2: 顶部两张系统卡（永远存在，置于最上方）：
+        #   「📖 使用说明」 —— 独立卡片，点击显示使用说明聊天记录（最早、最顶）
+        #   「📋 全部会话」 —— 默认视图，点击显示所有会话混排（紧随其后）
+        #   用 pack(before=...) 保证顺序：usage 卡在最顶，all 卡次之。
+        usage_frame, usage_title, usage_preview, usage_avatar = \
+            self._create_system_card(
+                key=self._contact_filter_usage, title=self._contact_filter_usage,
+                preview="点击查看：软件怎么用（聊天式说明）", emoji="📖",
+                accent=WC_COLORS["warning"],
+                top=True)
 
-        sys_wrap = ctk.CTkFrame(self.contact_list_frame, fg_color=WC_COLORS["card_active"], height=52)
-        if before:
-            sys_wrap.pack(before=before, side="top", fill="x")
-        else:
-            sys_wrap.pack(side="top", fill="x")
-        sys_wrap.pack_propagate(False)
+        sys_wrap, sys_title, sys_preview, sys_avatar = \
+            self._create_system_card(
+                key=self._contact_filter_all, title=self._contact_filter_all,
+                preview="默认视图：显示所有会话最新消息", emoji="📋",
+                accent=WC_COLORS["accent"], before=usage_frame)
 
-        sys_avatar = ctk.CTkLabel(sys_wrap, text="📋", width=36, height=36, corner_radius=18,
-                                   fg_color=WC_COLORS["accent"], text_color="#FFFFFF",
-                                   font=ctk.CTkFont(size=15))
-        sys_avatar.pack(side="left", padx=(10, 8), pady=10)
-
-        sys_text = ctk.CTkFrame(sys_wrap, fg_color=WC_COLORS["card_hover"])
-        sys_text.pack(side="left", fill="both", expand=True, pady=9)
-        sys_title = ctk.CTkLabel(sys_text, text=self._contact_filter_all,
-                                  text_color=WC_COLORS["text"],
-                                  font=ctk.CTkFont(family="Microsoft YaHei", size=12, weight="bold"),
-                                  anchor="w")
-        sys_title.pack(fill="x", side="top")
-        sys_preview = ctk.CTkLabel(sys_text, text="默认视图：显示所有会话最新消息",
-                                    text_color=WC_COLORS["text_muted2"],
-                                    font=ctk.CTkFont(size=10), anchor="w")
-        sys_preview.pack(fill="x", side="top")
-        # 系统卡信息登记（供 active 切换用）
-        self._contact_cards[self._contact_filter_all] = {
-            "frame": sys_wrap, "title": sys_title, "preview": sys_preview,
-            "badge": None, "is_group": False, "unread": 0, "avatar": sys_avatar,
-            "_is_system_all": True,
-        }
-
-        # 启动渲染：按会话索引把每个联系人渲染为独立左栏卡片。
-        # 修复回归：此前 _load_history 只建 _conv_index 却漏调 _rebuild_contact_list，
-        # 导致启动后左栏只剩“全部会话”，历史联系人的独立卡片永不出现。
-        try:
-            self._rebuild_contact_list()
-        except Exception:
-            pass
-
-        # 绑定系统卡点击事件
-        def _sys_enter(_e):
-            for w in (sys_wrap, sys_avatar, sys_title.master, sys_title.master.master):
-                try:
-                    w.configure(fg_color=WC_COLORS["card_hover"]) if hasattr(w, "configure") else None
-                except Exception:
-                    pass
-            try:
-                sys_wrap.configure(fg_color=WC_COLORS["card_hover"])
-                sys_title.master.configure(fg_color=WC_COLORS["card_hover"])
-            except Exception:
-                pass
-
-        def _sys_leave(_e):
-            bg = WC_COLORS["card_active"] if self._active_contact == self._contact_filter_all else WC_COLORS["card_hover"]
-            try:
-                sys_wrap.configure(fg_color=bg)
-                sys_title.master.configure(fg_color=bg)
-            except Exception:
-                pass
-
-        def _sys_click(_e):
-            self._set_active_contact(self._contact_filter_all)
-
-        # 系统卡右键菜单
+        # 修正：右侧菜单只在「全部会话」卡上提供「删除全部历史 / 批量模式」
         def _sys_right_click(e):
             import tkinter as _tk
             m = _tk.Menu(self, tearoff=0)
@@ -602,7 +550,6 @@ class WeChatAIApp(ctk.CTk):
                     m.grab_release()
                 except Exception:
                     pass
-
         for w in (sys_wrap, sys_avatar, sys_title, sys_preview):
             try:
                 w.bind("<Button-3>", _sys_right_click)
@@ -610,13 +557,84 @@ class WeChatAIApp(ctk.CTk):
             except Exception:
                 pass
 
-        for w in (sys_wrap, sys_avatar, sys_title, sys_preview):
+    def _create_system_card(self, key, title, preview, emoji, accent, top=False, before=None):
+        """V3.2: 通用系统卡工厂（左栏顶部固定卡）。返回 (frame, title, preview, avatar)。
+        - top=True：用 pack(side=\"top\") 置于最顶（不依赖 before）。
+        - before=某 frame：插入到该 frame 之前（用于「全部会话」卡排在「使用说明」之后）。
+        点击 → _set_active_contact(key)；悬停高亮；禁止右键删除菜单。"""
+        try:
+            if top:
+                wrap = ctk.CTkFrame(self.contact_list_frame, fg_color=WC_COLORS["card_hover"], height=52)
+                wrap.pack(side="top", fill="x")
+            elif before is not None:
+                wrap = ctk.CTkFrame(self.contact_list_frame, fg_color=WC_COLORS["card_hover"], height=52)
+                wrap.pack(before=before, side="top", fill="x")
+            else:
+                wrap = ctk.CTkFrame(self.contact_list_frame, fg_color=WC_COLORS["card_hover"], height=52)
+                wrap.pack(side="top", fill="x")
+            wrap.pack_propagate(False)
+
+            avatar = ctk.CTkLabel(wrap, text=emoji, width=36, height=36, corner_radius=18,
+                                  fg_color=accent, text_color="#FFFFFF",
+                                  font=ctk.CTkFont(size=15))
+            avatar.pack(side="left", padx=(10, 8), pady=10)
+
+            text = ctk.CTkFrame(wrap, fg_color="transparent")
+            text.pack(side="left", fill="both", expand=True, pady=9)
+            t_label = ctk.CTkLabel(text, text=title,
+                                   text_color=WC_COLORS["text"],
+                                   font=ctk.CTkFont(family="Microsoft YaHei", size=12, weight="bold"),
+                                   anchor="w")
+            t_label.pack(fill="x", side="top")
+            p_label = ctk.CTkLabel(text, text=preview,
+                                   text_color=WC_COLORS["text_muted2"],
+                                   font=ctk.CTkFont(size=10), anchor="w")
+            p_label.pack(fill="x", side="top")
+
+            # 系统卡信息登记（供 active 切换用）
+            self._contact_cards[key] = {
+                "frame": wrap, "title": t_label, "preview": p_label,
+                "badge": None, "is_group": False, "unread": 0, "avatar": avatar,
+                "_is_system": True, "_is_system_all": (key == self._contact_filter_all),
+            }
+
+            # 悬停/点击绑定
+            def _enter(_e):
+                try:
+                    if self._active_contact != key:
+                        wrap.configure(fg_color=WC_COLORS["card_hover"])
+                except Exception:
+                    pass
+            def _leave(_e):
+                try:
+                    bg = WC_COLORS["card_active"] if self._active_contact == key else WC_COLORS["card_hover"]
+                    wrap.configure(fg_color=bg)
+                except Exception:
+                    pass
+            def _click(_e):
+                self._set_active_contact(key)
+            for w in (wrap, avatar, t_label, p_label):
+                try:
+                    w.bind("<Enter>", _enter)
+                    w.bind("<Leave>", _leave)
+                    w.bind("<Button-1>", _click)
+                except Exception:
+                    pass
+            return wrap, t_label, p_label, avatar
+        except Exception as _e:
             try:
-                w.bind("<Enter>", _sys_enter)
-                w.bind("<Leave>", _sys_leave)
-                w.bind("<Button-1>", _sys_click)
+                self._debug_log(f"[系统卡] 创建失败 {key!r}: {_e!r}")
             except Exception:
                 pass
+            return None, None, None, None
+
+        # 启动渲染：按会话索引把每个联系人渲染为独立左栏卡片。
+        # 修复回归：此前 _load_history 只建 _conv_index 却漏调 _rebuild_contact_list，
+        # 导致启动后左栏只剩“全部会话”，历史联系人的独立卡片永不出现。
+        try:
+            self._rebuild_contact_list()
+        except Exception:
+            pass
 
         # V3 P0-1 + P1-1: 搜索框 实时过滤会话卡（按名字/预览匹配）
         try:
@@ -817,23 +835,26 @@ class WeChatAIApp(ctk.CTk):
         return _out
 
     def _rebuild_contact_list(self):
-        """重建左侧会话卡片（除📋全部会话系统卡外全部销毁重建）。
+        """重建左侧会话卡片（两张系统卡：📖使用说明 / 📋全部会话 永远保留，且位于最顶）。
         Ctrl+D / 删除历史 / 刷新 等场景调用。"""
         try:
             if not hasattr(self, "contact_list_frame") or not self.contact_list_frame.winfo_exists():
                 return
-            # 1) 除📋全部会话卡外，其它卡全部销毁（系统卡永远保留）
-            sys_card_info = self._contact_cards.get(self._contact_filter_all, {})
-            sys_frame = sys_card_info.get("frame") if isinstance(sys_card_info, dict) else None
+            # 1) 除两张系统卡外，其它卡全部销毁
+            sys_frames = {
+                k: self._contact_cards[k]["frame"]
+                for k in (self._contact_filter_usage, self._contact_filter_all)
+                if k in self._contact_cards
+            }
             for child in list(self.contact_list_frame.winfo_children()):
                 try:
-                    if sys_frame is not None and str(child) == str(sys_frame):
+                    if any(str(child) == str(f) for f in sys_frames.values()):
                         continue
                     child.destroy()
                 except Exception:
                     pass
-            # 2) 清理 _contact_cards，仅保留系统卡
-            keep = {self._contact_filter_all: self._contact_cards[self._contact_filter_all]}                 if self._contact_filter_all in self._contact_cards else {}
+            # 2) 清理 _contact_cards，仅保留两张系统卡
+            keep = {k: self._contact_cards[k] for k in sys_frames}
             self._contact_cards = keep
             # 3) 从会话索引重建所有会话卡（索引里已是“最新消息预览”，无需载入正文）
             active = getattr(self, "_active_contact", None)
@@ -844,11 +865,14 @@ class WeChatAIApp(ctk.CTk):
                 self._append_contact_card(
                     contact, preview, is_group=is_group, unread=unread,
                     active=(contact == active))
-            # 4) 系统卡移到最顶部（确保 pack 顺序在最上）
+            # 4) 系统卡顺序固定：使用说明（最顶）→ 全部会话（次之）
             try:
-                if sys_frame and sys_frame.winfo_exists():
-                    sys_frame.pack_forget()
-                    sys_frame.pack(side="top", fill="x")
+                uframe = sys_frames.get(self._contact_filter_usage)
+                aframe = sys_frames.get(self._contact_filter_all)
+                if uframe and uframe.winfo_exists():
+                    uframe.pack_forget(); uframe.pack(side="top", fill="x")
+                if aframe and aframe.winfo_exists():
+                    aframe.pack_forget(); aframe.pack(side="top", fill="x")
             except Exception:
                 pass
         except Exception as e:
@@ -1141,7 +1165,12 @@ class WeChatAIApp(ctk.CTk):
         # 顶部 chat_title 同步（区分系统卡 / 群聊 / 私聊）
         try:
             is_system_all = (contact == self._contact_filter_all)
-            if is_system_all:
+            is_usage = (contact == self._contact_filter_usage)
+            if is_usage:
+                self.chat_title.configure(text="📖 使用说明")
+                if hasattr(self, "top_current_label"):
+                    self.top_current_label.configure(text="当前：📖 使用说明（聊天式操作指南）")
+            elif is_system_all:
                 self.chat_title.configure(text="📋 全部会话视图")
                 if hasattr(self, "top_current_label"):
                     self.top_current_label.configure(text="当前：📋 全部会话（默认混合视图）")
@@ -1867,11 +1896,17 @@ class WeChatAIApp(ctk.CTk):
             self.msg_empty_label = None
 
             active = self._active_contact
-            is_all = (active == self._contact_filter_all) or (active is None)
+            is_all = (active == self._contact_filter_all)
+            is_usage = (active == self._contact_filter_usage)
+            if active is None:
+                is_all = True
 
             if is_all:
                 # 全部会话：从 db 取最近消息（_get_all_view_messages 已按时间倒序：最新在前）
                 items = self._get_all_view_messages()
+            elif is_usage:
+                # 使用说明：独立卡片，中栏只渲染聊天式说明气泡（不再塞进全部会话流）
+                items = []
             else:
                 # 单会话：按需懒加载（点开才从 db 取该会话全文），按时间倒序（最新在前）
                 items = list(reversed(self._load_conversation(active)))
@@ -1883,7 +1918,9 @@ class WeChatAIApp(ctk.CTk):
                 items = items[:_MAX]  # 截取头部（最新部分），保持「最新置顶」
 
             if not items:
-                if is_all:
+                if is_usage:
+                    txt = "（使用说明加载中…）"
+                elif is_all:
                     txt = "暂无聊天记录 — 点击「开始监控」识别微信聊天消息，会实时显示在这里。"
                 else:
                     txt = f"暂无与「{active}」的聊天记录 — 切换到该会话后，新消息会显示在这里。"
@@ -1917,8 +1954,8 @@ class WeChatAIApp(ctk.CTk):
                 except Exception:
                     pass
 
-            # 全部会话视图：在所有会话气泡「之下」插入使用说明（模仿聊天记录一问一答气泡）
-            if is_all:
+            # 使用说明视图：独立渲染聊天式说明气泡（像和「使用说明」这个联系人的一段对话）
+            if is_usage:
                 try:
                     self._build_usage_bubbles(self.msg_list_frame_inner)
                 except Exception as _e:
