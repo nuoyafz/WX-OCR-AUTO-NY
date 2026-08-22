@@ -46,6 +46,11 @@ logger = logging.getLogger(__name__)
 _ocr_instance = None
 _ocr_engine = None  # "wechat" or "paddle"
 
+# 微信OCR"假可用"防护：服务进程在跑但连续吐空/异常 → 自动降级到PaddleOCR
+_WECHAT_FAIL_STREAK = 0          # 连续失败（空结果或异常）次数
+_WECHAT_FAIL_THRESHOLD = 5       # 连续失败达到此值 → 永久降级（本进程内）
+_WECHAT_FAIL_LOCK = threading.Lock()
+
 # 线程安全锁：<ocr_engine> 的全局单例与发送者历史会被监控线程 + UI诊断线程并发访问
 _ENGINE_LOCK = threading.Lock()
 _SENDER_LOCK = threading.Lock()
@@ -480,6 +485,7 @@ def recognize(image, scale=1.0, min_confidence=0.40,
     if image is None:
         return []
 
+    global _WECHAT_FAIL_STREAK, _ocr_engine
     # 初始化引擎选择
     engine = _init_engine()
 
@@ -496,12 +502,27 @@ def recognize(image, scale=1.0, min_confidence=0.40,
                 # 微信OCR成功，应用后处理
                 if merge_bubble and len(results) > 1:
                     results = _merge_bubble_lines(results)
+                # 成功（含0条）：重置失败计数
+                with _WECHAT_FAIL_LOCK:
+                    if _WECHAT_FAIL_STREAK != 0:
+                        _WECHAT_FAIL_STREAK = 0
                 logger.info(f"[微信OCR] 识别到 {len(results)} 条文本")
                 return results
             # None表示不可用，回退
             logger.warning("[微信OCR] 不可用，回退到PaddleOCR")
         except Exception as e:
             logger.warning(f"[微信OCR] 识别异常: {e}，回退到PaddleOCR")
+
+        # 微信OCR不可用/异常：累加失败计数，连续超阈值则永久降级到Paddle
+        with _WECHAT_FAIL_LOCK:
+            _WECHAT_FAIL_STREAK += 1
+            _streak = _WECHAT_FAIL_STREAK
+        if _streak >= _WECHAT_FAIL_THRESHOLD:
+            with _WECHAT_FAIL_LOCK:
+                _ocr_engine = "paddle"
+            logger.error(
+                f"[OCR] 微信OCR连续 {_streak} 次失败/空结果，已永久降级到PaddleOCR（本进程内）。"
+                f"若需恢复请重启程序。")
 
     # === 引擎2: PaddleOCR（回退） ===
     return _recognize_with_paddle(image, scale, min_confidence, merge_bubble, denoise)

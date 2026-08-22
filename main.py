@@ -92,6 +92,18 @@ class WeChatEngine:
 
         self.auto_reply_enabled = self.auto_reply_config.get("enabled", False)
 
+        # P1 聚合回复：同一联系人多条消息累积后一次性综合回复（而非识别一条回一条）
+        self._reply_agg_cfg = self.auto_reply_config.get("aggregate", {})
+        self._reply_agg_enabled = self._reply_agg_cfg.get("enabled", False)
+        self._reply_agg_max_wait = float(self._reply_agg_cfg.get("max_wait", 8.0))   # 超时强制flush(秒)
+        self._reply_agg_max_msgs = int(self._reply_agg_cfg.get("max_msgs", 3))       # 累积条数触发flush
+        self._reply_buffer = {}      # contact -> [{"content","sender","ts"}, ...]
+        self._reply_buffer_lock = threading.Lock()
+        self._reply_agg_stop = threading.Event()
+        self._reply_agg_thread = None
+        if self._reply_agg_enabled:
+            self._start_reply_aggregator()
+
         self.parser = None
         self.llm_client = None
         self.extractor = None
@@ -496,13 +508,47 @@ class WeChatEngine:
         自动回复调度入口（异步线程执行，不阻塞监控主循环）：
         LLM生成+发送耗时较长，若同步执行会阻塞截图/OCR/新消息检测，
         导致监控实时性下降。改为后台线程执行，互不阻塞。
+
+        P0 防重发：轮询路径(1840)与红点路径(2436)都会调用本方法。
+        同一(contact, content)可能被两条路径各识别一次 → 双发。
+        这里在同步入口做指纹去重（线程spawn之前），确保同一对方消息只回一次。
         """
         import threading
         if not getattr(self, '_auto_reply_lock', None):
             self._auto_reply_lock = threading.Lock()
+        if not getattr(self, '_reply_fingerprints', None):
+            self._reply_fingerprints = {}
+
+        # ★ 指纹去重：同一联系人+同一对方消息内容 → 只回复一次
+        _norm = (str(content or "")).strip()
+        if contact and _norm:
+            import hashlib
+            _fp = hashlib.md5(f"{contact}|{_norm}".encode("utf-8")).hexdigest()
+            _fp_set = self._reply_fingerprints.setdefault(contact, set())
+            if _fp in _fp_set:
+                self._log("debug", f"[自动回复] 指纹去重跳过(已回复过): {contact}: {_norm[:30]}")
+                return
+            # 先占位（防止同条消息并发双路径都通过校验），发送成功后保留，失败则移除
+            _fp_set.add(_fp)
+            if len(_fp_set) > 200:
+                self._reply_fingerprints[contact] = set(list(_fp_set)[-100:])
+
         if not self._auto_reply_lock.acquire(blocking=False):
             self._log("debug", "[自动回复] 上一条回复仍在生成/发送中，跳过本条")
             return
+
+        # ★ 聚合回复模式：把消息塞进 buffer，由聚合线程统一 flush（避免识别一条回一条）
+        if self._reply_agg_enabled:
+            with self._reply_buffer_lock:
+                buf = self._reply_buffer.setdefault(contact, [])
+                buf.append({"content": content, "sender": sender,
+                            "ts": time.time(), "is_group": is_group})
+                _cnt = len(buf)
+            self._log("info", f"[聚合回复] {contact} 缓冲第 {_cnt} 条 (max_msgs={self._reply_agg_max_msgs}, "
+                               f"max_wait={self._reply_agg_max_wait}s)")
+            self._auto_reply_lock.release()
+            return
+
         # 把群聊标记塞进 context，供 _auto_reply_impl 安全护栏读取
         if is_group:
             if context is None:
@@ -519,7 +565,7 @@ class WeChatEngine:
                         context = {}
                     if isinstance(context, dict):
                         context = dict(context)
-                    context["__obsidian_kb__"] = kb_ctx
+                        context["__obsidian_kb__"] = kb_ctx
             except Exception as _e:
                 self._log("debug", f"[Obsidian] 读取知识库失败: {_e}")
         threading.Thread(target=self._run_auto_reply_async,
@@ -533,6 +579,88 @@ class WeChatEngine:
             self._log("error", f"[自动回复] 线程异常: {e}")
         finally:
             self._auto_reply_lock.release()
+
+    # ================ 聚合回复：按会话累积多条后一次性综合回复 ================
+    def _start_reply_aggregator(self):
+        """后台线程：定期检查各联系人 buffer，超时或满条数则 flush 一次综合回复"""
+        if self._reply_agg_thread and self._reply_agg_thread.is_alive():
+            return
+        self._reply_agg_stop.clear()
+        self._reply_agg_thread = threading.Thread(
+            target=self._reply_agg_loop, daemon=True, name="reply-aggregator")
+        self._reply_agg_thread.start()
+        self._log("info", f"[聚合回复] 已启动 (max_wait={self._reply_agg_max_wait}s, "
+                          f"max_msgs={self._reply_agg_max_msgs})")
+
+    def _stop_reply_aggregator(self):
+        self._reply_agg_stop.set()
+
+    def _reply_agg_loop(self):
+        while not self._reply_agg_stop.is_set():
+            try:
+                with self._reply_buffer_lock:
+                    due = []
+                    for contact, buf in self._reply_buffer.items():
+                        if not buf:
+                            continue
+                        _elapsed = time.time() - buf[0]["ts"]
+                        if len(buf) >= self._reply_agg_max_msgs or _elapsed >= self._reply_agg_max_wait:
+                            due.append(contact)
+                for contact in due:
+                    self._flush_reply_buffer(contact)
+            except Exception as e:
+                self._log("error", f"[聚合回复] 循环异常: {e}")
+            self._reply_agg_stop.wait(timeout=1.0)
+
+    def _flush_reply_buffer(self, contact):
+        """把某联系人缓冲的多条消息合并成一次综合回复（而非逐条回复）。"""
+        with self._reply_buffer_lock:
+            buf = self._reply_buffer.get(contact)
+            if not buf:
+                return
+            # 取出对方消息（自己的消息不计入回复触发，但可当上下文）
+            _others = [m for m in buf if m.get("sender") != "me"]
+            if not _others:
+                self._reply_buffer[contact] = []
+                return
+            _is_group = any(m.get("is_group") for m in buf)
+            # 合并上下文：按顺序拼成"对方1: ... 对方2: ..."供 LLM 综合理解
+            _ctx_msgs = []
+            for m in buf:
+                _side = "我" if m.get("sender") in ("me", "self", "mine") else "对方"
+                _c = str(m.get("content", "")).strip()
+                if _c:
+                    _ctx_msgs.append(f"{_side}：{_c}")
+            # 清空 buffer（已取走），指纹由 _auto_reply_impl 内部按单条去重保证不重复
+            self._reply_buffer[contact] = []
+        # 用最后一条对方消息作为"触发消息"，整段上下文作为综合素材
+        _last = _others[-1]
+        _combined_context = _ctx_msgs
+        self._log("info", f"[聚合回复] {contact} flush {len(_others)} 条 → 生成综合回复")
+        # 复用 _maybe_auto_reply 的同步入口（非聚合分支）触发一次 LLM 综合回复
+        # 临时关闭聚合，避免递归缓冲；用合并上下文，让 LLM 看到全部消息
+        _prev_agg = self._reply_agg_enabled
+        self._reply_agg_enabled = False
+        try:
+            self._maybe_auto_reply(
+                contact, _last["content"], _last["sender"],
+                context=_combined_context, is_group=_is_group)
+        finally:
+            self._reply_agg_enabled = _prev_agg
+
+
+    def _remove_reply_fingerprint(self, contact, content):
+        """发送失败/异常时移除指纹，允许该消息后续重试（不永久屏蔽）"""
+        try:
+            _norm = (str(content or "")).strip()
+            if contact and _norm and getattr(self, '_reply_fingerprints', None):
+                import hashlib
+                _fp = hashlib.md5(f"{contact}|{_norm}".encode("utf-8")).hexdigest()
+                _s = self._reply_fingerprints.get(contact)
+                if _s and _fp in _s:
+                    _s.discard(_fp)
+        except Exception:
+            pass
 
     def _auto_reply_impl(self, contact, content, sender, context=None):
         """自动回复（仅对方消息触发；自己的消息绝不回复）。
@@ -671,6 +799,8 @@ class WeChatEngine:
                 self.parser.add_to_context("assistant", reply)
                 self.parser.mark_reply_sent(reply)
                 self._log("info", f"[已回复] {reply[:50]}")
+                # 已读闭环：发送后重截聊天区底部，确认我方气泡真的出现
+                self._verify_reply_sent(contact, reply, last_method)
                 if self._on_reply:
                     # V3 P0-5: 发送成功回执（UI气泡+Obsidian同步）
                     try:
@@ -687,6 +817,7 @@ class WeChatEngine:
                         self._on_reply(contact, reply)
             else:
                 self._log("error", "[发送失败] 所有发送方法均失败")
+                self._remove_reply_fingerprint(contact, content)
                 if self._on_reply:
                     try:
                         self._on_reply({
@@ -703,6 +834,7 @@ class WeChatEngine:
 
         except Exception as e:
             self._log("error", f"[自动回复] 异常: {e}")
+            self._remove_reply_fingerprint(contact, content)
             import traceback
             self._log("error", traceback.format_exc()[-200:])
 
@@ -845,6 +977,54 @@ class WeChatEngine:
         except Exception as e:
             self._log("error", f"[发送校验] 异常: {e}，保守取消发送")
             return False
+
+    def _verify_reply_sent(self, contact, reply, method):
+        """已读闭环（best-effort）：发送后重截聊天区底部，确认我方气泡真的出现。
+
+        仅做日志级校验，不阻塞流程（确实点了发送，只是确认渲染/落库）。
+        若检测不到我方最新气泡，记 warning + 移除指纹允许重试，便于发现『发送假成功』。
+        """
+        try:
+            time.sleep(0.8)  # 等微信把消息渲染进聊天区
+            _hwnd = getattr(self.window, "_hWnd", None)
+            if not _hwnd:
+                return
+            from screenshot import capture_via_printwindow, capture_chat_bottom, is_image_blank
+            if self.minimize_mode == "offscreen":
+                _full = capture_via_printwindow(_hwnd)
+                if _full is not None and _full.mean() >= 5 and _full.shape[1] >= 300:
+                    _h, _w = _full.shape[:2]
+                    _bh = int(_h * 0.35)
+                    _img = _full[_h - _bh:, :]
+                else:
+                    _img = capture_chat_bottom(self.window, ratio=0.35)
+            else:
+                _img = capture_chat_bottom(self.window, ratio=0.35)
+            if _img is None or is_image_blank(_img):
+                self._log("warning", f"[已读校验] {contact} 底部截图失败/黑图，无法确认是否发出")
+                return
+            from ocr_engine import recognize, identify_senders_v4
+            _ocr = recognize(_img, scale=1.0, min_confidence=0.30, merge_bubble=False, denoise=False)
+            if not _ocr:
+                self._log("warning", f"[已读校验] {contact} 底部OCR无结果，无法确认是否发出")
+                return
+            _ocr = identify_senders_v4(_ocr, _img)
+            # 取最近3条，看是否有 me 发送且文本包含 reply 片段
+            _recent = _ocr[-3:]
+            _needle = (reply or "").strip()[:10]
+            _found = False
+            for r in _recent:
+                if r.get("sender") == "me" and _needle and _needle in (r.get("text", "") or ""):
+                    _found = True
+                    break
+            if _found:
+                self._log("info", f"[已读校验] {contact} 我方气泡已出现 → 发送确认({method})")
+            else:
+                self._log("warning", f"[已读校验] {contact} 底部未检测到我方最新气泡(可能延迟/OCR误差)，"
+                                     f"标记为可能未发出 → 允许重试")
+                self._remove_reply_fingerprint(contact, reply)
+        except Exception as e:
+            self._log("debug", f"[已读校验] {contact} 异常(忽略): {e}")
 
     def _dedup_ocr_by_position(self, ocr_results):
         """位置桶去抖：同位置桶+文本相似度>=0.9 的 OCR 行合并为一条（保留置信高者）。
@@ -1064,6 +1244,12 @@ class WeChatEngine:
         self._running = False
         self._on_status("stopped")
         self._log("info", "正在停止监控...")
+        # 停止聚合回复线程
+        try:
+            if getattr(self, "_reply_agg_enabled", False):
+                self._stop_reply_aggregator()
+        except Exception:
+            pass
 
         # 屏幕外模式：恢复窗口到原始可见位置
         try:
@@ -2556,6 +2742,8 @@ class WeChatEngine:
     def set_auto_reply(self, enabled):
         """动态开关自动回复"""
         self.auto_reply_enabled = enabled
+        if enabled and self._reply_agg_enabled:
+            self._start_reply_aggregator()
         self._log("info", f"自动回复已{'开启' if enabled else '关闭'}")
 
     def get_stats(self):

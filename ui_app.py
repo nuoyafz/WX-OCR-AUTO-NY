@@ -1053,6 +1053,13 @@ class WeChatAIApp(ctk.CTk):
             except Exception:
                 pass
 
+        # 点击卡片“直接跳到消息”：无论当前在日志/预览哪个 tab，都切回消息页
+        try:
+            if getattr(self, "view_tabview", None) is not None:
+                self.view_tabview.set("💬 消息")
+        except Exception:
+            pass
+
         # 点击卡片“直接跳到消息”：强制刷新布局 + 立即滚到最新（底部），
         # 不依赖 after 异步，消除切换时序窗口导致的“点开看不见/空白”。
         try:
