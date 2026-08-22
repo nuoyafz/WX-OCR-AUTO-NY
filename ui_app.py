@@ -809,9 +809,9 @@ class WeChatAIApp(ctk.CTk):
                 continue
             _seen.add(_key)
             _out.append(_m)
-        # 按时间正序（旧→新，最新在底部）；混合格式时间戳退化为插入序
+        # 按时间倒序（新→旧，最新在最前）；混合格式时间戳退化为插入序
         try:
-            _out.sort(key=lambda x: str(x.get("timestamp", "")))
+            _out.sort(key=lambda x: str(x.get("timestamp", "")), reverse=True)
         except Exception:
             pass
         return _out
@@ -1664,57 +1664,52 @@ class WeChatAIApp(ctk.CTk):
         return row
 
     def _build_usage_bubbles(self, parent):
-        """使用说明：在「全部会话」视图所有气泡之下，模仿聊天记录一问一答样式。
-        左侧=疑问(对方气泡)，右侧=解答(我的气泡)。点击「更多说明」弹出完整指南。"""
-        box = ctk.CTkFrame(parent, fg_color="transparent")
-        box.pack(side="top", fill="x", padx=6, pady=(14, 6))
-
-        # 标题分隔
-        sep = ctk.CTkFrame(box, fg_color=WC_COLORS["divider"], height=1)
-        sep.pack(fill="x", padx=10, pady=(0, 8))
-        ctk.CTkLabel(box, text="📖 使用说明（常见问题 · 点卡片可看完整指南）",
+        """使用说明：在「全部会话」视图所有气泡之下，用和联系人聊天**一模一样**的
+        消息气泡样式呈现（直接复用 _build_message_row），就像和「使用说明」这个联系人的
+        一段聊天记录。点击「查看完整指南」弹出完整说明。"""
+        # 分隔标题
+        sep = ctk.CTkFrame(parent, fg_color=WC_COLORS["divider"], height=1)
+        sep.pack(fill="x", padx=10, pady=(12, 6))
+        ctk.CTkLabel(parent, text="📖 使用说明（就像一段聊天记录 · 点下方按钮看完整指南）",
                      font=ctk.CTkFont(size=11, weight="bold"),
-                     text_color=WC_COLORS["text_muted"]).pack(anchor="w", padx=12, pady=(0, 6))
+                     text_color=WC_COLORS["text_muted"]).pack(anchor="w", padx=12, pady=(0, 8))
 
-        qa = [
-            ("这个软件是干嘛的？",
-             "NOYA Chat 通过截图+OCR识别微信聊天，AI自动归档/回复，并同步到 Obsidian 知识库。"),
-            ("怎么开始用？",
-             "左侧点「开始监控」→ 软件自动识别未读消息 → 重要消息标⭐并存档。"),
-            ("会自动回复吗？",
-             "开启自动回复后，AI根据角色设定生成回复，预览确认或自动发送，安全可控。"),
-            ("数据存哪？",
-             "本地 SQLite + Obsidian 笔记，纯本地不联网上传，隐私可控。"),
+        # 直接用 _build_message_row 渲染真实气泡（contact=使用说明，对方/我交替）
+        usage_msgs = [
+            {"contact": "📖使用说明", "sender": "other", "content": "这个软件是干嘛的？",
+             "timestamp": "指南", "is_important": False, "is_group": False},
+            {"contact": "📖使用说明", "sender": "me",
+             "content": "NOYA Chat 通过截图+OCR识别微信聊天，AI自动归档/回复，并同步到 Obsidian 知识库。",
+             "timestamp": "指南", "is_important": False, "is_group": False},
+            {"contact": "📖使用说明", "sender": "other", "content": "怎么开始用？",
+             "timestamp": "指南", "is_important": False, "is_group": False},
+            {"contact": "📖使用说明", "sender": "me",
+             "content": "左侧点「开始监控」→ 软件自动识别未读消息 → 重要消息标⭐并存档。",
+             "timestamp": "指南", "is_important": False, "is_group": False},
+            {"contact": "📖使用说明", "sender": "other", "content": "会自动回复吗？",
+             "timestamp": "指南", "is_important": False, "is_group": False},
+            {"contact": "📖使用说明", "sender": "me",
+             "content": "开启自动回复后，AI根据角色设定生成回复，预览确认或自动发送，安全可控。",
+             "timestamp": "指南", "is_important": False, "is_group": False},
+            {"contact": "📖使用说明", "sender": "other", "content": "数据存在哪？隐私安全吗？",
+             "timestamp": "指南", "is_important": False, "is_group": False},
+            {"contact": "📖使用说明", "sender": "me",
+             "content": "本地 SQLite + Obsidian 笔记，纯本地不联网上传，隐私完全可控。",
+             "timestamp": "指南", "is_important": False, "is_group": False},
         ]
+        for m in usage_msgs:
+            try:
+                self._build_message_row(parent, m)
+            except Exception:
+                pass
 
-        def _bubble(parent_box, text, is_me):
-            row = ctk.CTkFrame(parent_box, fg_color="transparent")
-            row.pack(side="top", fill="x", padx=4, pady=3)
-            bubble_bg = WC_COLORS["bubble_self"] if is_me else WC_COLORS["bubble_other"]
-            txt_color = "#FFFFFF" if is_me else WC_COLORS["text"]
-            if is_me:
-                row.pack_propagate(False)
-                bubble = ctk.CTkFrame(row, fg_color=bubble_bg, corner_radius=14)
-                bubble.pack(side="right")
-            else:
-                bubble = ctk.CTkFrame(row, fg_color=bubble_bg, corner_radius=14)
-                bubble.pack(side="left")
-            ctk.CTkLabel(bubble, text=text, font=ctk.CTkFont(size=11),
-                         text_color=txt_color, wraplength=440, justify="left",
-                         anchor="w", padx=12, pady=8).pack()
-
-        for q, a in qa:
-            _bubble(box, "❓ " + q, is_me=False)
-            _bubble(box, "💡 " + a, is_me=True)
-
-        # 更多说明按钮（右侧我的气泡风格）
-        more_row = ctk.CTkFrame(box, fg_color="transparent")
-        more_row.pack(side="top", fill="x", padx=4, pady=(4, 2))
-        more = ctk.CTkButton(more_row, text="📘 查看完整使用指南", width=180, height=30,
-                             font=ctk.CTkFont(size=11),
-                             fg_color=WC_COLORS["accent"], hover_color=WC_COLORS["accent_hover"],
-                             corner_radius=10, command=self._show_usage_dialog)
-        more.pack(side="right", padx=4)
+        # 末尾「查看完整指南」按钮（右侧我的气泡风格）
+        more_row = ctk.CTkFrame(parent, fg_color="transparent")
+        more_row.pack(side="top", fill="x", padx=6, pady=(6, 2))
+        ctk.CTkButton(more_row, text="📘 查看完整使用指南", width=180, height=32,
+                      font=ctk.CTkFont(size=11, weight="bold"),
+                      fg_color=WC_COLORS["accent"], hover_color=WC_COLORS["accent_hover"],
+                      corner_radius=10, command=self._show_usage_dialog).pack(side="right", padx=6)
 
     def _show_usage_dialog(self):
         """V3.1: 使用说明弹窗（覆盖核心操作流程）。"""
@@ -1875,14 +1870,10 @@ class WeChatAIApp(ctk.CTk):
             is_all = (active == self._contact_filter_all) or (active is None)
 
             if is_all:
-                # 全部会话：从 db 取最近 _MAX 条（一次查询，绝不把全量正文载入内存）
+                # 全部会话：从 db 取最近消息（_get_all_view_messages 已按时间倒序：最新在前）
                 items = self._get_all_view_messages()
-                # V3.1: 全部会话「最新置顶」——按 _seq 倒序（最新在 index 0），
-                # _build_message_row 用 side="top" 堆叠，倒序遍历即最新在最上方。
-                # 注意：reversed 后取 [:_MAX]（头部=最新部分），不能用 [-_MAX:]（会取旧的）。
-                items = list(reversed(items))
             else:
-                # 单会话：按需懒加载（点开才从 db 取该会话全文）
+                # 单会话：按需懒加载（点开才从 db 取该会话全文），按时间倒序（最新在前）
                 items = list(reversed(self._load_conversation(active)))
 
             # 性能：限制渲染条数（保留最新的 _MAX 条）
