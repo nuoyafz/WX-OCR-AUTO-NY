@@ -1663,27 +1663,58 @@ class WeChatAIApp(ctk.CTk):
         row.pack(side="top", fill="x", padx=4, pady=2)
         return row
 
-    def _build_usage_card(self, parent):
-        """V3.1: 消息区置顶「使用说明」卡片，点击弹出使用指南。"""
-        card = ctk.CTkFrame(parent, fg_color=WC_COLORS["accent_light"],
-                           corner_radius=10, border_width=1, border_color=WC_COLORS["accent"])
-        card.pack(side="top", fill="x", padx=8, pady=(6, 4))
+    def _build_usage_bubbles(self, parent):
+        """使用说明：在「全部会话」视图所有气泡之下，模仿聊天记录一问一答样式。
+        左侧=疑问(对方气泡)，右侧=解答(我的气泡)。点击「更多说明」弹出完整指南。"""
+        box = ctk.CTkFrame(parent, fg_color="transparent")
+        box.pack(side="top", fill="x", padx=6, pady=(14, 6))
 
-        header = ctk.CTkFrame(card, fg_color="transparent")
-        header.pack(fill="x", padx=12, pady=(8, 2))
+        # 标题分隔
+        sep = ctk.CTkFrame(box, fg_color=WC_COLORS["divider"], height=1)
+        sep.pack(fill="x", padx=10, pady=(0, 8))
+        ctk.CTkLabel(box, text="📖 使用说明（常见问题 · 点卡片可看完整指南）",
+                     font=ctk.CTkFont(size=11, weight="bold"),
+                     text_color=WC_COLORS["text_muted"]).pack(anchor="w", padx=12, pady=(0, 6))
 
-        ctk.CTkLabel(header, text="📖 使用说明",
-                     font=ctk.CTkFont(size=13, weight="bold"),
-                     text_color=WC_COLORS["accent"]).pack(side="left")
+        qa = [
+            ("这个软件是干嘛的？",
+             "NOYA Chat 通过截图+OCR识别微信聊天，AI自动归档/回复，并同步到 Obsidian 知识库。"),
+            ("怎么开始用？",
+             "左侧点「开始监控」→ 软件自动识别未读消息 → 重要消息标⭐并存档。"),
+            ("会自动回复吗？",
+             "开启自动回复后，AI根据角色设定生成回复，预览确认或自动发送，安全可控。"),
+            ("数据存哪？",
+             "本地 SQLite + Obsidian 笔记，纯本地不联网上传，隐私可控。"),
+        ]
 
-        ctk.CTkButton(header, text="点击查看 ▸", width=92, height=26,
-                      font=ctk.CTkFont(size=11),
-                      fg_color=WC_COLORS["accent"], hover_color=WC_COLORS["accent_hover"],
-                      corner_radius=8, command=self._show_usage_dialog).pack(side="right")
+        def _bubble(parent_box, text, is_me):
+            row = ctk.CTkFrame(parent_box, fg_color="transparent")
+            row.pack(side="top", fill="x", padx=4, pady=3)
+            bubble_bg = WC_COLORS["bubble_self"] if is_me else WC_COLORS["bubble_other"]
+            txt_color = "#FFFFFF" if is_me else WC_COLORS["text"]
+            if is_me:
+                row.pack_propagate(False)
+                bubble = ctk.CTkFrame(row, fg_color=bubble_bg, corner_radius=14)
+                bubble.pack(side="right")
+            else:
+                bubble = ctk.CTkFrame(row, fg_color=bubble_bg, corner_radius=14)
+                bubble.pack(side="left")
+            ctk.CTkLabel(bubble, text=text, font=ctk.CTkFont(size=11),
+                         text_color=txt_color, wraplength=440, justify="left",
+                         anchor="w", padx=12, pady=8).pack()
 
-        ctk.CTkLabel(card, text="NOYA Chat 微信助手 v3.1 · 截图OCR + AI + Obsidian知识库",
-                     font=ctk.CTkFont(size=10),
-                     text_color=WC_COLORS["text_muted"]).pack(anchor="w", padx=12, pady=(0, 8))
+        for q, a in qa:
+            _bubble(box, "❓ " + q, is_me=False)
+            _bubble(box, "💡 " + a, is_me=True)
+
+        # 更多说明按钮（右侧我的气泡风格）
+        more_row = ctk.CTkFrame(box, fg_color="transparent")
+        more_row.pack(side="top", fill="x", padx=4, pady=(4, 2))
+        more = ctk.CTkButton(more_row, text="📘 查看完整使用指南", width=180, height=30,
+                             font=ctk.CTkFont(size=11),
+                             fg_color=WC_COLORS["accent"], hover_color=WC_COLORS["accent_hover"],
+                             corner_radius=10, command=self._show_usage_dialog)
+        more.pack(side="right", padx=4)
 
     def _show_usage_dialog(self):
         """V3.1: 使用说明弹窗（覆盖核心操作流程）。"""
@@ -1846,8 +1877,9 @@ class WeChatAIApp(ctk.CTk):
             if is_all:
                 # 全部会话：从 db 取最近 _MAX 条（一次查询，绝不把全量正文载入内存）
                 items = self._get_all_view_messages()
-                # V3.1: 全部会话也「最新置顶」——按 _seq 倒序后逐条 pack(side="top")
-                # （_build_message_row 用 side="top" 堆叠，倒序遍历即最新在最上方）
+                # V3.1: 全部会话「最新置顶」——按 _seq 倒序（最新在 index 0），
+                # _build_message_row 用 side="top" 堆叠，倒序遍历即最新在最上方。
+                # 注意：reversed 后取 [:_MAX]（头部=最新部分），不能用 [-_MAX:]（会取旧的）。
                 items = list(reversed(items))
             else:
                 # 单会话：按需懒加载（点开才从 db 取该会话全文）
@@ -1857,7 +1889,7 @@ class WeChatAIApp(ctk.CTk):
             _MAX = 300
             total_items = len(items)
             if total_items > _MAX:
-                items = items[-_MAX:]  # 截取尾部（最新部分）
+                items = items[:_MAX]  # 截取头部（最新部分），保持「最新置顶」
 
             if not items:
                 if is_all:
@@ -1878,12 +1910,6 @@ class WeChatAIApp(ctk.CTk):
                 ).pack()
                 return
 
-            # V3.1: 置顶「使用说明」卡片（始终显示，点击查看软件使用指南）
-            try:
-                self._build_usage_card(self.msg_list_frame_inner)
-            except Exception:
-                pass
-
             # 微信风格：最新在顶部，逐条 pack
             _first_err = None
             for m in items:
@@ -1899,6 +1925,16 @@ class WeChatAIApp(ctk.CTk):
                     self._debug_log(f"[重建消息列表] _build_message_row 失败: {_first_err!r}")
                 except Exception:
                     pass
+
+            # 全部会话视图：在所有会话气泡「之下」插入使用说明（模仿聊天记录一问一答气泡）
+            if is_all:
+                try:
+                    self._build_usage_bubbles(self.msg_list_frame_inner)
+                except Exception as _e:
+                    try:
+                        self._debug_log(f"[重建消息列表] 使用说明气泡失败: {_e!r}")
+                    except Exception:
+                        pass
 
             # 关键修复：强制刷新布局 + 重算 CTkScrollableFrame 的 canvas scrollregion，
             # 否则从“全部会话”切到单卡时，旧内容被销毁但视口不刷新，表现成“空白”。
@@ -2032,9 +2068,11 @@ class WeChatAIApp(ctk.CTk):
         ctk.CTkButton(search_input_frame, text="今日报告", width=80,
                       command=self._generate_today_report).pack(side="left")
 
-        # 统计面板
+        # 统计面板（可滚动，撑满整行）
         stats_container = ctk.CTkFrame(tab, fg_color="transparent")
-        stats_container.grid(row=2, column=0, sticky="ew", padx=10, pady=5)
+        stats_container.grid(row=2, column=0, sticky="nsew", padx=10, pady=5)
+        stats_container.grid_columnconfigure(0, weight=1)
+        stats_container.grid_rowconfigure(0, weight=1)
         self._create_stats_panel(stats_container)
 
         # 搜索面板
@@ -2244,33 +2282,49 @@ class WeChatAIApp(ctk.CTk):
         tab.grid_columnconfigure(0, weight=1)
         tab.grid_rowconfigure(1, weight=1)
 
-        # V3.1: 顶部导航表（固定，点击直达各设置区块）
-        nav_bar = ctk.CTkFrame(tab, fg_color=WC_COLORS["card"], corner_radius=10)
+        # V3.1: 顶部导航表（固定，点击直达各设置区块）—— 高对比、分组、选中高亮
+        nav_bar = ctk.CTkFrame(tab, fg_color=WC_COLORS["card"], corner_radius=10,
+                              border_width=1, border_color=WC_COLORS["border"])
         nav_bar.grid(row=0, column=0, sticky="ew", padx=10, pady=(10, 4))
-        ctk.CTkLabel(nav_bar, text="⚙️ 设置导航：",
-                     font=ctk.CTkFont(size=12, weight="bold"),
-                     text_color=WC_COLORS["text"]).pack(side="left", padx=(12, 6), pady=8)
+        nav_bar.grid_columnconfigure(0, weight=1)
 
-        self._settings_sections = []   # (按钮文字, 区块frame属性名)
-        nav_specs = [
+        self._settings_nav_btns = {}   # attr -> button
+        self._settings_nav_groups = []
+
+        def _nav_group(title, specs):
+            gp = ctk.CTkFrame(nav_bar, fg_color="transparent")
+            gp.pack(side="left", fill="y", padx=(10, 4), pady=8)
+            ctk.CTkLabel(gp, text=title, font=ctk.CTkFont(size=10, weight="bold"),
+                         text_color=WC_COLORS["text_muted"]).pack(anchor="w", padx=2, pady=(0, 3))
+            row = ctk.CTkFrame(gp, fg_color="transparent")
+            row.pack(fill="x")
+            for idx, (label, attr) in enumerate(specs):
+                btn = ctk.CTkButton(row, text=f"{idx+1}.{label}", width=96, height=30,
+                                   font=ctk.CTkFont(size=11, weight="bold"),
+                                   fg_color=WC_COLORS["bg"],
+                                   text_color=WC_COLORS["text"],
+                                   hover_color=WC_COLORS["accent_light"],
+                                   border_width=1, border_color=WC_COLORS["border"],
+                                   corner_radius=8,
+                                   command=lambda a=attr: self._jump_to_setting(a))
+                btn.pack(side="left", padx=3, pady=2)
+                self._settings_nav_btns[attr] = btn
+
+        _nav_group("基础", [
             ("监控模式", "monitor_frame"),
             ("联系人", "filter_frame"),
             ("窗口校准", "calib_frame"),
+        ])
+        _nav_group("AI", [
             ("AI抽取", "ai_frame"),
             ("LLM", "llm_frame"),
             ("分类", "cls_frame"),
             ("报告", "report_frame"),
+        ])
+        _nav_group("同步", [
             ("Obsidian", "obsidian_frame"),
             ("高级", "advanced_frame"),
-        ]
-        for label, attr in nav_specs:
-            btn = ctk.CTkButton(nav_bar, text=label, width=72, height=28,
-                               font=ctk.CTkFont(size=11),
-                               fg_color=WC_COLORS["bg"], hover_color=WC_COLORS["accent_light"],
-                               border_width=1, border_color=WC_COLORS["border"],
-                               corner_radius=8,
-                               command=lambda a=attr: self._jump_to_setting(a))
-            btn.pack(side="left", padx=3, pady=6)
+        ])
 
         # 使用可滚动容器，解决设置项过多无法查看的问题
         scroll = ctk.CTkScrollableFrame(tab, fg_color="transparent")
@@ -3467,67 +3521,87 @@ class WeChatAIApp(ctk.CTk):
                 ctk.CTkLabel(self.search_results_frame, text="未找到匹配消息").pack(pady=10)
 
     def _create_stats_panel(self, parent):
-        """创建统计面板（增强版：多维度 + 详情文本框）"""
-        stats_frame = ctk.CTkFrame(parent)
-        stats_frame.pack(fill="x", padx=10, pady=5)
+        """创建统计面板：外层可滚动，指标卡片网格 + 炫酷图表 + 可滚动详情。"""
+        # 外层可滚动容器（彻底解决"无法下滑看不到"）
+        scroll = ctk.CTkScrollableFrame(parent, fg_color="transparent",
+                                        corner_radius=0)
+        scroll.pack(fill="both", expand=True, padx=8, pady=8)
+        scroll.grid_columnconfigure(0, weight=1)
 
-        ctk.CTkLabel(stats_frame, text="📊 数据统计",
-                     font=ctk.CTkFont(size=14, weight="bold")).pack(pady=5)
+        # 标题
+        ctk.CTkLabel(scroll, text="📊 数据统计",
+                     font=ctk.CTkFont(size=16, weight="bold"),
+                     text_color=WC_COLORS["text"]).pack(anchor="w", padx=6, pady=(4, 10))
 
+        # 指标卡片网格（2列）
         self.stats_labels = {}
         stat_items = [
-            ("总消息", "💬"),
-            ("重要消息", "⭐"),
-            ("联系人数", "👤"),
-            ("提取信息", "📋"),
-            ("今日消息", "📅"),
-            ("本周消息", "📆"),
-            ("已回复", "✉️"),
-            ("OCR次数", "🔤"),
+            ("总消息", "💬", WC_COLORS["accent"]),
+            ("重要消息", "⭐", WC_COLORS["danger"]),
+            ("联系人数", "👤", "#4CAF50"),
+            ("提取信息", "📋", "#FF9800"),
+            ("今日消息", "📅", "#2196F3"),
+            ("本周消息", "📆", "#9C27B0"),
+            ("已回复", "✉️", "#00BCD4"),
+            ("OCR次数", "🔤", "#795548"),
         ]
-        for label, icon in stat_items:
-            row = ctk.CTkFrame(stats_frame, fg_color="transparent")
-            row.pack(fill="x", padx=10, pady=2)
-            ctk.CTkLabel(row, text=f"{icon} {label}:", width=90, anchor="w").pack(side="left")
-            val_label = ctk.CTkLabel(row, text="—", font=ctk.CTkFont(size=14, weight="bold"),
-                                     text_color="#2196F3")
-            val_label.pack(side="right")
+        grid = ctk.CTkFrame(scroll, fg_color="transparent")
+        grid.pack(fill="x", padx=2, pady=(0, 8))
+        grid.grid_columnconfigure(0, weight=1)
+        grid.grid_columnconfigure(1, weight=1)
+        for i, (label, icon, color) in enumerate(stat_items):
+            card = ctk.CTkFrame(grid, fg_color=WC_COLORS["card"], corner_radius=12,
+                                border_width=1, border_color=WC_COLORS["border"])
+            r, c = divmod(i, 2)
+            card.grid(row=r, column=c, padx=5, pady=5, sticky="nsew")
+            ctk.CTkLabel(card, text=f"{icon} {label}",
+                         font=ctk.CTkFont(size=11),
+                         text_color=WC_COLORS["text_muted"]).pack(anchor="w", padx=12, pady=(10, 0))
+            val_label = ctk.CTkLabel(card, text="—", font=ctk.CTkFont(size=22, weight="bold"),
+                                     text_color=color)
+            val_label.pack(anchor="w", padx=12, pady=(2, 10))
             self.stats_labels[label] = val_label
 
-        # 发送者分布下拉
-        row2 = ctk.CTkFrame(stats_frame, fg_color="transparent")
-        row2.pack(fill="x", padx=10, pady=2)
-        ctk.CTkLabel(row2, text="👥 发送者分布:", width=90, anchor="w").pack(side="left")
+        # 发送者分布
+        row2 = ctk.CTkFrame(scroll, fg_color=WC_COLORS["card"], corner_radius=10,
+                           border_width=1, border_color=WC_COLORS["border"])
+        row2.pack(fill="x", padx=2, pady=6)
+        ctk.CTkLabel(row2, text="👥 发送者分布", font=ctk.CTkFont(size=11),
+                     text_color=WC_COLORS["text_muted"]).pack(anchor="w", padx=12, pady=(8, 0))
         self.stats_sender_label = ctk.CTkLabel(row2, text="—",
                                                 font=ctk.CTkFont(size=11),
-                                                text_color=WC_COLORS["text_muted"],
-                                                wraplength=260)
-        self.stats_sender_label.pack(side="right", fill="x", expand=True)
+                                                text_color=WC_COLORS["text"],
+                                                wraplength=420, justify="left")
+        self.stats_sender_label.pack(anchor="w", padx=12, pady=(2, 10))
 
         # 按钮行
-        btn_row = ctk.CTkFrame(stats_frame, fg_color="transparent")
-        btn_row.pack(fill="x", padx=10, pady=5)
-        refresh_btn = ctk.CTkButton(btn_row, text="🔄 刷新统计", width=90,
-                                    command=self._refresh_stats)
-        refresh_btn.pack(side="left", padx=2)
-        ctk.CTkButton(btn_row, text="📋 今日报告", width=90,
-                      command=self._generate_today_report).pack(side="left", padx=2)
+        btn_row = ctk.CTkFrame(scroll, fg_color="transparent")
+        btn_row.pack(fill="x", padx=2, pady=6)
+        ctk.CTkButton(btn_row, text="🔄 刷新统计", height=34,
+                      fg_color=WC_COLORS["accent"], hover_color=WC_COLORS["accent_hover"],
+                      command=self._refresh_stats).pack(side="left", padx=3)
+        ctk.CTkButton(btn_row, text="📋 今日报告", height=34,
+                      command=self._generate_today_report).pack(side="left", padx=3)
 
-        # 详情文本框（滚动显示详细信息）
-        self.stats_detail = ctk.CTkTextbox(stats_frame, height=100, font=ctk.CTkFont(size=11),
-                                           wrap="word", fg_color=WC_COLORS["bg"])
-        self.stats_detail.pack(fill="x", padx=10, pady=(5, 6))
+        # 可视化图表区
+        ctk.CTkLabel(scroll, text="📈 可视化统计",
+                     font=ctk.CTkFont(size=13, weight="bold"),
+                     text_color=WC_COLORS["text"]).pack(anchor="w", padx=6, pady=(8, 4))
+        self.stats_chart = ctk.CTkLabel(scroll, text="（点击「刷新统计」生成图表）",
+                                        fg_color=WC_COLORS["card"], corner_radius=10,
+                                        height=240)
+        self.stats_chart.pack(fill="x", padx=2, pady=(0, 10))
+
+        # 详情文本框
+        ctk.CTkLabel(scroll, text="📝 详细数据",
+                     font=ctk.CTkFont(size=13, weight="bold"),
+                     text_color=WC_COLORS["text"]).pack(anchor="w", padx=6, pady=(4, 4))
+        self.stats_detail = ctk.CTkTextbox(scroll, height=160, font=ctk.CTkFont(size=11),
+                                           wrap="word", fg_color=WC_COLORS["card"],
+                                           border_width=1, border_color=WC_COLORS["border"])
+        self.stats_detail.pack(fill="x", padx=2, pady=(0, 10))
         self.stats_detail.insert("1.0", "点击「刷新统计」查看详细数据...")
         self.stats_detail.configure(state="disabled")
-
-        # V3.1: 可视化图表区（matplotlib 生成炫酷统计图，无需引擎也能看历史数据）
-        ctk.CTkLabel(stats_frame, text="📈 可视化统计",
-                     font=ctk.CTkFont(size=13, weight="bold"),
-                     text_color=WC_COLORS["text"]).pack(anchor="w", padx=10, pady=(4, 2))
-        self.stats_chart = ctk.CTkLabel(stats_frame, text="（刷新后生成图表）",
-                                        fg_color=WC_COLORS["bg"], corner_radius=8,
-                                        height=220)
-        self.stats_chart.pack(fill="x", padx=10, pady=(0, 10))
 
     def _refresh_stats(self):
         """刷新数据统计面板（增强版：多维度 + 详情 + 可视化 + 容错）。
@@ -3849,12 +3923,12 @@ class WeChatAIApp(ctk.CTk):
             self.advanced_frame.pack_forget()
 
     def _jump_to_setting(self, attr):
-        """V3.1: 设置页导航——平滑滚动到指定区块。"""
+        """V3.1: 设置页导航——平滑滚动到指定区块，并高亮当前选中按钮。"""
         try:
             frame = getattr(self, attr, None)
             if frame is None or not frame.winfo_exists():
                 return
-            # 确保 advanced 区块可见（若跳转目标是高级内部项且未展开则展开）
+            # 确保 advanced 区块可见
             if attr == "advanced_frame" and not self.advanced_settings_var.get():
                 self.advanced_settings_var.set(True)
                 self._toggle_advanced_settings()
@@ -3863,17 +3937,29 @@ class WeChatAIApp(ctk.CTk):
             canvas = getattr(scroll, "_parent_canvas", None)
             if canvas is not None:
                 frame.update_idletasks()
-                # 计算目标在 canvas 滚动坐标中的位置
-                y = frame.winfo_y()
                 canvas.configure(scrollregion=canvas.bbox("all"))
-                canvas.yview_moveto(max(0.0, y / max(canvas.bbox("all")[3], 1)))
-            # 高亮提示
+                all_box = canvas.bbox("all")
+                if all_box:
+                    y = frame.winfo_y()
+                    canvas.yview_moveto(max(0.0, y / max(all_box[3], 1)))
+            # 高亮区块 + 复位其他
             try:
                 orig = frame.cget("fg_color")
                 frame.configure(fg_color=WC_COLORS["accent_light"])
-                frame.after(600, lambda: frame.configure(fg_color=orig))
+                frame.after(700, lambda: frame.configure(fg_color=orig))
             except Exception:
                 pass
+            # 导航按钮选中态：点中的变强调色，其他复位
+            for a, b in (self._settings_nav_btns or {}).items():
+                try:
+                    if a == attr:
+                        b.configure(fg_color=WC_COLORS["accent"],
+                                    text_color="#FFFFFF")
+                    else:
+                        b.configure(fg_color=WC_COLORS["bg"],
+                                    text_color=WC_COLORS["text"])
+                except Exception:
+                    pass
         except Exception as _e:
             try:
                 self._on_log("error", f"[设置导航] 跳转失败: {_e}")
