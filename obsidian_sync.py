@@ -46,12 +46,15 @@ DEFAULT_FLUSH_MAX_WAIT = 60.0      # 单条消息在缓冲中最长停留秒数
 class ObsidianSync:
     """Obsidian 双向同步器（V4）"""
 
-    def __init__(self, config, on_write_error=None):
+    def __init__(self, config, on_write_error=None, llm_client=None):
         """
         config: dict，来自 config.yaml 的 obsidian 段
         on_write_error: callable(str) -> None，写入失败时回调（供 UI 弹窗告警）
+        llm_client: 可选的 LLMClient 实例，提供 ai_enabled 能力（摘要/画像/关系）。
+                    未配置或调用失败时自动降级为规则版，不影响主流程。
         """
         self.config = config or {}
+        self.llm_client = llm_client
         self.vault_path = self.config.get("vault_path", "")
         self.mode = self.config.get("mode", "file")
         self.api_url = self.config.get("api_url", "http://127.0.0.1:27124")
@@ -88,6 +91,17 @@ class ObsidianSync:
         self.enable_summary = adv.get("enable_summary", True)
         # Dataview 片段
         self.enable_dataview = adv.get("enable_dataview", True)
+
+        # AI 赋能开关（需 llm_client 才真正生效）
+        self.ai_enabled = bool(llm_client) and adv.get("ai_enabled", True)
+        self.ai_summary = self.ai_enabled and adv.get("ai_summary", True)
+        self.ai_profile = self.ai_enabled and adv.get("ai_profile", True)
+        self.ai_relationship = self.ai_enabled and adv.get("ai_relationship", True)
+        self.ai_relationship_depth = int(adv.get("ai_relationship_depth", 60))
+        if self.ai_enabled:
+            logger.info("[Obsidian] AI赋能已启用（摘要/画像/关系图谱）")
+        else:
+            logger.info("[Obsidian] AI赋能未启用（缺LLM或开关关闭，使用规则版）")
 
         self._file_enabled = bool(self.vault_path) and self.mode in ("file", "both")
         self._api_enabled = bool(self.api_key) and self.mode in ("api", "both")
@@ -175,6 +189,45 @@ class ObsidianSync:
                 self.on_write_error(msg)
             except Exception:
                 pass
+
+    # ------------------------------------------------------------------
+    # AI 赋能：LLM 调用封装（失败自动降级，绝不阻断同步主流程）
+    # ------------------------------------------------------------------
+    def _ai_call(self, system_prompt, user_prompt, max_tokens=400, temperature=0.3):
+        """
+        统一 LLM 调用。返回 str 或 None（不可用时）。
+        失败时仅记 warning，由调用方回退规则版。
+        """
+        if not self.ai_enabled or self.llm_client is None:
+            return None
+        try:
+            messages = [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt},
+            ]
+            return self.llm_client.chat(messages, max_tokens=max_tokens, temperature=temperature)
+        except Exception as e:
+            logger.warning(f"[Obsidian] AI调用失败(降级规则版): {e}")
+            return None
+
+    def _ai_json_call(self, system_prompt, user_prompt, max_tokens=400):
+        """调用 LLM 并尝试解析为 JSON（容错：剥 ```json 围栏 / 取首个 {…}）。"""
+        raw = self._ai_call(system_prompt, user_prompt, max_tokens=max_tokens, temperature=0.2)
+        if not raw:
+            return None
+        try:
+            txt = raw.strip()
+            if txt.startswith("```"):
+                txt = txt.split("```", 2)[1]
+                if txt.lstrip().lower().startswith("json"):
+                    txt = txt.lstrip()[4:]
+            start, end = txt.find("{"), txt.rfind("}")
+            if start != -1 and end != -1 and end > start:
+                txt = txt[start:end + 1]
+            return json.loads(txt)
+        except Exception as e:
+            logger.warning(f"[Obsidian] AI返回非JSON(忽略): {e}")
+            return None
 
     # ------------------------------------------------------------------
     # 工具
@@ -472,7 +525,25 @@ class ObsidianSync:
         return "\n".join(lines)
 
     def _build_daily_summary(self, contact, sorted_msgs):
-        """P2: 生成当日会话摘要（基于抽取结果聚合，不调 LLM 以免卡顿）"""
+        """生成当日会话摘要：AI 版（自然语言）优先，失败回退规则统计版。"""
+        # ---- AI 版 ----
+        if self.ai_summary:
+            recent = sorted_msgs[:15]  # 控制 token，取最新若干条
+            lines = []
+            for m in reversed(recent):  # 时间正序喂给 LLM
+                who = "我" if m.get("sender") == "me" else (m.get("group_member") or contact)
+                c = (m.get("content") or m.get("raw_text") or "").strip()
+                if c:
+                    lines.append(f"{who}: {c[:120]}")
+            transcript = "\n".join(lines)
+            sys_p = ("你是微信聊天记录分析师。请用简洁中文生成当日会话摘要，"
+                     "包含：1)话题主线 2)对方情绪/态度 3)是否有待办或需我方跟进的事项 4)风险提示。"
+                     "不超过120字，用'- '分点，不要编造未提及的信息。")
+            usr_p = f"联系人：{contact}\n（{'群聊' if sorted_msgs and sorted_msgs[0].get('is_group') else '私聊'}）\n\n对话片段：\n{transcript}"
+            ai = self._ai_call(sys_p, usr_p, max_tokens=300, temperature=0.3)
+            if ai:
+                return "> " + "\n> ".join(ai.strip().splitlines())
+        # ---- 规则版（兜底） ----
         total = len(sorted_msgs)
         important = [m for m in sorted_msgs if m.get("is_important")]
         tasks = []
@@ -612,6 +683,9 @@ class ObsidianSync:
                         for m in msgs if (m.get("emotion") or (m.get("extracted_fields") or {}).get("emotion"))]
             last_emotion = emotions[-1] if emotions else "中性"
 
+            # AI 画像抽取（身份/关系/关注点/风格），失败回退 None
+            ai_profile = self._extract_profile_ai(contact, msgs, is_group)
+
             if os.path.exists(fpath):
                 with open(fpath, "r", encoding="utf-8") as f:
                     old = f.read()
@@ -622,6 +696,8 @@ class ObsidianSync:
                 old = re.sub(r'is_group: (true|false)', f'is_group: {"true" if is_group else "false"}', old)
                 if "## 📈 沟通统计" not in old:
                     old = old.rstrip() + f"\n\n## 📈 沟通统计\n\n- 最近一次情绪：{last_emotion}\n- 最近更新：{ts}\n"
+                # 写入/刷新 AI 画像块（用标记段替换，避免重复累积）
+                old = self._merge_ai_profile(old, contact, ai_profile)
                 self._atomic_write(fpath, old)
             else:
                 content = (
@@ -635,11 +711,75 @@ class ObsidianSync:
                     f"## 🏷 标签\n\n- #微信联系人\n\n"
                     f"## 📈 沟通统计\n\n- 最近一次情绪：{last_emotion}\n- 最近更新：{ts}\n\n"
                     f"## 📝 重要事件\n\n\n"
+                    f"{self._ai_profile_block(ai_profile)}\n"
                     f"## 🔗 反向链接\n\n- 会话记录：[[{self.folder}/联系人/{self._sanitize_filename(contact)}]]\n"
                 )
                 self._atomic_write(fpath, content)
         except Exception as e:
             self._report_error(f"写联系人画像失败({contact}): {e}")
+
+    # ---- AI 画像抽取 ----
+    def _extract_profile_ai(self, contact, msgs, is_group):
+        """用 LLM 从近期消息抽取结构化画像。返回 dict 或 None。"""
+        if not self.ai_profile:
+            return None
+        recent = sorted(msgs, key=lambda m: str(m.get("timestamp", "")))[:self.ai_relationship_depth]
+        lines = []
+        for m in recent:
+            who = "我" if m.get("sender") == "me" else (m.get("group_member") or contact)
+            c = (m.get("content") or m.get("raw_text") or "").strip()
+            if c:
+                lines.append(f"{who}: {c[:100]}")
+        if not lines:
+            return None
+        transcript = "\n".join(lines)
+        sys_p = ("你是人际关系分析师。从微信聊天记录中抽取联系人画像，"
+                 "必须返回严格 JSON：{\"identity\":\"身份/职务\",\"relationship\":\"与用户的关系类型"
+                 "(如家人/密友/同事/客户/普通朋友/群友/陌生)\",\"interests\":\"对方常聊的话题或关注点\","
+                 "\"style\":\"沟通风格(如直接/客气/随意/严肃)\",\"closeness\":1-5的整数(亲密度)}\"。"
+                 "不要编造，信息不足字段填空字符串。")
+        usr_p = f"联系人：{contact}（{'群聊' if is_group else '私聊'}）\n\n对话：\n{transcript}"
+        return self._ai_json_call(sys_p, usr_p, max_tokens=300)
+
+    @staticmethod
+    def _ai_profile_block(ai_profile):
+        if not ai_profile:
+            return ""
+        def item(label, key):
+            v = ai_profile.get(key, "")
+            return f"- **{label}**：{v}" if v else ""
+        bits = [
+            "## 🤖 AI 画像",
+            "",
+            item("身份", "identity"),
+            item("关系", "relationship"),
+            item("关注点", "interests"),
+            item("沟通风格", "style"),
+        ]
+        closeness = ai_profile.get("closeness")
+        if isinstance(closeness, (int, float)):
+            bits.append(f"- **亲密度**：{int(closeness)}/5")
+        bits = [b for b in bits if b]
+        return "\n".join(bits) + "\n\n"
+
+    @staticmethod
+    def _merge_ai_profile(old_text, contact, ai_profile):
+        """在旧画像文本中替换/插入 AI 画像块（用 <!--AI_PROFILE--> 标记段）。"""
+        block = ObsidianSync._ai_profile_block(ai_profile)
+        start_marker = "<!--AI_PROFILE_START-->"
+        end_marker = "<!--AI_PROFILE_END-->"
+        seg = f"{start_marker}\n{block}{end_marker}"
+        if start_marker in old_text:
+            import re as _re
+            old_text = _re.sub(re.escape(start_marker) + r".*?" + re.escape(end_marker),
+                              seg, old_text, flags=_re.DOTALL)
+        else:
+            # 插在反向链接之前
+            if "## 🔗 反向链接" in old_text:
+                old_text = old_text.replace("## 🔗 反向链接", f"{seg}\n## 🔗 反向链接", 1)
+            else:
+                old_text = old_text.rstrip() + f"\n\n{seg}\n"
+        return old_text
 
     # ------------------------------------------------------------------
     # P1: Tasks 聚合（PATCH 追加待办块）
@@ -704,39 +844,116 @@ class ObsidianSync:
     # P1: Canvas 社交图谱（API 模式）
     # ------------------------------------------------------------------
     def _update_canvas(self, contact, msgs):
-        if not self._api_enabled:
-            return
+        """
+        关系图谱：把联系人（及群聊成员）写入 <folder>/<canvas_name>.canvas。
+        文件模式 + API 模式都支持（文件模式直接读写本地 .canvas JSON）。
+        节点：联系人/群；边：基于往来频率 + AI 亲密度推断关系类型与强度。
+        """
         try:
-            canvas_file = f"{self.folder}/{self.canvas_name}.canvas"
-            url = f"{self.api_url}/vault/{canvas_file}"
-            headers = {"Authorization": f"Bearer {self.api_key}",
-                       "Content-Type": "application/json"}
-            resp = requests.get(url, headers=headers, timeout=5)
-            nodes = []
-            if resp.status_code == 200:
+            canvas_path = os.path.join(self.vault_path, self.folder, f"{self.canvas_name}.canvas")
+            nodes, edges = [], []
+            if os.path.exists(canvas_path):
                 try:
-                    data = resp.json()
+                    with open(canvas_path, "r", encoding="utf-8") as f:
+                        data = json.load(f)
                     nodes = data.get("nodes", [])
+                    edges = data.get("edges", [])
                 except Exception:
-                    nodes = []
-            # 找或建联系人节点
-            node_id = f"node-{abs(hash(contact)) % 10**8}"
-            found = False
-            for nd in nodes:
-                if nd.get("text") and contact in nd.get("text", ""):
-                    found = True
-                    break
-            if not found:
+                    nodes, edges = [], []
+            # 计算本批消息的往来强度
+            my_count = sum(1 for m in msgs if m.get("sender") == "me")
+            other_count = len(msgs) - my_count
+            intensity = min(5, 1 + (my_count + other_count) // 3)
+
+            # 当前联系人节点
+            cnode_id = f"node-{abs(hash(contact)) % 10**8}"
+            if not any(nd.get("id") == cnode_id for nd in nodes):
                 nodes.append({
-                    "id": node_id,
-                    "type": "text",
-                    "text": f"[[{self._sanitize_filename(contact)}]]",
-                    "x": (len(nodes) % 5) * 250,
-                    "y": (len(nodes) // 5) * 200,
+                    "id": cnode_id, "type": "text",
+                    "text": f"[[{self.folder}/微信联系人/{self._sanitize_filename(contact)}|{contact}]]",
+                    "x": (len(nodes) % 6) * 240, "y": (len(nodes) // 6) * 180,
                     "width": 200, "height": 60,
                 })
-                payload = {"nodes": nodes, "edges": []}
-                requests.put(url, headers=headers, data=json.dumps(payload).encode("utf-8"), timeout=10)
+
+            # 群聊：把发言成员也建节点，并用边连到群
+            if any(bool(m.get("is_group")) for m in msgs):
+                members = {}
+                for m in msgs:
+                    gm = m.get("group_member")
+                    if gm and gm != contact:
+                        members[gm] = members.get(gm, 0) + 1
+                for gm, cnt in members.items():
+                    gid = f"node-{abs(hash(gm)) % 10**8}"
+                    if not any(nd.get("id") == gid for nd in nodes):
+                        nodes.append({
+                            "id": gid, "type": "text",
+                            "text": f"[[{self._sanitize_filename(gm)}]]",
+                            "x": (len(nodes) % 6) * 240 + 60, "y": (len(nodes) // 6) * 180 + 60,
+                            "width": 180, "height": 50,
+                        })
+                    edge_id = f"e-{min(cnode_id, gid)}-{max(cnode_id, gid)}"
+                    if not any(e.get("id") == edge_id for e in edges):
+                        edges.append({
+                            "id": edge_id, "fromNode": cnode_id, "toNode": gid,
+                            "label": f"群聊·{cnt}条", "color": "rgba(120,120,120,0.5)",
+                        })
+
+            # 与"我"的关系边（用 AI 亲密度/关系类型着色）
+            me_id = "node-me"
+            if not any(nd.get("id") == me_id for nd in nodes):
+                nodes.append({"id": me_id, "type": "text", "text": "🧑 我(用户)",
+                              "x": 0, "y": 0, "width": 160, "height": 60})
+            me_edge_id = f"e-{me_id}-{cnode_id}"
+            if not any(e.get("id") == me_edge_id for e in edges):
+                # AI 关系类型 → 颜色
+                rel = ""
+                color = "rgba(150,150,150,0.6)"
+                if self.ai_relationship:
+                    prof = self._extract_profile_ai(contact, msgs,
+                                                    any(bool(m.get("is_group")) for m in msgs))
+                    if prof:
+                        rel = prof.get("relationship", "")
+                        closeness = prof.get("closeness", 3)
+                        try:
+                            closeness = int(closeness)
+                        except (TypeError, ValueError):
+                            closeness = 3
+                        # 亲密度高→暖色，低→冷色
+                        palette = ["rgba(180,180,180,0.5)", "rgba(120,170,220,0.6)",
+                                   "rgba(90,200,160,0.7)", "rgba(240,180,80,0.8)",
+                                   "rgba(235,90,90,0.9)"]
+                        color = palette[min(max(closeness - 1, 0), 4)]
+                        intensity = max(intensity, closeness)
+                edges.append({
+                    "id": me_edge_id, "fromNode": me_id, "toNode": cnode_id,
+                    "label": (rel or f"往来·{intensity}") + (f"·{'★'*intensity}" if intensity else ""),
+                    "color": color,
+                })
+            else:
+                # 已存在边：刷新强度/标签
+                for e in edges:
+                    if e.get("id") == me_edge_id:
+                        e["label"] = f"往来·{intensity}" + (f"·{'★'*intensity}" if intensity else "")
+
+            payload = {"nodes": nodes, "edges": edges}
+            # 文件模式：直接写本地 .canvas；API 模式：PUT 到 vault
+            if self._file_enabled:
+                os.makedirs(os.path.dirname(canvas_path), exist_ok=True)
+                tmp, tmp_path = tempfile.mkstemp(dir=os.path.dirname(canvas_path), suffix=".tmp")
+                try:
+                    with os.fdopen(tmp, "w", encoding="utf-8") as f:
+                        json.dump(payload, f, ensure_ascii=False, indent=2)
+                        f.flush(); os.fsync(f.fileno())
+                    os.replace(tmp_path, canvas_path)
+                except Exception:
+                    try: os.remove(tmp_path)
+                    except Exception: pass
+            if self._api_enabled:
+                url = f"{self.api_url}/vault/{self.folder}/{self.canvas_name}.canvas"
+                headers = {"Authorization": f"Bearer {self.api_key}",
+                           "Content-Type": "application/json"}
+                requests.put(url, headers=headers,
+                             data=json.dumps(payload, ensure_ascii=False).encode("utf-8"), timeout=10)
         except Exception as e:
             logger.warning(f"[Obsidian] Canvas更新失败: {e}")
 

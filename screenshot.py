@@ -7,6 +7,7 @@
 3. 截图增强：mss用虚拟屏幕坐标截取，支持任意显示器
 """
 import os
+import time
 import ctypes
 import logging
 import numpy as np
@@ -451,6 +452,10 @@ def capture_via_bitblt(hwnd):
 
         if img.mean() < 1:
             logger.warning("[BitBlt] 截图全黑(mean=%.1f)", img.mean())
+            return None
+        # 健康度快筛：半渲染/纯色图对 OCR 无意义，判失败让上层重截或回退
+        if not is_render_healthy(img):
+            logger.warning("[BitBlt] 渲染不健康(半渲染/纯色)，判失败")
             return None
         logger.info("[BitBlt] ✔ 截图成功: %dx%d, mean=%.1f", w, h, img.mean())
         return img
@@ -1042,13 +1047,21 @@ def is_render_healthy(image, local_var_min=2.0, blank_threshold=10):
         return True
 
 
-def capture_via_printwindow_stable(hwnd, max_retries=3, retry_gap=0.4):
+def capture_via_printwindow_stable(hwnd, max_retries=4, retry_gap=0.4):
     """
     PrintWindow 稳定截图：在 capture_via_printwindow 基础上叠加“渲染健康度
     + 两帧一致性”校验，半渲染/黑图/残影自动重截，最多重试 max_retries 次。
     解决“刚还原窗口就截到半渲染图 → OCR 误识别 / paddle 段错误”的问题。
+
+    返回策略（防半渲染图漏进 OCR）：
+      - 优先返回“健康且前后帧一致”的帧（画面已稳定）；
+      - 若始终在动但当前帧健康，接受健康帧（一致性仅作加分项，不硬门槛，
+        避免对“正在加载消息”的窗口死循环重试）；
+      - 重试耗尽仍无健康帧 → 回退 capture_via_bitblt 并同样过健康度校验；
+      - bitblt 也不健康 → 返回最后一次 PrintWindow 结果（哪怕不稳定），
+        由上层 OCR/blank 兜底。
     """
-    prev = None
+    last_healthy = None   # 最近一张通过健康度校验的帧
     for attempt in range(max_retries):
         img = capture_via_printwindow(hwnd)
         if img is None:
@@ -1060,22 +1073,31 @@ def capture_via_printwindow_stable(hwnd, max_retries=3, retry_gap=0.4):
             logger.warning("[稳定截图] 第%d次 渲染不健康(半渲染/纯色)，重截", attempt + 1)
             time.sleep(retry_gap)
             continue
-        # 两帧一致性：与上一张几乎一致才算稳定（避免截到“正在变”的中间帧）
-        if prev is not None and is_similar_to(img, prev, diff_threshold=0.015):
+        # 走到这里：当前帧渲染健康
+        last_healthy = img
+        # 两帧一致性：与上一张几乎一致才算“画面已稳定”，优先返回稳定帧
+        if last_healthy is not None and attempt > 0 and is_similar_to(img, last_healthy, diff_threshold=0.015):
             logger.info("[稳定截图] ✔ 第%d次 渲染健康且前后帧一致", attempt + 1)
             return img
-        if prev is None:
-            # 第一帧健康，再截一帧做一致性比对
-            prev = img
-            time.sleep(retry_gap * 0.5)
-            continue
-        # 两帧差异偏大（画面还在动）→ 以最新这帧为基准，再截一次确认
-        logger.info("[稳定截图] 第%d次 前后帧差异偏大，再确认", attempt + 1)
-        prev = img
-        time.sleep(retry_gap * 0.5)
-        continue
-    # 重试耗尽：返回最后一次结果（哪怕不完全稳定），由上层 OCR/blank 兜底
-    logger.warning("[稳定截图] 重试%d次后返回最后结果(可能不稳定)", max_retries)
+        # 健康即可接受（首帧或画面仍在小幅变化都算达标）——不盲目追“完全一致”
+        logger.info("[稳定截图] 第%d次 渲染健康(接受)", attempt + 1)
+        return img
+    # 重试耗尽：优先回退 BitBlt 并做健康度校验
+    try:
+        from screenshot import capture_via_bitblt
+        bit = capture_via_bitblt(hwnd)
+        if bit is not None and is_render_healthy(bit):
+            logger.info("[稳定截图] 回退 BitBlt 成功且健康")
+            return bit
+        if bit is not None:
+            logger.warning("[稳定截图] BitBlt 帧不健康，仍返回(兜底)")
+            return bit
+    except Exception as e:
+        logger.warning("[稳定截图] BitBlt 回退异常: %s", e)
+    # 最终兜底：返回最后一次健康帧（若有），否则最后一次 PrintWindow 结果
+    logger.warning("[稳定截图] 重试%d次后返回兜底结果(可能不稳定)", max_retries)
+    if last_healthy is not None:
+        return last_healthy
     return capture_via_printwindow(hwnd)
 
 

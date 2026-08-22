@@ -119,7 +119,8 @@ class WeChatEngine:
 
         # Obsidian同步（V4：传入写入失败回调，供UI弹窗告警）
         obsidian_cfg = self.role_manager.config.get("obsidian", {})
-        self.obsidian = ObsidianSync(obsidian_cfg, on_write_error=self._on_obsidian_error)
+        self.obsidian = ObsidianSync(obsidian_cfg, on_write_error=self._on_obsidian_error,
+                                      llm_client=getattr(self, "llm_client", None))
         if self.obsidian.enabled:
             self._log("info", "[Obsidian] 同步已启用")
 
@@ -316,6 +317,16 @@ class WeChatEngine:
         if api_key and api_key not in ("", "your-api-key-here"):
             self.llm_client = LLMClient(self.llm_config)
             self._log("info", f"  ✔ LLM客户端就绪: {self.llm_config.get('model', '?')}")
+            # 把 LLM 客户端注入 Obsidian（初始化阶段它还没建，这里补注入以启用 AI 赋能）
+            if getattr(self, "obsidian", None) is not None:
+                self.obsidian.llm_client = self.llm_client
+                adv = (self.role_manager.config.get("obsidian", {}) or {}).get("advanced", {}) or {}
+                self.obsidian.ai_enabled = True
+                self.obsidian.ai_summary = adv.get("ai_summary", True)
+                self.obsidian.ai_profile = adv.get("ai_profile", True)
+                self.obsidian.ai_relationship = adv.get("ai_relationship", True)
+                self.obsidian.ai_relationship_depth = int(adv.get("ai_relationship_depth", 60))
+                self._log("info", "  ✔ Obsidian AI赋能已注入（摘要/画像/关系图谱）")
         else:
             self._log("info", "  ✔ 未配置API Key，跳过LLM客户端")
 
