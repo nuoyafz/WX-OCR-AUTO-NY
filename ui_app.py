@@ -680,8 +680,18 @@ class WeChatAIApp(ctk.CTk):
                                 self._conv_index[_c]["unread"] = int(_u or 0)
             except Exception:
                 pass
-        except Exception:
-            pass
+            # V3.4 诊断：启动后明确记录索引结果，避免「左栏空」被静默吞掉
+            try:
+                self._debug_log(
+                    f"[会话索引] 构建完成: {len(self._conv_index)} 个会话 | "
+                    f"CWD={os.getcwd()}")
+            except Exception:
+                pass
+        except Exception as _e:
+            try:
+                self._debug_log(f"[会话索引] _load_history 异常: {_e!r}")
+            except Exception:
+                pass
 
     def _get_storage(self):
         """返回存储对象：优先 engine.storage，否则按配置自建（避免未初始化时删除/查询失效）。"""
@@ -711,7 +721,13 @@ class WeChatAIApp(ctk.CTk):
             return
         try:
             import sqlite3
+            # V3.4 加固：db_path 强制绝对化，消除 CWD 依赖
+            # （MessageStorage 默认用 config 里的相对路径 data/messages.db，
+            #  若启动时 CWD 不是项目根，getattr 拿到的相对路径会解析到错误位置 → 读空 → 左栏空）
             _db = getattr(_st, "db_path", "data/messages.db")
+            if not os.path.isabs(_db):
+                _db = _app_path(_db)
+            self._debug_log(f"[会话索引] db_path={_db} exists={os.path.exists(_db)}")
             if not os.path.exists(_db):
                 return
             _conn = sqlite3.connect(_db)
