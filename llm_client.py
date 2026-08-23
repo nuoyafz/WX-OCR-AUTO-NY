@@ -279,10 +279,20 @@ class LLMClient:
             conversation_context: 对话历史
 
         Returns:
-            str: AI生成的回复文本，失败返回 None
+            str: AI生成的回复文本。LLM 超时/失败时有降级兜底，不返回 None（避免静默失败/崩溃）。
         """
         messages = self._build_messages(sender_name, message_content, role_config, conversation_context)
         reply = self._call_raw(messages)
         if reply:
             logger.info(f"LLM回复 ({sender_name}): {reply[:50]}...")
-        return reply
+            return reply
+
+        # ★ LLM 超时/失败降级兜底：保证自动回复链不静默失败
+        #   （LLM 挂掉时不崩溃、不沉默，给一句温和的延迟回复）
+        _fallback = (
+            role_config.get("reply_style", "").find("正式") >= 0
+            and "抱歉，我这会儿有点忙，稍后回复你。"
+            or "收到~我这会儿有点事，晚点回你哈"
+        )
+        logger.warning(f"[LLM] 生成失败，使用降级模板回复: {_fallback[:30]}...")
+        return _fallback

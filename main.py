@@ -843,6 +843,9 @@ class WeChatEngine:
             self._log("info", f"[自动回复] 等待 {send_delay} 秒后发送...")
             time.sleep(send_delay)
 
+            # 记录本次回复目标联系人（供发送前归属校验使用）
+            self._last_reply_contact = contact
+
             # 智能发送：尝试多种发送模式
             self._log("info", f"[自动回复] 开始智能发送...")
             success = self._smart_send_reply(reply)
@@ -932,6 +935,11 @@ class WeChatEngine:
             # ★ 发送前校验前台焦点确为微信，防乱发
             if not self._verify_wechat_focus():
                 return False
+            # ★ 发送前归属校验：确认当前会话确实是目标联系人，否则先切回再发，
+            #   避免回复粘贴/发送到错误的人（兜底 last 屏障之上再加一道硬护栏）。
+            if not self._ensure_target_contact(self._last_reply_contact):
+                self._log("warning", "[剪贴板发送] 归属校验失败(无法切到目标会话)，取消发送")
+                return False
             focus_window(self.window)
             time.sleep(0.2)
             return send_text(self.window, reply)
@@ -992,6 +1000,55 @@ class WeChatEngine:
             self._log("warning", f"[验证] {contact} 异常: {e}")
             return False
 
+    def _verify_contact_name(self, expected_contact):
+        """点击后【标题栏 OCR 双重验证】：截聊天区顶部标题栏，OCR 出当前会话名，
+        与目标联系人比对 —— 确保真的切到了正确的人（而非切错/没切）。
+
+        返回 True=名称匹配（或无法判定时不拦）；False=明显切错人。
+        这是根治『识别乱/回复错人』的最后一关：红点消失只能证明"点到了某个会话"，
+        但无法证明"点到了目标会话"，标题栏 OCR 能直接确认。
+        """
+        try:
+            _hwnd = getattr(self.window, "_hWnd", None)
+            if not _hwnd:
+                return True  # 无句柄，不拦
+            from screenshot import capture_via_printwindow, crop_title_bar_img, is_image_blank
+            if self.minimize_mode == "offscreen":
+                _full = capture_via_printwindow(_hwnd)
+                if _full is None or _full.mean() < 5 or _full.shape[1] < 300:
+                    return True
+                _bar = crop_title_bar_img(_full)
+            else:
+                from screenshot import capture_chat_area
+                _full = capture_chat_area(self.window)
+                if _full is None or is_image_blank(_full):
+                    return True
+                _bar = crop_title_bar_img(_full)
+            if _bar is None or is_image_blank(_bar):
+                return True
+            from ocr_engine import recognize, _is_valid_contact_name
+            _ocr = recognize(_bar, scale=1.0, min_confidence=0.35, merge_bubble=False, denoise=False)
+            if not _ocr:
+                return True
+            _exp = (expected_contact or "").strip()
+            if not _exp:
+                return True
+            for r in _ocr:
+                _t = (r.get("text", "") or "").strip()
+                if not _t:
+                    continue
+                # 直接包含目标名（群名带括号数字也 OK）
+                if _exp in _t or _t in _exp:
+                    self._log("info", f"[验证] 标题栏OCR确认切到: {_exp} (命中'{_t}')")
+                    return True
+            # 没匹配到任何包含目标名的文本 → 可能切错人
+            _got = " / ".join((r.get("text", "") or "")[:15] for r in _ocr[:3])
+            self._log("warning", f"[验证] 标题栏OCR未命中目标'{_exp}'，当前标题: {_got} → 疑似切错人")
+            return False
+        except Exception as e:
+            self._log("debug", f"[验证] 标题栏OCR异常(不拦): {e}")
+            return True
+
     def _verify_wechat_focus(self):
         """发送前校验：微信窗口必须是当前前台窗口，否则取消发送。
 
@@ -1029,6 +1086,49 @@ class WeChatEngine:
             return False
         except Exception as e:
             self._log("error", f"[发送校验] 异常: {e}，保守取消发送")
+            return False
+
+    def _ensure_target_contact(self, expected_contact):
+        """发送前【归属校验】：确认当前微信会话就是目标联系人。
+
+        若标题栏 OCR 出当前会话名≠目标 → 尝试切回目标联系人（侧栏点击）；
+        切回后仍不匹配则放弃（返回 False），交由上层取消发送，绝不发错人。
+        目标为空（无法判定）时放行（不阻断正常发送）。
+        """
+        if not expected_contact:
+            return True
+        try:
+            _ok = self._verify_contact_name(expected_contact)
+            if _ok:
+                return True
+            # 切错/未切到目标 → 尝试切回目标联系人
+            self._log("warning", f"[归属校验] 当前会话非'{expected_contact}'，尝试切回")
+            _hwnd = getattr(self.window, "_hWnd", None)
+            if not _hwnd:
+                return False
+            _sidebar = self.red_dot_monitor.capture_sidebar(self.window)
+            if _sidebar is None:
+                return False
+            from ocr_engine import recognize
+            _ocr = recognize(_sidebar, scale=1.0, min_confidence=0.40,
+                             merge_bubble=False, denoise=False)
+            _target_y = None
+            for r in _ocr:
+                _t = (r.get("text", "") or "").strip()
+                if expected_contact in _t or _t in expected_contact:
+                    _target_y = r.get("y_center", 0)
+                    break
+            if _target_y is None:
+                self._log("warning", f"[归属校验] 侧栏未找到'{expected_contact}'，取消发送")
+                return False
+            from window_manager import simulate_click_window
+            _cx, _cy = self.red_dot_monitor.get_click_client_position(
+                self.window, int(_target_y), None)
+            simulate_click_window(self.window, _cx, _cy)
+            time.sleep(0.8)
+            return self._verify_contact_name(expected_contact)
+        except Exception as e:
+            self._log("debug", f"[归属校验] 异常(保守取消): {e}")
             return False
 
     def _verify_reply_sent(self, contact, reply, method):
@@ -2091,8 +2191,20 @@ class WeChatEngine:
                         self._on_extract(extracted)
 
                     # === 自动回复（只对方消息触发；自己的绝对不回复，避免 AI 复读自己） ===
-                    self._maybe_auto_reply(contact_name, content, _sender, context,
-                                           is_group=(current_chat_kind == "group"))
+                    # ★ OCR 乱码护栏：对方消息判为乱码时不触发自动回复（仍存库/上UI卡）
+                    _garbled = False
+                    try:
+                        from ocr_engine import looks_garbled
+                        _garbled = looks_garbled(content)
+                    except Exception:
+                        _garbled = False
+                    if _garbled and _sender == "other":
+                        self._log("warning",
+                            f"[轮询][乱码护栏] {contact_name}: 疑似OCR乱码'{content[:20]}'，"
+                            f"只记录不触发自动回复")
+                    if not _garbled:
+                        self._maybe_auto_reply(contact_name, content, _sender, context,
+                                               is_group=(current_chat_kind == "group"))
 
                 self._on_stats()
 
@@ -2413,6 +2525,21 @@ class WeChatEngine:
                     self._log("warning", f"[红点] {contact} 点击验证失败 (重试{_retries}/{MAX_CLICK_RETRIES})")
                 continue  # 不处理错误消息、不标记 → 红点仍在，留待下轮再点
 
+            # === P0+ 标题栏 OCR 双重验证：确认真的切到了目标会话（而非切错人） ===
+            _name_ok = self._verify_contact_name(contact)
+            if not _name_ok:
+                # 切错人：立即放弃本轮，不处理消息、不标记，并把联系人标记为嫌疑
+                # （连点 2 次都切错 → 进冷却，本会话内不再点，根治反复误点已读/误识别）
+                self._click_retry_counts[contact] = self._click_retry_counts.get(contact, 0) + 1
+                _bad = self._click_retry_counts.get(contact, 0)
+                if _bad >= 2:
+                    self._log("warning", f"[红点] {contact} 连续{_bad}次切错人，标记嫌疑(本会话不再点)")
+                    if hasattr(self.red_dot_monitor, "mark_suspect"):
+                        self.red_dot_monitor.mark_suspect(contact)
+                    self._click_retry_counts[contact] = 0
+                # 注：本函数末尾(2861段)会统一切回原窗口，这里 continue 后由主循环收尾处理
+                continue
+
             # 验证成功 → 记录本次成功点击时间戳（供下一次点击节流用）
             self._last_click_ts = time.time()
 
@@ -2695,14 +2822,28 @@ class WeChatEngine:
 
                     self._store_extracted(extracted)
 
+                    # ★ OCR 乱码护栏：对方消息若被判定为乱码（如"厕所没汰看"），
+                    #   仍存库/上UI卡，但不触发自动回复——避免基于垃圾文本生成回复。
+                    _garbled = False
+                    try:
+                        from ocr_engine import looks_garbled
+                        _garbled = looks_garbled(content)
+                    except Exception:
+                        _garbled = False
+                    if _garbled and _sender == "other":
+                        self._log("warning",
+                            f"[红点][乱码护栏] {new_contact}: 疑似OCR乱码'{content[:20]}'，"
+                            f"只记录不触发自动回复")
+
                     # 自动回复（红点路径原本缺失 → 最小化模式下消息从不回复；己方消息上层自动拦截）
                     try:
                         from ocr_engine import infer_chat_kind_by_title
                         _rk_kind = infer_chat_kind_by_title(new_contact)
                     except Exception:
                         _rk_kind = "unknown"
-                    self._maybe_auto_reply(new_contact, content, _sender,
-                                           is_group=(_rk_kind == "group"))
+                    if not _garbled:
+                        self._maybe_auto_reply(new_contact, content, _sender,
+                                               is_group=(_rk_kind == "group"))
 
                     # Obsidian同步（V4）
                     if self.obsidian and self.obsidian.enabled:

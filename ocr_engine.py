@@ -834,6 +834,85 @@ def get_all_texts(ocr_results):
     return [r["text"] for r in ocr_results]
 
 
+# ================================================================
+# V4 乱码 / 低置信度检测 —— 防止 OCR 脏数据（如"厕所没汰看"）直接进 LLM 生成回复
+# ================================================================
+
+# 连续重复字符（含中文/英文/数字）超过此比例的，判定为乱码（OCR 把"太干净"识别成"没汰看"）
+_GARBLED_REPEAT_RE = re.compile(r'(.)\1{2,}')          # 同一字符连续出现 3 次以上
+_GARBLED_WEIRD_PUNCT = re.compile(r'[～￥#%&*+=|\\/<>{}\[\]`]')  # 聊天里极少出现的符号
+
+# 常见"像中文但其实是 OCR 形近字串"的乱码指纹（命中直接判可疑）
+_GARBLED_FINGERPRINTS = (
+    "没汰看", "没汰", "沃是不好", "所没沃", "所没太", "汰看", "没沃",
+)
+
+
+def looks_garbled(text, confidence=None, avg_conf=None):
+    """
+    判断一段 OCR 文本是否是乱码 / 不可信，决定是否值得触发自动回复。
+
+    判定维度（任一命中即判乱码）：
+      1) 命中已知乱码指纹（形近字串，如"没汰看"）
+      2) 连续重复字符过多（"好好好" / "哈哈哈哈哈" 例外：纯语气叠字允许，但
+         非语气字叠 3 次以上视为 OCR 撕裂）
+      3) 异常标点密度过高（>40% 是怪异符号）
+      4) 平均置信度过低（< 0.45 且文本 > 4 字，弱识别多）
+      5) 中英数字混杂且无空格的"黏连串"（OCR 把多行/多词黏成一坨）
+
+    返回 True 表示"疑似乱码/不可信"，调用方应降级处理（只记录、不触发自动回复）。
+    """
+    if not text:
+        return True
+    t = text.strip()
+    if len(t) == 0:
+        return True
+
+    # 1) 已知乱码指纹
+    for fp in _GARBLED_FINGERPRINTS:
+        if fp in t:
+            return True
+
+    # 2) 连续重复字符（排除常见语气叠字 哈哈/呵呵/哦哦/嗯嗯 等）
+    _m = _GARBLED_REPEAT_RE.search(t)
+    if _m:
+        _rep = _m.group(1)
+        # 允许的常见叠字白名单
+        if _rep not in ("哈", "呵", "哦", "嗯", "呀", "啊", "嘻", "呜", "好", "对", "行", "是"):
+            return True
+
+    # 3) 异常标点密度
+    weird = len(_GARBLED_WEIRD_PUNCT.findall(t))
+    if weird > 0 and (weird / max(1, len(t))) > 0.4:
+        return True
+
+    # 4) 平均置信度过低（弱识别）
+    if avg_conf is not None and avg_conf < 0.45 and len(t) >= 4:
+        return True
+    if confidence is not None and confidence < 0.35 and len(t) >= 4:
+        return True
+
+    # 5) 黏连串：长串无空格且含 >=2 个拉丁字母紧挨着数字（OCR 多区域黏连特征）
+    if len(t) >= 8:
+        import re as _re
+        if _re.search(r'[A-Za-z]\d{2,}|[A-Za-z]{2,}\d', t) and ' ' not in t:
+            return True
+
+    return False
+
+
+def mark_garbled(ocr_results):
+    """就地给每条 OCR 结果加 garbled 标记（基于文本+置信度）。"""
+    if not ocr_results:
+        return ocr_results
+    for r in ocr_results:
+        _txt = r.get("text", "") or ""
+        _conf = r.get("confidence")
+        r["garbled"] = looks_garbled(_txt, confidence=_conf)
+    return ocr_results
+
+
+
 def get_text_at_bottom(ocr_results, ratio=0.3):
     """获取聊天区域底部的最新消息"""
     if not ocr_results:
@@ -1221,6 +1300,9 @@ def recognize_with_group_enhance(image, contact_title=None, scale=1.0,
     # 给每条消息附加 chat_kind 字段（UI展示用）
     for r in parsed:
         r["chat_kind"] = chat_kind
+
+    # V4: 标记乱码（供下游过滤：乱码消息只记录、不触发自动回复）
+    mark_garbled(parsed)
 
     return {
         "lines": parsed,

@@ -2923,6 +2923,26 @@ class WeChatAIApp(ctk.CTk):
             ctk.CTkSwitch(obsidian_frame, text=label, variable=var).pack(anchor="w", padx=25, pady=1)
             self.obs_filter_vars[key] = var
 
+        # ==================== 错误面板（稳定性诊断） ====================
+        # 展示最近 50 条 warning/error，避免关键异常被静默吞掉、用户看不到原因
+        err_frame = ctk.CTkFrame(scroll)
+        err_frame.pack(fill="x", padx=15, pady=(14, 6))
+        ctk.CTkLabel(err_frame, text="🛠 错误面板（最近诊断）",
+                     font=ctk.CTkFont(size=14, weight="bold")).pack(anchor="w", padx=12, pady=(8, 2))
+        ctk.CTkLabel(err_frame,
+                     text="程序运行中出现的 warning/error 会汇总到这里，便于排查『莫名出错』。",
+                     font=ctk.CTkFont(size=11), text_color=("gray60", "gray40")).pack(
+            anchor="w", padx=12, pady=(0, 4))
+        self.error_panel_text = ctk.CTkTextbox(err_frame, height=150, wrap="word")
+        self.error_panel_text.pack(fill="x", padx=12, pady=(2, 6))
+        self.error_panel_text.configure(state="disabled")
+        _err_btn_row = ctk.CTkFrame(err_frame, fg_color="transparent")
+        _err_btn_row.pack(anchor="w", padx=12, pady=(0, 8))
+        ctk.CTkButton(_err_btn_row, text="刷新", width=90, height=30,
+                      command=self._refresh_error_panel).pack(side="left", padx=(0, 8))
+        ctk.CTkButton(_err_btn_row, text="清空", width=90, height=30,
+                      command=self._clear_error_panel).pack(side="left")
+
         # 保存按钮
         ctk.CTkButton(scroll, text="保存设置", width=120, height=36,
                       font=ctk.CTkFont(size=14, weight="bold"),
@@ -5256,6 +5276,17 @@ class WeChatAIApp(ctk.CTk):
         if message is None:
             message = level
             level = "info"
+        # ★ 错误可见性：内存环形缓冲，保留最近 50 条 warning/error，供错误面板查看
+        if level in ("warning", "error"):
+            try:
+                if not hasattr(self, "_error_buffer"):
+                    self._error_buffer = []
+                self._error_buffer.append(
+                    (datetime.now().strftime("%H:%M:%S"), level, message))
+                if len(self._error_buffer) > 50:
+                    self._error_buffer = self._error_buffer[-50:]
+            except Exception:
+                pass
         self.after(0, lambda: self._append_log(level, message))
 
     def _set_log_level(self, level):
@@ -5289,6 +5320,37 @@ class WeChatAIApp(ctk.CTk):
             pass
         self.log_text.see("end")
         self.log_text.configure(state="disabled")
+
+    def _refresh_error_panel(self):
+        """刷新错误面板：把内存环形缓冲里的 warning/error 渲染出来。"""
+        try:
+            if not hasattr(self, "_error_buffer"):
+                self._error_buffer = []
+            buf = getattr(self, "_error_buffer", [])
+            self.error_panel_text.configure(state="normal")
+            self.error_panel_text.delete("1.0", "end")
+            if not buf:
+                self.error_panel_text.insert("end", "（暂无 warning/error）\n")
+            else:
+                for ts, lvl, msg in buf:
+                    _p = "✖ " if lvl == "error" else "⚠ "
+                    self.error_panel_text.insert("end", f"[{ts}] {_p}{msg}\n")
+            self.error_panel_text.configure(state="disabled")
+            self._on_log("info", f"[错误面板] 已刷新，共 {len(buf)} 条")
+        except Exception as e:
+            self._on_log("error", f"[错误面板] 刷新失败: {e}")
+
+    def _clear_error_panel(self):
+        """清空错误面板与内存缓冲。"""
+        try:
+            self._error_buffer = []
+            self.error_panel_text.configure(state="normal")
+            self.error_panel_text.delete("1.0", "end")
+            self.error_panel_text.insert("end", "（已清空）\n")
+            self.error_panel_text.configure(state="disabled")
+            self._on_log("info", "[错误面板] 已清空")
+        except Exception as e:
+            self._on_log("error", f"[错误面板] 清空失败: {e}")
 
     def _on_extract(self, result):
         self.after(0, lambda: self._append_result(result))
