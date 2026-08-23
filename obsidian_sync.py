@@ -695,9 +695,15 @@ class ObsidianSync:
                 f"> 自动生成的项目笔记（微信AI助手维护）\n\n"
                 f"## 🎯 目标与进展\n\n"
                 f"- **目标**：{goal}\n- **进展**：{progress}\n"
-                f"{('- **风险**：' + risk + '\n') if risk else ''}\n"
-                f"## 👥 相关人\n\n{rel_links}\n\n"
-                f"## 🔗 反向链接\n\n- 会话记录：[[{self.folder}/联系人/{self._sanitize_filename(related_contacts[0]) if related_contacts else ''}]]\n"
+            )
+            risk_line = (f"- **风险**：{risk}\n") if risk else ""
+            body += risk_line + "\n"
+            body += f"## 👥 相关人\n\n{rel_links}\n\n"
+            rel_contact_link = ""
+            if related_contacts:
+                rel_contact_link = self._sanitize_filename(related_contacts[0])
+            body += (
+                f"## 🔗 反向链接\n\n- 会话记录：[[{self.folder}/联系人/{rel_contact_link}]]\n"
             )
             # 已存在则只刷新 updated 与进展段（简单重写目标进展段）
             if os.path.exists(fpath):

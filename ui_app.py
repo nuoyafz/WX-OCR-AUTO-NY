@@ -3046,9 +3046,13 @@ class WeChatAIApp(ctk.CTk):
                 ctx_mapped = []
                 ctx = self.get_conversation_context(contact) or []
                 for m in ctx[-10:]:
-                    r = "我" if m.get("sender") == "me" else "对方"
-                    c = str(m.get("content", "")).strip()
-                    if c: ctx_mapped.append(f"{r}：{c}")
+                    if isinstance(m, dict):
+                        role_side = "assistant" if m.get("sender") == "me" else "user"
+                        c = str(m.get("content", "")).strip()
+                    else:
+                        c = str(m).strip()
+                        role_side = "user"
+                    if c: ctx_mapped.append({"role": role_side, "content": c})
                 reply = self.engine.llm_client.generate_reply(contact, content, role, ctx_mapped)
                 if reply:
                     self.after(0, lambda r=reply: self._show_suggest_bar(r, contact))

@@ -315,7 +315,10 @@ class WeChatEngine:
         self._log("info", "[2/6] 正在初始化LLM客户端...")
         api_key = self.llm_config.get("api_key", "")
         if api_key and api_key not in ("", "your-api-key-here"):
-            self.llm_client = LLMClient(self.llm_config)
+            self.llm_client = LLMClient(
+                self.llm_config,
+                style_preset=self.config.get("reply_style_preset") or {},
+            )
             self._log("info", f"  ✔ LLM客户端就绪: {self.llm_config.get('model', '?')}")
             # 把 LLM 客户端注入 Obsidian（初始化阶段它还没建，这里补注入以启用 AI 赋能）
             if getattr(self, "obsidian", None) is not None:
@@ -706,7 +709,10 @@ class WeChatEngine:
         if not self.llm_client:
             try:
                 self._log("warning", "[自动回复] LLM客户端未初始化，尝试重新初始化...")
-                self.llm_client = LLMClient(self.llm_config)
+                self.llm_client = LLMClient(
+                self.llm_config,
+                style_preset=self.config.get("reply_style_preset") or {},
+            )
 
                 # 测试调用
                 test_role = {"name": "测试", "system_prompt": "测试", "reply_style": "简洁"}
@@ -750,15 +756,20 @@ class WeChatEngine:
                 try:
                     rich_ctx = self._fetch_context_fn(contact) or []
                     if rich_ctx:
-                        mapped = []
+                        context_dicts = []
                         for m in rich_ctx[-self._context_turns*2:]:
-                            sender_side = "我" if m.get("sender") in ("me","self","mine") else "对方"
-                            c = str(m.get("content", "")).strip()
+                            # rich_ctx 可能是 dict（含 sender/content）或纯字符串
+                            if isinstance(m, dict):
+                                role = "assistant" if m.get("sender") in ("me", "self", "mine") else "user"
+                                c = str(m.get("content", "")).strip()
+                            else:
+                                c = str(m).strip()
+                                role = "user"
                             if c:
-                                mapped.append(f"{sender_side}：{c}")
-                        if mapped:
-                            context = mapped
-                            self._log("debug", f"[上下文] 使用UI上下文 {len(mapped)} 条")
+                                context_dicts.append({"role": role, "content": c})
+                        if context_dicts:
+                            context = context_dicts
+                            self._log("debug", f"[上下文] 使用UI上下文 {len(context_dicts)} 条")
                 except Exception as _e:
                     self._log("debug", f"[上下文] 取UI上下文失败: {_e}")
             if not context:

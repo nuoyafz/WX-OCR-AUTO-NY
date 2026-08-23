@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 class LLMClient:
     """LLM API 客户端，支持 DeepSeek / OpenAI 兼容接口。"""
 
-    def __init__(self, llm_config):
+    def __init__(self, llm_config, style_preset=None):
         self.provider = llm_config.get("provider", "custom")
         self.api_key = llm_config.get("api_key", "")
         self.model = llm_config.get("model", "qwen3.7-flash-2026-07-15")
@@ -28,6 +28,8 @@ class LLMClient:
         self.thinking = llm_config.get("thinking", False)
         self.max_retries = 3  # 增加重试次数
         self.retry_delay = 2  # 增加重试延迟
+        # 全局回复风格预设（叠加在角色模板之上，对所有回复生效）
+        self._style_preset = style_preset or {}
 
         # 验证API Key
         self._validate_api_key()
@@ -224,9 +226,40 @@ class LLMClient:
             f"你正在微信上跟朋友聊天，用简短、口语化的方式回复，1-3句话即可。"
         )
 
+        # === 叠加：用户全局回复风格预设（reply_style_preset，优先级高于角色默认语气）===
+        preset = getattr(self, "_style_preset", None) or {}
+        if preset:
+            bits = []
+            if preset.get("tone"):
+                bits.append(f"- 语气：{preset['tone']}")
+            if preset.get("max_sentences"):
+                bits.append(f"- 长度：每条不超过 {preset['max_sentences']} 句")
+            if preset.get("emoji") is not None:
+                bits.append(f"- emoji：{'允许' if preset['emoji'] else '禁止'}")
+            if preset.get("pet_words"):
+                bits.append(f"- 口头禅：{'、'.join(preset['pet_words'])}")
+            if preset.get("forbidden"):
+                bits.append(f"- 禁忌（绝不可出现）：{'、'.join(preset['forbidden'])}")
+            if preset.get("must_include"):
+                bits.append(f"- 必须包含：{'、'.join(preset['must_include'])}")
+            if preset.get("notes"):
+                bits.append(f"- 备注：{preset['notes']}")
+            if bits:
+                full_system += (
+                    "\n\n【回复风格设定】（全局生效，优先级高于角色默认语气）\n"
+                    + "\n".join(bits)
+                )
+
         messages = [{"role": "system", "content": full_system}]
 
-        other_msgs = [m["content"] for m in conversation_context if m.get("role") == "user"]
+        other_msgs = []
+        for m in (conversation_context or []):
+            if isinstance(m, dict):
+                if m.get("role") == "user":
+                    other_msgs.append(m.get("content", ""))
+            elif isinstance(m, str):
+                # 兼容旧调用方传入的纯文本上下文
+                other_msgs.append(m)
         for prev_msg in other_msgs[-3:]:
             if prev_msg != message_content:
                 messages.append({"role": "user", "content": prev_msg})
