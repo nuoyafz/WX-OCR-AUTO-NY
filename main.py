@@ -317,7 +317,7 @@ class WeChatEngine:
         if api_key and api_key not in ("", "your-api-key-here"):
             self.llm_client = LLMClient(
                 self.llm_config,
-                style_preset=self.config.get("reply_style_preset") or {},
+                style_preset=self.role_manager.config.get("reply_style_preset") or {},
             )
             self._log("info", f"  ✔ LLM客户端就绪: {self.llm_config.get('model', '?')}")
             # 把 LLM 客户端注入 Obsidian（初始化阶段它还没建，这里补注入以启用 AI 赋能）
@@ -711,7 +711,7 @@ class WeChatEngine:
                 self._log("warning", "[自动回复] LLM客户端未初始化，尝试重新初始化...")
                 self.llm_client = LLMClient(
                 self.llm_config,
-                style_preset=self.config.get("reply_style_preset") or {},
+                style_preset=self.role_manager.config.get("reply_style_preset") or {},
             )
 
                 # 测试调用

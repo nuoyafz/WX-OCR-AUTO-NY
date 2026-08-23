@@ -1383,7 +1383,9 @@ class WeChatAIApp(ctk.CTk):
         """批量删除多个联系人的消息（单次全量重建，只执行一次）"""
         if not contacts:
             return
-        contacts = [c for c in contacts if c and c != self._contact_filter_all]
+        contacts = [c for c in contacts
+                    if c and c != self._contact_filter_all
+                    and c != self._contact_filter_usage]  # V3.4 双保险：绝不许删系统卡
         if not contacts:
             return
 
@@ -1403,6 +1405,9 @@ class WeChatAIApp(ctk.CTk):
         obsidian_delete = self.config_data.get("obsidian", {}).get("delete_link", False)
 
         for contact in contacts:
+            # V3.4 双保险：绝不允许删除两张系统卡（全部会话 / 使用说明）
+            if contact in (self._contact_filter_all, self._contact_filter_usage):
+                continue
             removed = 0
             if storage:
                 try:
@@ -1487,7 +1492,9 @@ class WeChatAIApp(ctk.CTk):
 
     def _delete_all_contacts(self):
         """删除所有会话历史记录"""
-        non_system = [c for c in self._contact_cards if c != self._contact_filter_all]
+        non_system = [c for c in self._contact_cards
+                      if c != self._contact_filter_all
+                      and c != self._contact_filter_usage]  # V3.4 绝不许删系统卡（含使用说明）
         if not non_system:
             from tkinter import messagebox as _mb
             _mb.showinfo("提示", "暂无历史记录可删除")
@@ -1579,7 +1586,8 @@ class WeChatAIApp(ctk.CTk):
             if var:
                 var.set(True)
         self._batch_selected = set(
-            c for c in self._contact_cards if c != self._contact_filter_all)
+            c for c in self._contact_cards
+            if c != self._contact_filter_all and c != self._contact_filter_usage)
 
     def _batch_delete_selected(self):
         """删除勾选的会话"""
