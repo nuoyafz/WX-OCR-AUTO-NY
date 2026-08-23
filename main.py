@@ -582,9 +582,18 @@ class WeChatEngine:
                         context["__obsidian_kb__"] = kb_ctx
             except Exception as _e:
                 self._log("debug", f"[Obsidian] 读取知识库失败: {_e}")
-        threading.Thread(target=self._run_auto_reply_async,
-                         args=(contact, content, sender, context),
-                         daemon=True, name="auto-reply").start()
+        _t = threading.Thread(target=self._run_auto_reply_async,
+                              args=(contact, content, sender, context),
+                              daemon=True, name="auto-reply")
+        _t.start()
+        # V3.4 屏障：红点循环需在"切回原窗口"前 join 这些线程，
+        # 否则回复粘贴时窗口已被切回原联系人 → 回复粘贴错人/识别乱。
+        try:
+            if not hasattr(self, "_pending_reply_threads"):
+                self._pending_reply_threads = []
+            self._pending_reply_threads.append(_t)
+        except Exception:
+            pass
 
     def _run_auto_reply_async(self, contact, content, sender, context=None):
         try:
@@ -1558,8 +1567,17 @@ class WeChatEngine:
                             self._log("info", f"[红点] 诊断: {debug_info}")
                         if unread:
                             self._log("info", f"[红点] 检测到 {len(unread)} 个联系人有未读消息: {[u['contact'] for u in unread]}")
-                            self._handle_unread_contacts(unread, contact_name)
-                            continue  # 处理完未读后跳过本轮正常截图
+                            # ★ V3.4 前台不抢窗口：用户正在用微信时不主动切换会话，
+                            #   避免监控抢走用户正在看的窗口（扫描照常，仅跳过切换处理）。
+                            _respect_focus = self.role_manager.config.get(
+                                "monitor", {}).get("respect_user_focus", False)
+                            if _respect_focus and self._is_wechat_foreground():
+                                self._log("info",
+                                    f"[红点] 前台使用中且已开启 respect_user_focus → 本轮跳过切换"
+                                    f"（待处理: {[u['contact'] for u in unread]}），避免打断用户")
+                            else:
+                                self._handle_unread_contacts(unread, contact_name)
+                                continue  # 处理完未读后跳过本轮正常截图
                         else:
                             self._log("info", "[红点] 未检测到未读消息，继续监控当前窗口")
 
@@ -2208,6 +2226,18 @@ class WeChatEngine:
 
         return False
 
+    def _is_wechat_foreground(self):
+        """判断微信主窗口当前是否处于前台（用户正在使用）。"""
+        try:
+            import win32gui
+            _hwnd = getattr(self.window, "_hWnd", None)
+            if not _hwnd:
+                return False
+            _fg = win32gui.GetForegroundWindow()
+            return _fg == _hwnd
+        except Exception:
+            return False
+
     def _handle_unread_contacts(self, unread_contacts, original_contact):
         """处理有未读消息的联系人：切换 -> 截图 -> OCR -> 提取 -> 标记已处理"""
         import pyautogui
@@ -2217,6 +2247,8 @@ class WeChatEngine:
             self._click_retry_counts = {}
         if not hasattr(self, '_last_click_ts'):
             self._last_click_ts = 0.0
+        # V3.4 屏障：本轮回合内产生的自动回复线程（粘贴前需先 join，防止切回原窗口后粘贴错人）
+        self._pending_reply_threads = []
         MAX_CLICK_RETRIES = 3
         # 行为限速：两次成功点击之间保留拟人间隔，避免机械秒点（防风控+体验）
         MIN_CLICK_GAP = 1.5
@@ -2717,6 +2749,20 @@ class WeChatEngine:
                     self.red_dot_monitor.mark_suspect(new_contact)
                 except Exception:
                     pass
+
+        # ★ V3.4 屏障：切回原窗口前，先等本轮回合内所有自动回复线程完成粘贴。
+        #   否则红点已切回原联系人，而回复线程还在粘贴 → 回复落错窗口（贴进原联系人输入框）。
+        try:
+            _pending = getattr(self, "_pending_reply_threads", []) or []
+            for _t in _pending:
+                try:
+                    _t.join(timeout=30)
+                except Exception:
+                    pass
+            self._pending_reply_threads = []
+            self._log("info", f"[红点] 已等待 {len(_pending)} 个自动回复线程完成粘贴")
+        except Exception:
+            pass
 
         # 切回原窗口（点击侧边栏第一个或原始联系人）
         try:
