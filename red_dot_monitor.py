@@ -82,6 +82,20 @@ class RedDotMonitor:
         self._template_cache = None
         self._template_auto_capture = self.config.get("template_auto_capture", True)
 
+        # === CNN 红点分类器（二次确认，消除误触发） ===
+        self._cnn_classifier = None
+        cnn_cfg = self.config.get("cnn_classifier", {})
+        if cnn_cfg.get("enabled", True):
+            try:
+                from red_dot_classifier import get_red_dot_cnn
+                self._cnn_classifier = get_red_dot_cnn(cnn_cfg)
+                if self._cnn_classifier.enabled:
+                    logger.info("[红点监控] CNN 红点分类器已启用（二次确认）")
+                else:
+                    logger.info("[红点监控] CNN 分类器将自动收集样本训练")
+            except Exception as e:
+                logger.info("[红点监控] CNN 分类器初始化跳过: %s", e)
+
     def get_sidebar_region(self, window):
         left, top = window.left, window.top
         w, h = window.width, window.height
@@ -432,6 +446,20 @@ class RedDotMonitor:
         # 注意：不要按 x 坐标过滤"右侧红点"——微信4.0真实徽章位于头像右上角，
         # 实测横跨侧边栏宽度的 15%-55%（多列布局），x 过滤会误杀真实未读徽章。
         # 非徽章红色元素由 HSV 6特征(面积/圆形度/白字)与模板匹配分数自然排除。
+
+        # === CNN 二次确认：过滤误检（红色头像/红包图标/红色UI元素） ===
+        if self._cnn_classifier is not None:
+            sidebar_img = getattr(self, "_last_sidebar_img", None)
+            if sidebar_img is not None and all_dots:
+                before = len(all_dots)
+                all_dots = self._cnn_classifier.filter_red_dots(
+                    all_dots, sidebar_img)
+                after = len(all_dots)
+                if before != after:
+                    logger.info(
+                        "[红点CNN] 二次确认: %d → %d 个 (过滤 %d 个误检)",
+                        before, after, before - after)
+
         logger.info(f"[红点检测汇总] 模板={len(template_dots)}个, "
                     f"HSV={len(hsv_dots)}个, 合并去重后={len(all_dots)}个")
         return all_dots

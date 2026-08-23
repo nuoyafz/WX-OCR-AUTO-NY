@@ -1,0 +1,106 @@
+<slide>
+  <style>
+    <fill>
+      <fillColor color="rgb(10,14,26)"/>
+    </fill>
+  </style>
+  <data>
+    <shape type="text" topLeftX="64" topLeftY="64" width="832" height="32">
+      <content textType="caption" fontSize="12" color="rgba(0,212,255,1)" bold="true" letterSpacing="3" wrap="false">
+        <p>WHY NOYA CHAT · 核心数据</p>
+      </content>
+    </shape>
+    <shape type="text" topLeftX="64" topLeftY="100" width="832" height="56">
+      <content textType="title" fontSize="36" color="rgba(255,255,255,1)" bold="true" letterSpacing="0.5" wrap="false">
+        <p>不是又一个微信机器人，而是你的</p>
+      </content>
+    </shape>
+    <shape type="text" topLeftX="64" topLeftY="152" width="832" height="56">
+      <content textType="title" fontSize="36" color="rgba(168,85,247,1)" bold="true" letterSpacing="0.5" wrap="false">
+        <p>个人社交数据操作系统</p>
+      </content>
+    </shape>
+    <line startX="64" startY="232" endX="896" endY="232">
+      <border color="rgba(30,41,59,1)" width="1"/>
+    </line>
+    <shape type="text" topLeftX="64" topLeftY="264" width="200" height="80">
+      <content textType="title" fontSize="72" color="rgba(0,212,255,1)" bold="true" wrap="false">
+        <p>70%+</p>
+      </content>
+    </shape>
+    <shape type="text" topLeftX="64" topLeftY="352" width="200" height="24">
+      <content textType="body" fontSize="14" color="rgba(255,255,255,1)" bold="true" wrap="false">
+        <p>CPU 占用降低</p>
+      </content>
+    </shape>
+    <shape type="text" topLeftX="64" topLeftY="378" width="200" height="36">
+      <content textType="caption" fontSize="11" color="rgba(100,116,139,1)" lineSpacing="multiple:1.4">
+        <p>帧差异检测+pHash去重，静止帧跳过OCR</p>
+      </content>
+    </shape>
+    <line startX="288" startY="264" endX="288" endY="420">
+      <border color="rgba(30,41,59,1)" width="1"/>
+    </line>
+    <shape type="text" topLeftX="312" topLeftY="264" width="200" height="80">
+      <content textType="title" fontSize="72" color="rgba(0,212,255,1)" bold="true" wrap="false">
+        <p>90%+</p>
+      </content>
+    </shape>
+    <shape type="text" topLeftX="312" topLeftY="352" width="200" height="24">
+      <content textType="body" fontSize="14" color="rgba(255,255,255,1)" bold="true" wrap="false">
+        <p>收发方区分准确率</p>
+      </content>
+    </shape>
+    <shape type="text" topLeftX="312" topLeftY="378" width="200" height="36">
+      <content textType="caption" fontSize="11" color="rgba(100,116,139,1)" lineSpacing="multiple:1.4">
+        <p>气泡位置+配色+x_center三重判定</p>
+      </content>
+    </shape>
+    <line startX="536" startY="264" endX="536" endY="420">
+      <border color="rgba(30,41,59,1)" width="1"/>
+    </line>
+    <shape type="text" topLeftX="560" topLeftY="264" width="160" height="80">
+      <content textType="title" fontSize="72" color="rgba(168,85,247,1)" bold="true" wrap="false">
+        <p>0</p>
+      </content>
+    </shape>
+    <shape type="text" topLeftX="560" topLeftY="352" width="160" height="24">
+      <content textType="body" fontSize="14" color="rgba(255,255,255,1)" bold="true" wrap="false">
+        <p>协议逆向</p>
+      </content>
+    </shape>
+    <shape type="text" topLeftX="560" topLeftY="378" width="180" height="36">
+      <content textType="caption" fontSize="11" color="rgba(100,116,139,1)" lineSpacing="multiple:1.4">
+        <p>纯屏幕截图OCR方案，合规安全</p>
+      </content>
+    </shape>
+    <line startX="744" startY="264" endX="744" endY="420">
+      <border color="rgba(30,41,59,1)" width="1"/>
+    </line>
+    <shape type="text" topLeftX="768" topLeftY="264" width="140" height="80">
+      <content textType="title" fontSize="72" color="rgba(168,85,247,1)" bold="true" wrap="false">
+        <p>5+</p>
+      </content>
+    </shape>
+    <shape type="text" topLeftX="768" topLeftY="352" width="140" height="24">
+      <content textType="body" fontSize="14" color="rgba(255,255,255,1)" bold="true" wrap="false">
+        <p>AI 赋能能力</p>
+      </content>
+    </shape>
+    <shape type="text" topLeftX="768" topLeftY="378" width="140" height="36">
+      <content textType="caption" fontSize="11" color="rgba(100,116,139,1)" lineSpacing="multiple:1.4">
+        <p>摘要/画像/图谱/项目/简报</p>
+      </content>
+    </shape>
+    <shape type="text" topLeftX="64" topLeftY="472" width="832" height="24">
+      <content textType="caption" fontSize="11" color="rgba(71,85,105,1)" letterSpacing="0.5" wrap="false">
+        <p>数据基于 Windows 11 / Python 3.10 / PaddleOCR 2.9.1 实测环境 · CPU 降低比例对比全量 OCR 方案</p>
+      </content>
+    </shape>
+  </data>
+  <note>
+    <content textType="body">
+      <p>这一页用四个核心数据说明 NOYA Chat 的差异化价值。第一，帧差异检测让 CPU 占用降低 70% 以上，这是纯工程优化的成果。第二，收发方消息区分准确率超过 90%，通过气泡位置、配色和 x_center 三重判定实现。第三，零协议逆向，我们用的是纯屏幕截图 OCR 方案，不碰微信协议，合规安全。第四，五大 AI 赋能能力，包括会话摘要、联系人画像、社交图谱、项目笔记和每日简报，让微信数据真正变成可复用的知识。NOYA Chat 不是又一个微信机器人，而是你的个人社交数据操作系统。</p>
+    </content>
+  </note>
+</slide>

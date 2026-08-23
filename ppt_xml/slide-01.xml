@@ -1,0 +1,55 @@
+<slide>
+  <style>
+    <fill>
+      <fillColor color="rgb(13,19,38)"/>
+    </fill>
+  </style>
+  <data>
+    <img src="Dco1b8W2uoHeqKxMfyhcZN47nZf" topLeftX="0" topLeftY="0" width="960" height="540"/>
+    <shape type="rect" topLeftX="0" topLeftY="0" width="620" height="540">
+      <fill>
+        <fillColor color="linear-gradient(90deg,rgba(13,19,38,0.95) 0%,rgba(13,19,38,0.75) 60%,rgba(13,19,38,0) 100%)"/>
+      </fill>
+    </shape>
+    <shape type="text" topLeftX="72" topLeftY="148" width="520" height="56">
+      <content textType="title" fontSize="44" color="rgba(255,255,255,1)" bold="true" letterSpacing="1" wrap="false">
+        <p>NOYA Chat 微信助手</p>
+      </content>
+    </shape>
+    <shape type="text" topLeftX="72" topLeftY="212" width="500" height="32">
+      <content textType="body" fontSize="18" color="rgba(191,215,255,1)" letterSpacing="0.5" wrap="false">
+        <p>基于 OCR 与大模型的微信消息智能管理系统</p>
+      </content>
+    </shape>
+    <line startX="72" startY="268" endX="200" endY="268">
+      <border color="rgba(37,99,235,1)" width="3"/>
+    </line>
+    <shape type="text" topLeftX="72" topLeftY="288" width="480" height="60">
+      <content textType="body" fontSize="14" color="rgba(160,175,200,1)" lineSpacing="multiple:1.6">
+        <p>窗口截图 + PaddleOCR 实时解析 · 通义千问语义理解</p>
+        <p>可控自动回复 · Obsidian 知识库自动沉淀</p>
+      </content>
+    </shape>
+    <shape type="slides-full-round-rect" topLeftX="72" topLeftY="380" width="120" height="32">
+      <fill>
+        <fillColor color="rgba(37,99,235,0.25)"/>
+      </fill>
+      <border color="rgba(37,99,235,1)" width="1"/>
+    </shape>
+    <shape type="text" topLeftX="72" topLeftY="380" width="120" height="32">
+      <content textType="body" fontSize="12" color="rgba(191,215,255,1)" textAlign="center" bold="true" wrap="false">
+        <p>v3.1 参赛作品</p>
+      </content>
+    </shape>
+    <shape type="text" topLeftX="72" topLeftY="488" width="400" height="20">
+      <content textType="caption" fontSize="10" color="rgba(120,135,165,1)" wrap="false">
+        <p>Windows 本地运行 · 数据不出域 · 非协议逆向</p>
+      </content>
+    </shape>
+  </data>
+  <note>
+    <content textType="body">
+      <p>各位评委好，今天我带来的项目是 NOYA Chat 微信助手。这是一款面向 Windows 平台的本地微信消息智能管理工具，核心理念是把微信作为信息采集入口，把 Obsidian 作为思考与沉淀出口。项目基于窗口截图加 PaddleOCR 方案，不涉及微信协议逆向，所有数据本地存储，安全可控。</p>
+    </content>
+  </note>
+</slide>

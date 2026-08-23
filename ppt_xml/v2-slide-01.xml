@@ -1,0 +1,60 @@
+<slide>
+  <style>
+    <fill>
+      <fillColor color="rgb(10,14,26)"/>
+    </fill>
+  </style>
+  <data>
+    <img src="Hhs2bpi3HoS12Mx0XwlcRdJSnxe" topLeftX="0" topLeftY="0" width="960" height="540"/>
+    <shape type="rect" topLeftX="0" topLeftY="0" width="560" height="540">
+      <fill>
+        <fillColor color="linear-gradient(90deg,rgba(10,14,26,0.98) 0%,rgba(10,14,26,0.85) 50%,rgba(10,14,26,0) 100%)"/>
+      </fill>
+    </shape>
+    <shape type="text" topLeftX="64" topLeftY="120" width="120" height="24">
+      <content textType="caption" fontSize="12" color="rgba(0,212,255,1)" bold="true" letterSpacing="3" wrap="false">
+        <p>v3.1 参赛作品</p>
+      </content>
+    </shape>
+    <line startX="64" startY="156" endX="120" endY="156">
+      <border color="rgba(0,212,255,1)" width="2"/>
+    </line>
+    <shape type="text" topLeftX="64" topLeftY="180" width="480" height="80">
+      <content textType="title" fontSize="64" color="rgba(255,255,255,1)" bold="true" letterSpacing="2" wrap="false">
+        <p>NOYA Chat</p>
+      </content>
+    </shape>
+    <shape type="text" topLeftX="64" topLeftY="268" width="480" height="40">
+      <content textType="headline" fontSize="28" color="rgba(168,85,247,1)" bold="true" letterSpacing="1" wrap="false">
+        <p>微信消息智能中枢</p>
+      </content>
+    </shape>
+    <shape type="text" topLeftX="64" topLeftY="324" width="440" height="60">
+      <content textType="body" fontSize="14" color="rgba(148,163,184,1)" lineSpacing="multiple:1.7">
+        <p>OCR 截图识别 · 大模型语义理解 · 可控自动回复</p>
+        <p>Obsidian 知识库自动沉淀 · 社交关系图谱</p>
+      </content>
+    </shape>
+    <shape type="slides-full-round-rect" topLeftX="64" topLeftY="412" width="196" height="36">
+      <fill>
+        <fillColor color="rgba(0,212,255,0.15)"/>
+      </fill>
+      <border color="rgba(0,212,255,1)" width="1"/>
+    </shape>
+    <shape type="text" topLeftX="64" topLeftY="412" width="196" height="36">
+      <content textType="body" fontSize="12" color="rgba(0,212,255,1)" textAlign="center" bold="true" wrap="false">
+        <p>Windows 本地运行 · 数据不出域</p>
+      </content>
+    </shape>
+    <shape type="text" topLeftX="64" topLeftY="492" width="400" height="20">
+      <content textType="caption" fontSize="10" color="rgba(100,116,139,1)" letterSpacing="1" wrap="false">
+        <p>基于 Python 3.10+ / PaddleOCR / 通义千问 / customtkinter</p>
+      </content>
+    </shape>
+  </data>
+  <note>
+    <content textType="body">
+      <p>各位评委好，今天我带来的项目是 NOYA Chat，一款微信消息智能中枢。它的核心定位是把微信这个信息采集入口和 Obsidian 这个知识沉淀出口连接起来，通过 OCR 截图识别和大模型语义理解，实现消息的自动监控、智能回复、信息抽取和知识库沉淀。所有数据本地运行，不经过第三方服务器，安全可控。</p>
+    </content>
+  </note>
+</slide>

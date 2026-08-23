@@ -1,0 +1,108 @@
+<slide>
+  <style>
+    <fill>
+      <fillColor color="rgb(10,14,26)"/>
+    </fill>
+  </style>
+  <data>
+    <shape type="text" topLeftX="64" topLeftY="40" width="500" height="24">
+      <content textType="caption" fontSize="12" color="rgba(168,85,247,1)" bold="true" letterSpacing="3" wrap="false">
+        <p>SYSTEM ARCHITECTURE · 系统架构</p>
+      </content>
+    </shape>
+    <shape type="text" topLeftX="64" topLeftY="72" width="832" height="36">
+      <content textType="title" fontSize="28" color="rgba(255,255,255,1)" bold="true" wrap="false">
+        <p>四层架构，从 GUI 到数据持久化的完整链路</p>
+      </content>
+    </shape>
+    <shape type="rect" topLeftX="120" topLeftY="124" width="720" height="64">
+      <fill>
+        <fillColor color="rgba(0,212,255,0.12)"/>
+      </fill>
+      <border color="rgba(0,212,255,0.5)" width="1"/>
+    </shape>
+    <shape type="text" topLeftX="140" topLeftY="134" width="120" height="20">
+      <content textType="caption" fontSize="11" color="rgba(0,212,255,1)" bold="true" letterSpacing="1" wrap="false">
+        <p>UI 层</p>
+      </content>
+    </shape>
+    <shape type="text" topLeftX="140" topLeftY="156" width="680" height="24">
+      <content textType="body" fontSize="13" color="rgba(226,232,240,1)" wrap="false">
+        <p>customtkinter 现代化 GUI  ·  监控面板 / 回复设置 / 系统配置 / 数据检索 / 统计面板</p>
+      </content>
+    </shape>
+    <line startX="480" startY="188" endX="480" endY="204">
+      <border color="rgba(100,116,139,1)" width="1"/>
+      <endArrow type="arrow"/>
+    </line>
+    <shape type="rect" topLeftX="120" topLeftY="204" width="720" height="72">
+      <fill>
+        <fillColor color="rgba(168,85,247,0.1)"/>
+      </fill>
+      <border color="rgba(168,85,247,0.4)" width="1"/>
+    </shape>
+    <shape type="text" topLeftX="140" topLeftY="214" width="160" height="20">
+      <content textType="caption" fontSize="11" color="rgba(168,85,247,1)" bold="true" letterSpacing="1" wrap="false">
+        <p>核心引擎层</p>
+      </content>
+    </shape>
+    <shape type="text" topLeftX="140" topLeftY="236" width="680" height="32">
+      <content textType="body" fontSize="12" color="rgba(203,213,225,1)" lineSpacing="multiple:1.5">
+        <p>WeChatEngine 主控  ·  红点监控器（模板匹配+HSV六特征）  ·  消息解析器（收发方区分/去重）</p>
+        <p>智能帧监测（增量帧+pHash）  ·  AI训练引擎  ·  窗口管理器（屏幕外自愈）</p>
+      </content>
+    </shape>
+    <line startX="480" startY="276" endX="480" endY="292">
+      <border color="rgba(100,116,139,1)" width="1"/>
+      <endArrow type="arrow"/>
+    </line>
+    <shape type="rect" topLeftX="120" topLeftY="292" width="720" height="72">
+      <fill>
+        <fillColor color="rgba(0,212,255,0.08)"/>
+      </fill>
+      <border color="rgba(0,212,255,0.3)" width="1"/>
+    </shape>
+    <shape type="text" topLeftX="140" topLeftY="302" width="160" height="20">
+      <content textType="caption" fontSize="11" color="rgba(0,212,255,1)" bold="true" letterSpacing="1" wrap="false">
+        <p>识别能力层</p>
+      </content>
+    </shape>
+    <shape type="text" topLeftX="140" topLeftY="324" width="680" height="32">
+      <content textType="body" fontSize="12" color="rgba(203,213,225,1)" lineSpacing="multiple:1.5">
+        <p>截图模块（PrintWindow→BitBlt→全屏 三重链路）  ·  OCR引擎（PaddleOCR+微信内置 双引擎）</p>
+        <p>LLM客户端（通义千问 Qwen3.7-Flash）  ·  信息抽取器（分类/待办/情绪/正则）</p>
+      </content>
+    </shape>
+    <line startX="480" startY="364" endX="480" endY="380">
+      <border color="rgba(100,116,139,1)" width="1"/>
+      <endArrow type="arrow"/>
+    </line>
+    <shape type="rect" topLeftX="120" topLeftY="380" width="720" height="56">
+      <fill>
+        <fillColor color="rgba(168,85,247,0.12)"/>
+      </fill>
+      <border color="rgba(168,85,247,0.5)" width="1"/>
+    </shape>
+    <shape type="text" topLeftX="140" topLeftY="390" width="160" height="20">
+      <content textType="caption" fontSize="11" color="rgba(168,85,247,1)" bold="true" letterSpacing="1" wrap="false">
+        <p>数据持久层</p>
+      </content>
+    </shape>
+    <shape type="text" topLeftX="140" topLeftY="410" width="680" height="20">
+      <content textType="body" fontSize="13" color="rgba(226,232,240,1)" wrap="false">
+        <p>SQLite 消息数据库  ·  JSON / CSV 多格式导出  ·  Obsidian 知识库（文件直写 / REST API 双模式）</p>
+      </content>
+    </shape>
+    <shape type="text" topLeftX="64" topLeftY="464" width="832" height="48">
+      <content textType="caption" fontSize="10" color="rgba(71,85,105,1)" lineSpacing="multiple:1.6">
+        <p>关键设计决策：最小化=移至屏幕外(-10000,0)保持渲染  ·  SendMessageW 后台点击不抢占焦点  ·  红点6特征检测(颜色/面积/圆度/位置/白字/排序)</p>
+        <p>已处理联系人60s冷却  ·  UI窗口标题不含"微信"避免自识别  ·  config.yaml 已 gitignore 防止 API Key 泄露</p>
+      </content>
+    </shape>
+  </data>
+  <note>
+    <content textType="body">
+      <p>系统采用经典的四层架构。最上层是基于 customtkinter 的 GUI 界面，提供五大功能面板。第二层是核心引擎 WeChatEngine，包含红点监控、消息解析、智能帧监测、AI 训练和窗口管理五大模块。第三层是识别能力层，截图模块采用三重链路兜底，OCR 支持 PaddleOCR 和微信内置双引擎，LLM 接入通义千问。最底层是数据持久层，SQLite 存储消息，支持 JSON/CSV 导出，并同步到 Obsidian 知识库。关键设计决策包括屏幕外最小化保持渲染、SendMessageW 后台点击、红点六特征检测等。</p>
+    </content>
+  </note>
+</slide>

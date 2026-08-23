@@ -1,0 +1,590 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>NOYA Chat - AI微信助手 | 参赛演讲</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@300;400;500;700;900&display=swap');
+
+  *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+  :root {
+    --bg: #0a0a0f;
+    --surface: #13131f;
+    --surface2: #1a1a2e;
+    --border: #252540;
+    --text: #e8e8f0;
+    --text2: #9898b8;
+    --text3: #606080;
+    --accent: #6c5ce7;
+    --accent2: #a78bfa;
+    --green: #10b981;
+    --amber: #f59e0b;
+    --red: #ef4444;
+    --cyan: #06b6d4;
+    --radius: 16px;
+    --radius-sm: 10px;
+  }
+
+  html, body {
+    width: 100%; height: 100%;
+    font-family: 'Noto Sans SC', system-ui, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    overflow: hidden;
+  }
+
+  .slides-container {
+    position: relative;
+    width: 100vw; height: 100vh;
+    overflow: hidden;
+  }
+
+  .slide {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    padding: 80px 100px;
+    opacity: 0;
+    transform: translateY(30px);
+    transition: opacity 0.5s ease, transform 0.5s ease;
+    pointer-events: none;
+  }
+  .slide.active {
+    opacity: 1;
+    transform: translateY(0);
+    pointer-events: auto;
+  }
+
+  .slide-number {
+    position: absolute;
+    top: 32px; right: 48px;
+    font-size: 13px; color: var(--text3);
+    letter-spacing: 0.5px;
+  }
+
+  .progress-bar {
+    position: fixed; top: 0; left: 0; height: 3px;
+    background: var(--accent);
+    transition: width 0.4s ease;
+    z-index: 100;
+  }
+
+  .nav-hint {
+    position: fixed; bottom: 28px; right: 48px;
+    font-size: 12px; color: var(--text3);
+    display: flex; gap: 16px; z-index: 100;
+  }
+  .nav-hint span { display: flex; align-items: center; gap: 6px; }
+  .nav-hint kbd {
+    background: var(--surface2); border: 1px solid var(--border);
+    border-radius: 4px; padding: 2px 7px; font-size: 11px;
+    color: var(--text2); font-family: inherit;
+  }
+
+  h1 { font-size: 64px; font-weight: 900; line-height: 1.15; text-align: center; }
+  h2 { font-size: 42px; font-weight: 700; line-height: 1.25; }
+  h3 { font-size: 22px; font-weight: 600; color: var(--accent2); }
+  p { font-size: 17px; line-height: 1.7; color: var(--text2); }
+  .subtitle { font-size: 20px; color: var(--text3); margin-top: 12px; }
+
+  .accent { color: var(--accent2); }
+  .green { color: var(--green); }
+  .amber { color: var(--amber); }
+  .cyan { color: var(--cyan); }
+
+  .tag {
+    display: inline-block; padding: 5px 14px;
+    border-radius: 20px; font-size: 13px; font-weight: 500;
+    background: rgba(108,92,231,0.15); color: var(--accent2);
+    border: 1px solid rgba(108,92,231,0.3);
+  }
+
+  .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 40px; width: 100%; max-width: 1100px; }
+  .grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 28px; width: 100%; max-width: 1100px; }
+  .grid-4 { display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 20px; width: 100%; max-width: 1100px; }
+
+  .card {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 36px;
+    transition: border-color 0.2s;
+  }
+  .card:hover { border-color: var(--accent); }
+  .card .icon { font-size: 32px; margin-bottom: 16px; }
+  .card h4 { font-size: 17px; font-weight: 600; margin-bottom: 10px; }
+  .card p { font-size: 14px; color: var(--text3); line-height: 1.6; }
+
+  .stat-row { display: flex; gap: 48px; justify-content: center; margin-top: 36px; }
+  .stat-item { text-align: center; }
+  .stat-value { font-size: 48px; font-weight: 900; color: var(--accent2); }
+  .stat-label { font-size: 14px; color: var(--text3); margin-top: 4px; }
+
+  .screenshot-frame {
+    position: relative; width: 100%;
+    border-radius: var(--radius); overflow: hidden;
+  }
+  .screenshot-frame img {
+    display: block; width: 100%; max-height: 240px;
+    object-fit: cover; object-position: top;
+    border-radius: var(--radius); border: 1px solid var(--border);
+    transition: transform 0.3s ease;
+  }
+  .screenshot-frame:hover img { transform: scale(1.02); }
+  .screenshot-placeholder {
+    background: var(--surface2); border: 2px dashed var(--border);
+    border-radius: var(--radius); width: 100%; min-height: 200px;
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    color: var(--text3); font-size: 14px; gap: 8px;
+    cursor: pointer; transition: border-color 0.2s;
+  }
+  .screenshot-placeholder:hover { border-color: var(--accent); }
+
+  .arch-box {
+    display: flex; flex-wrap: wrap; gap: 12px; justify-content: center;
+    margin-top: 24px;
+  }
+  .arch-node {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--radius-sm); padding: 14px 22px;
+    font-size: 14px; font-weight: 500; text-align: center;
+    min-width: 130px;
+  }
+  .arch-node.accent-node { border-color: var(--accent); background: rgba(108,92,231,0.1); }
+  .arch-arrow { color: var(--text3); font-size: 20px; display: flex; align-items: center; }
+
+  .feature-list { list-style: none; padding: 0; }
+  .feature-list li { padding: 10px 0; font-size: 15px; color: var(--text2); display: flex; align-items: center; gap: 10px; }
+  .feature-list li::before { content: ""; display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: var(--accent); flex-shrink: 0; }
+
+  .step-flow { display: flex; gap: 20px; align-items: center; justify-content: center; margin-top: 24px; flex-wrap: wrap; }
+  .step-card {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--radius-sm); padding: 20px 28px; text-align: center;
+    font-size: 14px; min-width: 160px;
+  }
+  .step-card .step-num { font-size: 28px; font-weight: 900; color: var(--accent2); }
+  .step-arrow { font-size: 24px; color: var(--text3); }
+
+  @media (max-width: 900px) {
+    .slide { padding: 40px 24px; }
+    h1 { font-size: 36px; }
+    h2 { font-size: 28px; }
+    .grid-2, .grid-3, .grid-4 { grid-template-columns: 1fr; }
+    .stat-row { flex-wrap: wrap; gap: 24px; }
+    .step-flow { flex-direction: column; }
+    .step-arrow { transform: rotate(90deg); }
+  }
+</style>
+</head>
+<body>
+
+<div class="progress-bar" id="progress"></div>
+
+<div class="slides-container" id="slides">
+
+  <!-- Slide 1: Title -->
+  <div class="slide active" data-index="0">
+    <div class="slide-number">01 / 08</div>
+    <div style="text-align:center;">
+      <div class="tag" style="margin-bottom:24px;">参赛作品</div>
+      <h1 style="font-size:72px; background:linear-gradient(135deg, var(--accent2), var(--cyan)); -webkit-background-clip:text; -webkit-text-fill-color:transparent;">
+        NOYA Chat
+      </h1>
+      <h1 style="font-size:48px; margin-top:8px;">AI 微信智能助手</h1>
+      <p class="subtitle" style="margin-top:20px; font-size:18px;">
+        基于 OCR + 大语言模型的微信消息实时监控与智能回复系统
+      </p>
+      <div class="stat-row" style="margin-top:48px;">
+        <div class="stat-item"><div class="stat-value">100%</div><div class="stat-label">本地运行</div></div>
+        <div class="stat-item"><div class="stat-value">8+</div><div class="stat-label">核心模块</div></div>
+        <div class="stat-item"><div class="stat-value">实时</div><div class="stat-label">消息识别</div></div>
+        <div class="stat-item"><div class="stat-value">AI</div><div class="stat-label">智能回复</div></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Slide 2: Problem -->
+  <div class="slide" data-index="1">
+    <div class="slide-number">02 / 08</div>
+    <div style="width:100%;max-width:1100px;">
+      <h3>痛点分析</h3>
+      <h2 style="margin-top:8px;">微信消息太多，<span class="accent">怎么办？</span></h2>
+      <div class="grid-3" style="margin-top:48px;">
+        <div class="card">
+          <div class="icon">📩</div>
+          <h4>消息爆炸</h4>
+          <p>每天数百条微信消息，重要信息淹没在聊天流中，错过关键沟通</p>
+        </div>
+        <div class="card">
+          <div class="icon">⏰</div>
+          <h4>回复压力</h4>
+          <p>无法及时回复每一条消息，客户/同事等待焦虑，错失商机</p>
+        </div>
+        <div class="card">
+          <div class="icon">📁</div>
+          <h4>知识流失</h4>
+          <p>聊天记录散落各处，无结构化归档，事后无法检索和复盘</p>
+        </div>
+      </div>
+      <p style="text-align:center;margin-top:36px;font-size:20px;color:var(--text);">
+        <span class="accent">NOYA Chat</span> 解决了这个痛点：<br>
+        <span style="font-size:16px;color:var(--text2);">自动监控 + 智能提取 + AI回复 + 知识归档</span>
+      </p>
+    </div>
+  </div>
+
+  <!-- Slide 3: Core Features -->
+  <div class="slide" data-index="2">
+    <div class="slide-number">03 / 08</div>
+    <div style="width:100%;max-width:1100px;">
+      <h3>核心功能</h3>
+      <h2 style="margin-top:8px;">四大核心能力</h2>
+      <div class="grid-2" style="margin-top:40px;gap:24px;">
+        <div class="card" style="border-left:3px solid var(--accent);">
+          <h4 style="color:var(--accent2);">实时截图 OCR 识别</h4>
+          <p>PaddleOCR 引擎实时识别微信聊天区域文字，自动区分自己/对方气泡，增量检测画面变化，最小化状态下也能通过 PrintWindow + UIA 无渲染监控</p>
+        </div>
+        <div class="card" style="border-left:3px solid var(--green);">
+          <h4 style="color:var(--green);">AI 智能回复</h4>
+          <p>接入大语言模型 (通义千问)，支持角色设定、对话上下文管理、RAG 本地知识库检索增强，可预览确认后发送或全自动回复</p>
+        </div>
+        <div class="card" style="border-left:3px solid var(--cyan);">
+          <h4 style="color:var(--cyan);">红点未读监控</h4>
+          <p>CNN 红点分类器 + HSV 模板匹配双引擎，自动检测微信侧边栏未读红点，精准点击切换联系人，像素级验证确保切换成功</p>
+        </div>
+        <div class="card" style="border-left:3px solid var(--amber);">
+          <h4 style="color:var(--amber);">知识库归档</h4>
+          <p>SQLite 本地持久化 + Obsidian 笔记同步，消息情感分析 + 紧急度自动分级，语义向量去重，重要消息自动标记归档</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Slide 4: Technical Architecture -->
+  <div class="slide" data-index="3">
+    <div class="slide-number">04 / 08</div>
+    <div style="width:100%;max-width:1100px;">
+      <h3>技术架构</h3>
+      <h2 style="margin-top:8px;">模块化设计，<span class="accent">高性能协作</span></h2>
+      <div class="arch-box" style="margin-top:40px;">
+        <div class="arch-node accent-node">微信窗口<br><small style="color:var(--text3)">截图/PrintWindow/UIA</small></div>
+        <div class="arch-arrow">→</div>
+        <div class="arch-node">消息解析器<br><small style="color:var(--text3)">OCR + 增量检测</small></div>
+        <div class="arch-arrow">→</div>
+        <div class="arch-node">红点监控器<br><small style="color:var(--text3)">CNN + HSV</small></div>
+        <div class="arch-arrow">→</div>
+        <div class="arch-node accent-node">LLM 客户端<br><small style="color:var(--text3)">通义千问 API</small></div>
+      </div>
+      <div class="arch-box" style="margin-top:16px;">
+        <div class="arch-node">信息提取引擎<br><small style="color:var(--text3)">关键词/分类/重要性</small></div>
+        <div class="arch-arrow">→</div>
+        <div class="arch-node accent-node">数据存储<br><small style="color:var(--text3)">SQLite + CSV</small></div>
+        <div class="arch-arrow">→</div>
+        <div class="arch-node">情感分析<br><small style="color:var(--text3)">三阶段流水线</small></div>
+        <div class="arch-arrow">→</div>
+        <div class="arch-node">Obsidian 同步<br><small style="color:var(--text3)">Markdown 笔记</small></div>
+      </div>
+      <div class="arch-box" style="margin-top:16px;">
+        <div class="arch-node">RAG 知识库<br><small style="color:var(--text3)">ChromaDB 向量检索</small></div>
+        <div class="arch-arrow">→</div>
+        <div class="arch-node">语义去重<br><small style="color:var(--text3)">sentence-transformers</small></div>
+        <div class="arch-arrow">→</div>
+        <div class="arch-node">点击优化器<br><small style="color:var(--text3)">像素验证+智能偏移</small></div>
+        <div class="arch-arrow">→</div>
+        <div class="arch-node accent-node">UI 面板<br><small style="color:var(--text3)">customtkinter</small></div>
+      </div>
+      <p style="text-align:center;margin-top:32px;color:var(--text3);font-size:13px;">
+        全部模块本地运行 | 线程安全设计 | 跨线程预览队列 | 锁机制避免并发问题
+      </p>
+    </div>
+  </div>
+
+  <!-- Slide 5: Innovation Points -->
+  <div class="slide" data-index="4">
+    <div class="slide-number">05 / 08</div>
+    <div style="width:100%;max-width:1100px;">
+      <h3>技术创新</h3>
+      <h2 style="margin-top:8px;">五个关键技术突破</h2>
+      <div style="margin-top:36px;display:flex;flex-direction:column;gap:18px;">
+        <div class="card" style="display:flex;align-items:center;gap:20px;padding:24px 32px;">
+          <span style="font-size:36px;min-width:50px;">01</span>
+          <div>
+            <h4>CNN 红点分类器替代传统 HSV 模板匹配</h4>
+            <p>轻量级深度学习模型消除红色头像、红包图标等误触发，识别准确率大幅提升</p>
+          </div>
+        </div>
+        <div class="card" style="display:flex;align-items:center;gap:20px;padding:24px 32px;">
+          <span style="font-size:36px;min-width:50px;">02</span>
+          <div>
+            <h4>Windows UI Automation 无渲染未读监控</h4>
+            <p>最小化/屏幕外状态下通过无障碍 API 直接读取微信侧边栏未读信息，无需恢复窗口</p>
+          </div>
+        </div>
+        <div class="card" style="display:flex;align-items:center;gap:20px;padding:24px 32px;">
+          <span style="font-size:36px;min-width:50px;">03</span>
+          <div>
+            <h4>自适应点击优化器</h4>
+            <p>像素级红点验证 + 智能 Y 偏移微调 + 聊天区直方图变化检测，确保点击切换零失误</p>
+          </div>
+        </div>
+        <div class="card" style="display:flex;align-items:center;gap:20px;padding:24px 32px;">
+          <span style="font-size:36px;min-width:50px;">04</span>
+          <div>
+            <h4>语义向量去重 + RAG 本地知识库</h4>
+            <p>sentence-transformers 语义级去重，ChromaDB 向量检索增强 LLM 回复上下文</p>
+          </div>
+        </div>
+        <div class="card" style="display:flex;align-items:center;gap:20px;padding:24px 32px;">
+          <span style="font-size:36px;min-width:50px;">05</span>
+          <div>
+            <h4>三阶段情感分析 + 紧急度自动分级</h4>
+            <p>规则引擎 → 统计模型 → LLM 兜底，高效准确的消息情感和紧急度判断</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Slide 6: Screenshots -->
+  <div class="slide" data-index="5">
+    <div class="slide-number">06 / 08</div>
+    <div style="width:100%;max-width:1100px;">
+      <h3>软件演示</h3>
+      <h2 style="margin-top:8px;">运行截图</h2>
+      <div class="grid-2" style="margin-top:36px;gap:28px;">
+        <div>
+          <div class="screenshot-frame">
+            <img src="docs_assets/app_main.png" alt="主监控面板"
+                 style="width:100%;border-radius:var(--radius);border:1px solid var(--border);"
+                 onerror="this.style.display='none';this.nextElementSibling.style.display='flex';">
+            <div class="screenshot-placeholder" style="display:none;" onclick="this.querySelector('input').click()" title="点击替换截图">
+              📸<br>主界面截图<br><small>点击替换</small>
+              <input type="file" accept="image/*" style="display:none" onchange="replaceScreenshot(this, this.parentElement.querySelector('img'))">
+            </div>
+          </div>
+          <p style="text-align:center;margin-top:10px;font-size:13px;color:var(--text3);">主监控面板 — 联系人卡片 + 消息列表 + 实时日志</p>
+        </div>
+        <div>
+          <div class="screenshot-frame">
+            <img src="docs_assets/reddot_demo.png" alt="红点识别演示"
+                 style="width:100%;border-radius:var(--radius);border:1px solid var(--border);"
+                 onerror="this.style.display='none';this.nextElementSibling.style.display='flex';">
+            <div class="screenshot-placeholder" style="display:none;" onclick="this.querySelector('input').click()" title="点击替换截图">
+              📸<br>红点识别截图<br><small>点击替换</small>
+              <input type="file" accept="image/*" style="display:none" onchange="replaceScreenshot(this, this.parentElement.querySelector('img'))">
+            </div>
+          </div>
+          <p style="text-align:center;margin-top:10px;font-size:13px;color:var(--text3);">CNN 红点分类器 — 未读消息自动检测与切换</p>
+        </div>
+      </div>
+      <div class="grid-2" style="margin-top:28px;gap:28px;">
+        <div>
+          <div class="screenshot-frame">
+            <img src="assets/demo.png" alt="功能演示"
+                 style="width:100%;border-radius:var(--radius);border:1px solid var(--border);"
+                 onerror="this.style.display='none';this.nextElementSibling.style.display='flex';">
+            <div class="screenshot-placeholder" style="display:none;" onclick="this.querySelector('input').click()" title="点击替换截图">
+              📸<br>功能演示截图<br><small>点击替换</small>
+              <input type="file" accept="image/*" style="display:none" onchange="replaceScreenshot(this, this.parentElement.querySelector('img'))">
+            </div>
+          </div>
+          <p style="text-align:center;margin-top:10px;font-size:13px;color:var(--text3);">AI 智能回复 — 角色设定 + 上下文管理 + 确认发送</p>
+        </div>
+        <div>
+          <div class="screenshot-frame">
+            <img src="docs_assets/wechat.png" alt="微信集成"
+                 style="width:100%;border-radius:var(--radius);border:1px solid var(--border);"
+                 onerror="this.style.display='none';this.nextElementSibling.style.display='flex';">
+            <div class="screenshot-placeholder" style="display:none;" onclick="this.querySelector('input').click()" title="点击替换截图">
+              📸<br>微信集成截图<br><small>点击替换</small>
+              <input type="file" accept="image/*" style="display:none" onchange="replaceScreenshot(this, this.parentElement.querySelector('img'))">
+            </div>
+          </div>
+          <p style="text-align:center;margin-top:10px;font-size:13px;color:var(--text3);">微信窗口集成 — 实时截图 OCR + PrintWindow 无感捕获</p>
+        </div>
+      </div>
+      <p style="text-align:center;margin-top:20px;color:var(--text3);font-size:12px;">
+        提示：若图片加载失败，点击占位框可手动替换截图 | 按 F 键进入全屏演示模式
+      </p>
+    </div>
+  </div>
+
+  <!-- Slide 7: Tech Stack -->
+  <div class="slide" data-index="6">
+    <div class="slide-number">07 / 08</div>
+    <div style="width:100%;max-width:1100px;">
+      <h3>技术栈</h3>
+      <h2 style="margin-top:8px;">核心技术选型</h2>
+      <div class="grid-4" style="margin-top:40px;">
+        <div class="card" style="text-align:center;">
+          <div class="icon">🐍</div>
+          <h4>Python</h4>
+          <p>核心语言<br>customtkinter GUI</p>
+        </div>
+        <div class="card" style="text-align:center;">
+          <div class="icon">👁️</div>
+          <h4>PaddleOCR</h4>
+          <p>文字识别引擎<br>OpenCV 图像处理</p>
+        </div>
+        <div class="card" style="text-align:center;">
+          <div class="icon">🤖</div>
+          <h4>通义千问</h4>
+          <p>大语言模型<br>API 智能回复</p>
+        </div>
+        <div class="card" style="text-align:center;">
+          <div class="icon">🗄️</div>
+          <h4>SQLite</h4>
+          <p>本地数据库<br>消息持久化存储</p>
+        </div>
+        <div class="card" style="text-align:center;">
+          <div class="icon">🧠</div>
+          <h4>ChromaDB</h4>
+          <p>向量数据库<br>RAG 知识检索</p>
+        </div>
+        <div class="card" style="text-align:center;">
+          <div class="icon">📝</div>
+          <h4>Obsidian</h4>
+          <p>知识库同步<br>Markdown 归档</p>
+        </div>
+        <div class="card" style="text-align:center;">
+          <div class="icon">🖥️</div>
+          <h4>Win32 API</h4>
+          <p>窗口管理<br>PrintWindow 截图</p>
+        </div>
+        <div class="card" style="text-align:center;">
+          <div class="icon">🔍</div>
+          <h4>UIAutomation</h4>
+          <p>无渲染未读监控<br>无障碍 API</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Slide 8: Thank You -->
+  <div class="slide" data-index="7">
+    <div class="slide-number">08 / 08</div>
+    <div style="text-align:center;">
+      <h1 style="font-size:56px; background:linear-gradient(135deg, var(--accent2), var(--cyan)); -webkit-background-clip:text; -webkit-text-fill-color:transparent;">
+        感谢聆听
+      </h1>
+      <p style="font-size:22px;margin-top:16px;color:var(--text2);">NOYA Chat - AI 微信智能助手</p>
+      <div style="margin-top:48px;display:flex;gap:16px;justify-content:center;flex-wrap:wrap;">
+        <div class="tag">Python 3.10+</div>
+        <div class="tag">PaddleOCR</div>
+        <div class="tag">通义千问 API</div>
+        <div class="tag">SQLite</div>
+        <div class="tag">OpenCV</div>
+        <div class="tag">customtkinter</div>
+        <div class="tag">ChromaDB</div>
+        <div class="tag">Obsidian</div>
+      </div>
+      <p style="margin-top:40px;font-size:15px;color:var(--text3);">
+        全部代码开源 | 纯本地运行 | 隐私安全可控
+      </p>
+      <p style="margin-top:8px;font-size:14px;color:var(--text3);">
+        按 ← → 方向键切换幻灯片 | F 键全屏
+      </p>
+    </div>
+  </div>
+
+</div>
+
+<div class="nav-hint">
+  <span><kbd>←</kbd> <kbd>→</kbd> 切换</span>
+  <span><kbd>F</kbd> 全屏</span>
+</div>
+
+<script>
+(function() {
+  const slides = document.querySelectorAll('.slide');
+  const progress = document.getElementById('progress');
+  const total = slides.length;
+  let current = 0;
+
+  function showSlide(index) {
+    if (index < 0 || index >= total) return;
+    slides.forEach((s, i) => s.classList.toggle('active', i === index));
+    slides[index].querySelector('.slide-number').textContent =
+      String(index + 1).padStart(2, '0') + ' / ' + String(total).padStart(2, '0');
+    progress.style.width = ((index + 1) / total * 100) + '%';
+    current = index;
+  }
+
+  document.addEventListener('keydown', function(e) {
+    if (e.key === 'ArrowRight' || e.key === 'ArrowDown' || e.key === ' ') {
+      e.preventDefault();
+      showSlide(current + 1);
+    } else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') {
+      e.preventDefault();
+      showSlide(current - 1);
+    } else if (e.key === 'f' || e.key === 'F') {
+      e.preventDefault();
+      if (document.fullscreenElement) {
+        document.exitFullscreen();
+      } else {
+        document.documentElement.requestFullscreen();
+      }
+    } else if (e.key === 'Home') {
+      e.preventDefault();
+      showSlide(0);
+    } else if (e.key === 'End') {
+      e.preventDefault();
+      showSlide(total - 1);
+    }
+  });
+
+  document.addEventListener('click', function(e) {
+    const w = window.innerWidth;
+    if (e.clientX > w / 2) {
+      showSlide(current + 1);
+    } else {
+      showSlide(current - 1);
+    }
+  });
+
+  let touchStartX = 0;
+  document.addEventListener('touchstart', function(e) {
+    touchStartX = e.touches[0].clientX;
+  });
+  document.addEventListener('touchend', function(e) {
+    const diff = touchStartX - e.changedTouches[0].clientX;
+    if (Math.abs(diff) > 50) {
+      showSlide(current + (diff > 0 ? 1 : -1));
+    }
+  });
+
+  showSlide(0);
+})();
+
+function replaceScreenshot(placeholder, imgEl) {
+  const input = placeholder.querySelector('input');
+  const file = input.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = function(e) {
+    const dataUrl = e.target.result;
+    if (imgEl) {
+      imgEl.src = dataUrl;
+      imgEl.style.display = '';
+      placeholder.style.display = 'none';
+    } else {
+      placeholder.style.backgroundImage = 'url(' + dataUrl + ')';
+      placeholder.style.backgroundSize = 'cover';
+      placeholder.style.backgroundPosition = 'center';
+      placeholder.style.border = 'none';
+      placeholder.style.borderRadius = 'var(--radius)';
+      placeholder.innerHTML = '';
+      placeholder.style.minHeight = '280px';
+    }
+  };
+  reader.readAsDataURL(file);
+}
+</script>
+
+</body>
+</html>

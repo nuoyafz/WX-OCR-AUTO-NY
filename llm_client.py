@@ -30,6 +30,8 @@ class LLMClient:
         self.retry_delay = 2  # 增加重试延迟
         # 全局回复风格预设（叠加在角色模板之上，对所有回复生效）
         self._style_preset = style_preset or {}
+        # RAG 检索器引用（由外部注入）
+        self._rag_retriever = None
 
         # 验证API Key
         self._validate_api_key()
@@ -46,6 +48,10 @@ class LLMClient:
 
         logger.info(f"[LLM] API Key格式验证通过: {self.api_key[:10]}...")
         return True
+
+    def set_rag_retriever(self, rag):
+        """注入 RAG 检索器，启用历史消息检索增强回复"""
+        self._rag_retriever = rag
 
     def test_connection(self):
         """测试连接和API Key有效性
@@ -249,6 +255,22 @@ class LLMClient:
                     "\n\n【回复风格设定】（全局生效，优先级高于角色默认语气）\n"
                     + "\n".join(bits)
                 )
+
+        # === 叠加：RAG 检索到的历史相关消息上下文 ===
+        rag_context = ""
+        try:
+            rag = getattr(self, "_rag_retriever", None)
+            if rag is not None and rag.enabled:
+                rag_context = rag.build_context(
+                    message_content, contact=sender_name)
+                if rag_context:
+                    full_system += (
+                        "\n\n【历史相关消息】以下是过往相关对话，"
+                        "如果与当前问题相关，请参考这些信息回复：\n"
+                        + rag_context
+                    )
+        except Exception:
+            pass
 
         messages = [{"role": "system", "content": full_system}]
 

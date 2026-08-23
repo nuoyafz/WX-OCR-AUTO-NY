@@ -1,0 +1,220 @@
+<slide>
+  <style>
+    <fill>
+      <fillColor color="rgb(10,14,26)"/>
+    </fill>
+  </style>
+  <data>
+    <shape type="text" topLeftX="64" topLeftY="40" width="500" height="24">
+      <content textType="caption" fontSize="12" color="rgba(0,212,255,1)" bold="true" letterSpacing="3" wrap="false">
+        <p>TECH HIGHLIGHTS 01 · 智能监控与 OCR</p>
+      </content>
+    </shape>
+    <shape type="text" topLeftX="64" topLeftY="72" width="832" height="36">
+      <content textType="title" fontSize="28" color="rgba(255,255,255,1)" bold="true" wrap="false">
+        <p>后台无感运行，帧差异检测让 CPU 降低 70%+</p>
+      </content>
+    </shape>
+    <line startX="64" startY="124" endX="440" endY="124">
+      <border color="rgba(0,212,255,0.3)" width="1"/>
+    </line>
+    <line startX="520" startY="124" endX="896" endY="124">
+      <border color="rgba(168,85,247,0.3)" width="1"/>
+    </line>
+    <shape type="text" topLeftX="64" topLeftY="140" width="200" height="24">
+      <content textType="body" fontSize="16" color="rgba(0,212,255,1)" bold="true" wrap="false">
+        <p>智能消息监控</p>
+      </content>
+    </shape>
+    <shape type="text" topLeftX="520" topLeftY="140" width="200" height="24">
+      <content textType="body" fontSize="16" color="rgba(168,85,247,1)" bold="true" wrap="false">
+        <p>OCR 文字识别</p>
+      </content>
+    </shape>
+    <shape type="text" topLeftX="64" topLeftY="176" width="28" height="20">
+      <content textType="body" fontSize="13" color="rgba(0,212,255,1)" bold="true" wrap="false">
+        <p>01</p>
+      </content>
+    </shape>
+    <shape type="text" topLeftX="100" topLeftY="176" width="340" height="20">
+      <content textType="body" fontSize="13" color="rgba(255,255,255,1)" bold="true" wrap="false">
+        <p>红点双模式检测</p>
+      </content>
+    </shape>
+    <shape type="text" topLeftX="100" topLeftY="198" width="340" height="20">
+      <content textType="caption" fontSize="11" color="rgba(100,116,139,1)" wrap="false">
+        <p>模板匹配优先 + HSV六特征兜底，适配不同DPI和主题</p>
+      </content>
+    </shape>
+    <shape type="text" topLeftX="64" topLeftY="228" width="28" height="20">
+      <content textType="body" fontSize="13" color="rgba(0,212,255,1)" bold="true" wrap="false">
+        <p>02</p>
+      </content>
+    </shape>
+    <shape type="text" topLeftX="100" topLeftY="228" width="340" height="20">
+      <content textType="body" fontSize="13" color="rgba(255,255,255,1)" bold="true" wrap="false">
+        <p>后台无感运行</p>
+      </content>
+    </shape>
+    <shape type="text" topLeftX="100" topLeftY="250" width="340" height="20">
+      <content textType="caption" fontSize="11" color="rgba(100,116,139,1)" wrap="false">
+        <p>屏幕外最小化(-10000,0)保持渲染，SendMessageW后台点击</p>
+      </content>
+    </shape>
+    <shape type="text" topLeftX="64" topLeftY="280" width="28" height="20">
+      <content textType="body" fontSize="13" color="rgba(0,212,255,1)" bold="true" wrap="false">
+        <p>03</p>
+      </content>
+    </shape>
+    <shape type="text" topLeftX="100" topLeftY="280" width="340" height="20">
+      <content textType="body" fontSize="13" color="rgba(255,255,255,1)" bold="true" wrap="false">
+        <p>三重截图链路兜底</p>
+      </content>
+    </shape>
+    <shape type="text" topLeftX="100" topLeftY="302" width="340" height="20">
+      <content textType="caption" fontSize="11" color="rgba(100,116,139,1)" wrap="false">
+        <p>PrintWindow(flags=3) → BitBlt → 全屏兜底，逐级降级</p>
+      </content>
+    </shape>
+    <shape type="text" topLeftX="64" topLeftY="332" width="28" height="20">
+      <content textType="body" fontSize="13" color="rgba(0,212,255,1)" bold="true" wrap="false">
+        <p>04</p>
+      </content>
+    </shape>
+    <shape type="text" topLeftX="100" topLeftY="332" width="340" height="20">
+      <content textType="body" fontSize="13" color="rgba(255,255,255,1)" bold="true" wrap="false">
+        <p>渲染健康度校验</p>
+      </content>
+    </shape>
+    <shape type="text" topLeftX="100" topLeftY="354" width="340" height="20">
+      <content textType="caption" fontSize="11" color="rgba(100,116,139,1)" wrap="false">
+        <p>局部方差快筛半渲染/黑图，两帧一致性拦截加载中帧</p>
+      </content>
+    </shape>
+    <shape type="text" topLeftX="520" topLeftY="176" width="28" height="20">
+      <content textType="body" fontSize="13" color="rgba(168,85,247,1)" bold="true" wrap="false">
+        <p>01</p>
+      </content>
+    </shape>
+    <shape type="text" topLeftX="556" topLeftY="176" width="340" height="20">
+      <content textType="body" fontSize="13" color="rgba(255,255,255,1)" bold="true" wrap="false">
+        <p>PaddleOCR 中英混合识别</p>
+      </content>
+    </shape>
+    <shape type="text" topLeftX="556" topLeftY="198" width="340" height="20">
+      <content textType="caption" fontSize="11" color="rgba(100,116,139,1)" wrap="false">
+        <p>支持中文/英文/数字/符号，收发方区分率90%+</p>
+      </content>
+    </shape>
+    <shape type="text" topLeftX="520" topLeftY="228" width="28" height="20">
+      <content textType="body" fontSize="13" color="rgba(168,85,247,1)" bold="true" wrap="false">
+        <p>02</p>
+      </content>
+    </shape>
+    <shape type="text" topLeftX="556" topLeftY="228" width="340" height="20">
+      <content textType="body" fontSize="13" color="rgba(255,255,255,1)" bold="true" wrap="false">
+        <p>帧差异检测 + pHash去重</p>
+      </content>
+    </shape>
+    <shape type="text" topLeftX="556" topLeftY="250" width="340" height="20">
+      <content textType="caption" fontSize="11" color="rgba(100,116,139,1)" wrap="false">
+        <p>画面静止跳过OCR，CPU占用降低70%+</p>
+      </content>
+    </shape>
+    <shape type="text" topLeftX="520" topLeftY="280" width="28" height="20">
+      <content textType="body" fontSize="13" color="rgba(168,85,247,1)" bold="true" wrap="false">
+        <p>03</p>
+      </content>
+    </shape>
+    <shape type="text" topLeftX="556" topLeftY="280" width="340" height="20">
+      <content textType="body" fontSize="13" color="rgba(255,255,255,1)" bold="true" wrap="false">
+        <p>模糊帧过滤</p>
+      </content>
+    </shape>
+    <shape type="text" topLeftX="556" topLeftY="302" width="340" height="20">
+      <content textType="caption" fontSize="11" color="rgba(100,116,139,1)" wrap="false">
+        <p>Laplacian方差评分，过滤微信动画过渡无效帧</p>
+      </content>
+    </shape>
+    <shape type="text" topLeftX="520" topLeftY="332" width="28" height="20">
+      <content textType="body" fontSize="13" color="rgba(168,85,247,1)" bold="true" wrap="false">
+        <p>04</p>
+      </content>
+    </shape>
+    <shape type="text" topLeftX="556" topLeftY="332" width="340" height="20">
+      <content textType="body" fontSize="13" color="rgba(255,255,255,1)" bold="true" wrap="false">
+        <p>OCR假可用自动降级</p>
+      </content>
+    </shape>
+    <shape type="text" topLeftX="556" topLeftY="354" width="340" height="20">
+      <content textType="caption" fontSize="11" color="rgba(100,116,139,1)" wrap="false">
+        <p>微信内置OCR连续5次空结果，自动降级PaddleOCR</p>
+      </content>
+    </shape>
+    <shape type="rect" topLeftX="64" topLeftY="400" width="832" height="100">
+      <fill>
+        <fillColor color="rgba(0,212,255,0.06)"/>
+      </fill>
+      <border color="rgba(0,212,255,0.2)" width="1"/>
+    </shape>
+    <shape type="text" topLeftX="84" topLeftY="416" width="200" height="20">
+      <content textType="caption" fontSize="11" color="rgba(0,212,255,1)" bold="true" letterSpacing="1" wrap="false">
+        <p>性能指标</p>
+      </content>
+    </shape>
+    <shape type="text" topLeftX="84" topLeftY="440" width="180" height="40">
+      <content textType="title" fontSize="32" color="rgba(255,255,255,1)" bold="true" wrap="false">
+        <p>70%+</p>
+      </content>
+    </shape>
+    <shape type="text" topLeftX="84" topLeftY="478" width="180" height="16">
+      <content textType="caption" fontSize="10" color="rgba(100,116,139,1)" wrap="false">
+        <p>CPU占用降低</p>
+      </content>
+    </shape>
+    <line startX="280" startY="424" endX="280" endY="490">
+      <border color="rgba(30,41,59,1)" width="1"/>
+    </line>
+    <shape type="text" topLeftX="300" topLeftY="440" width="180" height="40">
+      <content textType="title" fontSize="32" color="rgba(255,255,255,1)" bold="true" wrap="false">
+        <p>90%+</p>
+      </content>
+    </shape>
+    <shape type="text" topLeftX="300" topLeftY="478" width="180" height="16">
+      <content textType="caption" fontSize="10" color="rgba(100,116,139,1)" wrap="false">
+        <p>收发方区分准确率</p>
+      </content>
+    </shape>
+    <line startX="500" startY="424" endX="500" endY="490">
+      <border color="rgba(30,41,59,1)" width="1"/>
+    </line>
+    <shape type="text" topLeftX="520" topLeftY="440" width="180" height="40">
+      <content textType="title" fontSize="32" color="rgba(255,255,255,1)" bold="true" wrap="false">
+        <p>3重</p>
+      </content>
+    </shape>
+    <shape type="text" topLeftX="520" topLeftY="478" width="180" height="16">
+      <content textType="caption" fontSize="10" color="rgba(100,116,139,1)" wrap="false">
+        <p>截图链路兜底</p>
+      </content>
+    </shape>
+    <line startX="720" startY="424" endX="720" endY="490">
+      <border color="rgba(30,41,59,1)" width="1"/>
+    </line>
+    <shape type="text" topLeftX="724" topLeftY="440" width="160" height="40">
+      <content textType="title" fontSize="32" color="rgba(255,255,255,1)" bold="true" wrap="false">
+        <p>60s</p>
+      </content>
+    </shape>
+    <shape type="text" topLeftX="724" topLeftY="478" width="160" height="16">
+      <content textType="caption" fontSize="10" color="rgba(100,116,139,1)" wrap="false">
+        <p>联系人冷却保护</p>
+      </content>
+    </shape>
+  </data>
+  <note>
+    <content textType="body">
+      <p>这一页深入讲解智能监控和 OCR 识别的技术细节。左侧是智能消息监控的四大技术：红点双模式检测用模板匹配加 HSV 六特征适配不同环境；后台无感运行通过屏幕外最小化和 SendMessageW 后台点击实现；三重截图链路逐级降级保障稳定性；渲染健康度校验从源头杜绝无效帧。右侧是 OCR 识别的四大技术：PaddleOCR 中英混合识别收发方区分率 90% 以上；帧差异检测加 pHash 去重让 CPU 降低 70%；模糊帧过滤用 Laplacian 方差评分；OCR 假可用自动降级保障识别不空转。底部是四个关键性能指标。</p>
+    </content>
+  </note>
+</slide>

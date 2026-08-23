@@ -1,0 +1,1411 @@
+<presentation id="MLHDsSzBqlRvhodY6iUcNPiRnAb" xmlns="https://www.larkoffice.com/sml/2.0" width="960" height="540">
+  <title>NOYA Chat — 微信消息智能中枢 · 参赛作品</title>
+  <theme>
+    <textStyles>
+      <headline fontColor="rgba(31, 35, 41, 1)"/>
+      <sub-headline fontColor="rgba(31, 35, 41, 1)"/>
+      <body fontColor="rgba(31, 35, 41, 1)"/>
+      <caption fontColor="rgba(155, 158, 162, 1)" fontSize="14"/>
+    </textStyles>
+  </theme>
+  <slide id="pOO">
+    <style>
+      <fill id="fOO">
+        <fillColor color="rgba(10, 14, 26, 1)"/>
+      </fill>
+    </style>
+    <data>
+      <img id="blI" src="Hhs2bpi3HoS12Mx0XwlcRdJSnxe" width="960" height="540" topLeftX="0" topLeftY="0">
+        <crop leftOffset="0" rightOffset="0" topOffset="0" bottomOffset="0"/>
+      </img>
+      <shape width="560" height="540" topLeftX="0" topLeftY="0" presetHandlers="0" type="rect" id="blQ">
+        <fill>
+          <fillColor color="linear-gradient(90deg,rgba(10, 14, 26, 0.98) 0%,rgba(10, 14, 26, 0.85) 50%,rgba(10, 14, 26, 0) 100%)"/>
+        </fill>
+        <content fontSize="16" fontFamily="思源黑体" color="rgba(31, 35, 41, 1)"/>
+      </shape>
+      <shape width="120" height="24" topLeftX="64" topLeftY="120" type="text" id="blz">
+        <content textType="caption" fontSize="12" fontFamily="思源黑体" color="rgba(0, 212, 255, 1)" bold="true" letterSpacing="3" wrap="false">
+          <p>v3.1 参赛作品</p>
+        </content>
+      </shape>
+      <line id="blq" startX="64" startY="156" endX="120.00892785976178" endY="156">
+        <border color="rgba(0, 212, 255, 1)"/>
+      </line>
+      <shape width="480" height="80" topLeftX="64" topLeftY="180" type="text" id="blC">
+        <content textType="title" fontSize="64" fontFamily="思源黑体" color="rgba(255, 255, 255, 1)" bold="true" letterSpacing="2" wrap="false">
+          <p>NOYA Chat</p>
+        </content>
+      </shape>
+      <shape width="480" height="40" topLeftX="64" topLeftY="268" type="text" id="bll">
+        <content textType="headline" fontSize="28" fontFamily="思源黑体" color="rgba(168, 85, 247, 1)" bold="true" letterSpacing="1" wrap="false">
+          <p>微信消息智能中枢</p>
+        </content>
+      </shape>
+      <shape width="440" height="60" topLeftX="64" topLeftY="324" type="text" id="blO">
+        <content fontSize="14" fontFamily="思源黑体" color="rgba(148, 163, 184, 1)" lineSpacing="multiple:1.7">
+          <p>OCR 截图识别 · 大模型语义理解 · 可控自动回复</p>
+          <p>Obsidian 知识库自动沉淀 · 社交关系图谱</p>
+        </content>
+      </shape>
+      <shape width="196" height="36" topLeftX="64" topLeftY="412" type="slides-full-round-rect" id="bln">
+        <fill>
+          <fillColor color="rgba(0, 212, 255, 0.15)"/>
+        </fill>
+        <border color="rgba(0, 212, 255, 1)" width="1"/>
+        <content fontSize="16" fontFamily="思源黑体" color="rgba(31, 35, 41, 1)"/>
+      </shape>
+      <shape width="196" height="36" topLeftX="64" topLeftY="412" type="text" id="bli">
+        <content fontSize="12" fontFamily="思源黑体" color="rgba(0, 212, 255, 1)" bold="true" textAlign="center" wrap="false">
+          <p>Windows 本地运行 · 数据不出域</p>
+        </content>
+      </shape>
+      <shape width="400" height="20" topLeftX="64" topLeftY="492" type="text" id="blv">
+        <content textType="caption" fontSize="10" fontFamily="思源黑体" color="rgba(100, 116, 139, 1)" letterSpacing="1" wrap="false">
+          <p>基于 Python 3.10+ / PaddleOCR / 通义千问 / customtkinter</p>
+        </content>
+      </shape>
+    </data>
+    <note id="blH">
+      <content>
+        <p>各位评委好，今天我带来的项目是 NOYA Chat，一款微信消息智能中枢。它的核心定位是把微信这个信息采集入口和 Obsidian 这个知识沉淀出口连接起来，通过 OCR 截图识别和大模型语义理解，实现消息的自动监控、智能回复、信息抽取和知识库沉淀。所有数据本地运行，不经过第三方服务器，安全可控。</p>
+      </content>
+    </note>
+  </slide>
+  <slide id="pOs">
+    <style>
+      <fill id="fOs">
+        <fillColor color="rgba(10, 14, 26, 1)"/>
+      </fill>
+    </style>
+    <data>
+      <shape width="832" height="32" topLeftX="64" topLeftY="64" type="text" id="blj">
+        <content textType="caption" fontSize="12" fontFamily="思源黑体" color="rgba(0, 212, 255, 1)" bold="true" letterSpacing="3" wrap="false">
+          <p>WHY NOYA CHAT · 核心数据</p>
+        </content>
+      </shape>
+      <shape width="832" height="56" topLeftX="64" topLeftY="100" type="text" id="blr">
+        <content textType="title" fontSize="36" fontFamily="思源黑体" color="rgba(255, 255, 255, 1)" bold="true" letterSpacing="0.5" wrap="false">
+          <p>不是又一个微信机器人，而是你的</p>
+        </content>
+      </shape>
+      <shape width="832" height="56" topLeftX="64" topLeftY="152" type="text" id="blg">
+        <content textType="title" fontSize="36" fontFamily="思源黑体" color="rgba(168, 85, 247, 1)" bold="true" letterSpacing="0.5" wrap="false">
+          <p>个人社交数据操作系统</p>
+        </content>
+      </shape>
+      <line id="blp" startX="64" startY="232" endX="896.0006009613214" endY="232">
+        <border color="rgba(30, 41, 59, 1)" width="1"/>
+      </line>
+      <shape width="200" height="80" topLeftX="64" topLeftY="264" type="text" id="blP">
+        <content textType="title" fontSize="72" fontFamily="思源黑体" color="rgba(0, 212, 255, 1)" bold="true" wrap="false">
+          <p>70%+</p>
+        </content>
+      </shape>
+      <shape width="200" height="24" topLeftX="64" topLeftY="352" type="text" id="blL">
+        <content fontSize="14" fontFamily="思源黑体" color="rgba(255, 255, 255, 1)" bold="true" wrap="false">
+          <p>CPU 占用降低</p>
+        </content>
+      </shape>
+      <shape width="200" height="36" topLeftX="64" topLeftY="378" type="text" id="bls">
+        <content textType="caption" fontSize="11" fontFamily="思源黑体" color="rgba(100, 116, 139, 1)" lineSpacing="multiple:1.4">
+          <p>帧差异检测+pHash去重，静止帧跳过OCR</p>
+        </content>
+      </shape>
+      <line id="blK" startX="288" startY="264" endX="288" endY="420.00320509528">
+        <border color="rgba(30, 41, 59, 1)" width="1"/>
+      </line>
+      <shape width="200" height="80" topLeftX="312" topLeftY="264" type="text" id="blo">
+        <content textType="title" fontSize="72" fontFamily="思源黑体" color="rgba(0, 212, 255, 1)" bold="true" wrap="false">
+          <p>90%+</p>
+        </content>
+      </shape>
+      <shape width="200" height="24" topLeftX="312" topLeftY="352" type="text" id="blU">
+        <content fontSize="14" fontFamily="思源黑体" color="rgba(255, 255, 255, 1)" bold="true" wrap="false">
+          <p>收发方区分准确率</p>
+        </content>
+      </shape>
+      <shape width="200" height="36" topLeftX="312" topLeftY="378" type="text" id="ble">
+        <content textType="caption" fontSize="11" fontFamily="思源黑体" color="rgba(100, 116, 139, 1)" lineSpacing="multiple:1.4">
+          <p>气泡位置+配色+x_center三重判定</p>
+        </content>
+      </shape>
+      <line id="blJ" startX="536" startY="264" endX="536" endY="420.00320509528">
+        <border color="rgba(30, 41, 59, 1)" width="1"/>
+      </line>
+      <shape width="160" height="80" topLeftX="560" topLeftY="264" type="text" id="blx">
+        <content textType="title" fontSize="72" fontFamily="思源黑体" color="rgba(168, 85, 247, 1)" bold="true" wrap="false">
+          <p>0</p>
+        </content>
+      </shape>
+      <shape width="160" height="24" topLeftX="560" topLeftY="352" type="text" id="blw">
+        <content fontSize="14" fontFamily="思源黑体" color="rgba(255, 255, 255, 1)" bold="true" wrap="false">
+          <p>协议逆向</p>
+        </content>
+      </shape>
+      <shape width="180" height="36" topLeftX="560" topLeftY="378" type="text" id="blR">
+        <content textType="caption" fontSize="11" fontFamily="思源黑体" color="rgba(100, 116, 139, 1)" lineSpacing="multiple:1.4">
+          <p>纯屏幕截图OCR方案，合规安全</p>
+        </content>
+      </shape>
+      <line id="blA" startX="744" startY="264" endX="744" endY="420.00320509528">
+        <border color="rgba(30, 41, 59, 1)" width="1"/>
+      </line>
+      <shape width="140" height="80" topLeftX="768" topLeftY="264" type="text" id="blB">
+        <content textType="title" fontSize="72" fontFamily="思源黑体" color="rgba(168, 85, 247, 1)" bold="true" wrap="false">
+          <p>5+</p>
+        </content>
+      </shape>
+      <shape width="140" height="24" topLeftX="768" topLeftY="352" type="text" id="bly">
+        <content fontSize="14" fontFamily="思源黑体" color="rgba(255, 255, 255, 1)" bold="true" wrap="false">
+          <p>AI 赋能能力</p>
+        </content>
+      </shape>
+      <shape width="140" height="36" topLeftX="768" topLeftY="378" type="text" id="blV">
+        <content textType="caption" fontSize="11" fontFamily="思源黑体" color="rgba(100, 116, 139, 1)" lineSpacing="multiple:1.4">
+          <p>摘要/画像/图谱/项目/简报</p>
+        </content>
+      </shape>
+      <shape width="832" height="24" topLeftX="64" topLeftY="472" type="text" id="blN">
+        <content textType="caption" fontSize="11" fontFamily="思源黑体" color="rgba(71, 85, 105, 1)" letterSpacing="0.5" wrap="false">
+          <p>数据基于 Windows 11 / Python 3.10 / PaddleOCR 2.9.1 实测环境 · CPU 降低比例对比全量 OCR 方案</p>
+        </content>
+      </shape>
+    </data>
+    <note id="blW">
+      <content>
+        <p>这一页用四个核心数据说明 NOYA Chat 的差异化价值。第一，帧差异检测让 CPU 占用降低 70% 以上，这是纯工程优化的成果。第二，收发方消息区分准确率超过 90%，通过气泡位置、配色和 x_center 三重判定实现。第三，零协议逆向，我们用的是纯屏幕截图 OCR 方案，不碰微信协议，合规安全。第四，五大 AI 赋能能力，包括会话摘要、联系人画像、社交图谱、项目笔记和每日简报，让微信数据真正变成可复用的知识。NOYA Chat 不是又一个微信机器人，而是你的个人社交数据操作系统。</p>
+      </content>
+    </note>
+  </slide>
+  <slide id="pOl">
+    <style>
+      <fill id="fOl">
+        <fillColor color="rgba(10, 14, 26, 1)"/>
+      </fill>
+    </style>
+    <data>
+      <shape width="500" height="24" topLeftX="64" topLeftY="56" type="text" id="bHL">
+        <content textType="caption" fontSize="12" fontFamily="思源黑体" color="rgba(168, 85, 247, 1)" bold="true" letterSpacing="3" wrap="false">
+          <p>THE PROBLEM · 痛点</p>
+        </content>
+      </shape>
+      <shape width="520" height="56" topLeftX="64" topLeftY="88" type="text" id="bHK">
+        <content textType="title" fontSize="40" fontFamily="思源黑体" color="rgba(255, 255, 255, 1)" bold="true" letterSpacing="0.5" wrap="false">
+          <p>每天 500+ 条消息</p>
+        </content>
+      </shape>
+      <shape width="520" height="56" topLeftX="64" topLeftY="144" type="text" id="bHU">
+        <content textType="title" fontSize="40" fontFamily="思源黑体" color="rgba(0, 212, 255, 1)" bold="true" letterSpacing="0.5" wrap="false">
+          <p>真正记住的不到 5%</p>
+        </content>
+      </shape>
+      <line id="bHe" startX="64" startY="216" endX="200.00367642089677" endY="216">
+        <border color="rgba(168, 85, 247, 1)"/>
+      </line>
+      <shape width="60" height="32" topLeftX="64" topLeftY="236" type="text" id="bHx">
+        <content textType="title" fontSize="24" fontFamily="思源黑体" color="rgba(0, 212, 255, 1)" bold="true" wrap="false">
+          <p>01</p>
+        </content>
+      </shape>
+      <shape width="420" height="24" topLeftX="124" topLeftY="240" type="text" id="bHR">
+        <content fontSize="15" fontFamily="思源黑体" color="rgba(255, 255, 255, 1)" bold="true" wrap="false">
+          <p>消息碎片化，重要信息淹没在闲聊中</p>
+        </content>
+      </shape>
+      <shape width="420" height="20" topLeftX="124" topLeftY="266" type="text" id="bHc">
+        <content textType="caption" fontSize="11" fontFamily="思源黑体" color="rgba(100, 116, 139, 1)" wrap="false">
+          <p>工作任务、客户需求、生活琐事混杂在同一会话流</p>
+        </content>
+      </shape>
+      <shape width="60" height="32" topLeftX="64" topLeftY="300" type="text" id="bHC">
+        <content textType="title" fontSize="24" fontFamily="思源黑体" color="rgba(0, 212, 255, 1)" bold="true" wrap="false">
+          <p>02</p>
+        </content>
+      </shape>
+      <shape width="420" height="24" topLeftX="124" topLeftY="304" type="text" id="bHB">
+        <content fontSize="15" fontFamily="思源黑体" color="rgba(255, 255, 255, 1)" bold="true" wrap="false">
+          <p>待办易遗漏，聊天约定的任务全靠记忆</p>
+        </content>
+      </shape>
+      <shape width="420" height="20" topLeftX="124" topLeftY="330" type="text" id="bHV">
+        <content textType="caption" fontSize="11" fontFamily="思源黑体" color="rgba(100, 116, 139, 1)" wrap="false">
+          <p>截止时间、会议安排没有系统跟踪，遗漏率居高不下</p>
+        </content>
+      </shape>
+      <shape width="60" height="32" topLeftX="64" topLeftY="364" type="text" id="bHY">
+        <content textType="title" fontSize="24" fontFamily="思源黑体" color="rgba(168, 85, 247, 1)" bold="true" wrap="false">
+          <p>03</p>
+        </content>
+      </shape>
+      <shape width="420" height="24" topLeftX="124" topLeftY="368" type="text" id="bHW">
+        <content fontSize="15" fontFamily="思源黑体" color="rgba(255, 255, 255, 1)" bold="true" wrap="false">
+          <p>知识不沉淀，聊天记录封闭在微信生态</p>
+        </content>
+      </shape>
+      <shape width="420" height="20" topLeftX="124" topLeftY="394" type="text" id="bHr">
+        <content textType="caption" fontSize="11" fontFamily="思源黑体" color="rgba(100, 116, 139, 1)" wrap="false">
+          <p>无法检索、无法关联、无法形成个人知识库</p>
+        </content>
+      </shape>
+      <shape width="60" height="32" topLeftX="64" topLeftY="428" type="text" id="bHp">
+        <content textType="title" fontSize="24" fontFamily="思源黑体" color="rgba(168, 85, 247, 1)" bold="true" wrap="false">
+          <p>04</p>
+        </content>
+      </shape>
+      <shape width="420" height="24" topLeftX="124" topLeftY="432" type="text" id="bHX">
+        <content fontSize="15" fontFamily="思源黑体" color="rgba(255, 255, 255, 1)" bold="true" wrap="false">
+          <p>回复效率低，多角色切换消耗大量精力</p>
+        </content>
+      </shape>
+      <shape width="420" height="20" topLeftX="124" topLeftY="458" type="text" id="bHv">
+        <content textType="caption" fontSize="11" fontFamily="思源黑体" color="rgba(100, 116, 139, 1)" wrap="false">
+          <p>不同联系人需要不同沟通风格，重复回复耗费时间</p>
+        </content>
+      </shape>
+      <shape width="280" height="360" topLeftX="620" topLeftY="120" presetHandlers="0" type="rect" id="bHs">
+        <fill>
+          <fillColor color="rgba(15, 23, 42, 1)"/>
+        </fill>
+        <border color="rgba(30, 41, 59, 1)" width="1"/>
+        <content fontSize="16" fontFamily="思源黑体" color="rgba(31, 35, 41, 1)"/>
+      </shape>
+      <shape width="240" height="20" topLeftX="640" topLeftY="140" type="text" id="bHo">
+        <content textType="caption" fontSize="11" fontFamily="思源黑体" color="rgba(148, 163, 184, 1)" letterSpacing="1" wrap="false">
+          <p>信息流失漏斗</p>
+        </content>
+      </shape>
+      <shape width="240" height="48" topLeftX="640" topLeftY="176" presetHandlers="0" type="rect" id="bHb">
+        <fill>
+          <fillColor color="rgba(0, 212, 255, 0.2)"/>
+        </fill>
+        <content fontSize="16" fontFamily="思源黑体" color="rgba(31, 35, 41, 1)"/>
+      </shape>
+      <shape width="100" height="32" topLeftX="656" topLeftY="184" type="text" id="bHq">
+        <content textType="title" fontSize="24" fontFamily="思源黑体" color="rgba(0, 212, 255, 1)" bold="true" wrap="false">
+          <p>100%</p>
+        </content>
+      </shape>
+      <shape width="120" height="20" topLeftX="756" topLeftY="190" type="text" id="bHJ">
+        <content textType="caption" fontSize="10" fontFamily="思源黑体" color="rgba(148, 163, 184, 1)" wrap="false">
+          <p>接收的全部消息</p>
+        </content>
+      </shape>
+      <shape width="180" height="48" topLeftX="670" topLeftY="248" presetHandlers="0" type="rect" id="bHw">
+        <fill>
+          <fillColor color="rgba(0, 212, 255, 0.12)"/>
+        </fill>
+        <content fontSize="16" fontFamily="思源黑体" color="rgba(31, 35, 41, 1)"/>
+      </shape>
+      <shape width="80" height="32" topLeftX="686" topLeftY="256" type="text" id="bHA">
+        <content textType="title" fontSize="24" fontFamily="思源黑体" color="rgba(0, 212, 255, 1)" bold="true" wrap="false">
+          <p>30%</p>
+        </content>
+      </shape>
+      <shape width="80" height="20" topLeftX="766" topLeftY="262" type="text" id="bHy">
+        <content textType="caption" fontSize="10" fontFamily="思源黑体" color="rgba(148, 163, 184, 1)" wrap="false">
+          <p>被认真阅读</p>
+        </content>
+      </shape>
+      <shape width="140" height="48" topLeftX="690" topLeftY="320" presetHandlers="0" type="rect" id="bHN">
+        <fill>
+          <fillColor color="rgba(168, 85, 247, 0.15)"/>
+        </fill>
+        <content fontSize="16" fontFamily="思源黑体" color="rgba(31, 35, 41, 1)"/>
+      </shape>
+      <shape width="60" height="32" topLeftX="706" topLeftY="328" type="text" id="bHj">
+        <content textType="title" fontSize="24" fontFamily="思源黑体" color="rgba(168, 85, 247, 1)" bold="true" wrap="false">
+          <p>5%</p>
+        </content>
+      </shape>
+      <shape width="60" height="20" topLeftX="766" topLeftY="334" type="text" id="bHg">
+        <content textType="caption" fontSize="10" fontFamily="思源黑体" color="rgba(148, 163, 184, 1)" wrap="false">
+          <p>转化为知识</p>
+        </content>
+      </shape>
+      <shape width="240" height="60" topLeftX="640" topLeftY="400" type="text" id="bHP">
+        <content textType="caption" fontSize="10" fontFamily="思源黑体" color="rgba(71, 85, 105, 1)">
+          <p>数据为基于个人使用场景的估算值，用于说明信息流失趋势，非精确统计。</p>
+        </content>
+      </shape>
+    </data>
+    <note id="bHG">
+      <content>
+        <p>我们来看问题。微信已经成为中国人最主要的信息入口，每天 500 条以上消息，但真正能记住并转化为知识的不到 5%。我们总结了四大痛点：消息碎片化，重要信息淹没在闲聊中；待办易遗漏，聊天约定的任务全靠记忆；知识不沉淀，聊天记录封闭在微信生态里无法检索和关联；回复效率低，多角色切换消耗大量精力。右侧的信息流失漏斗直观展示了这个问题的严重性。NOYA Chat 正是为解决这些问题而生。</p>
+      </content>
+    </note>
+  </slide>
+  <slide id="pOr">
+    <style>
+      <fill id="fOr">
+        <fillColor color="rgba(10, 14, 26, 1)"/>
+      </fill>
+    </style>
+    <data>
+      <shape width="500" height="24" topLeftX="64" topLeftY="48" type="text" id="bHO">
+        <content textType="caption" fontSize="12" fontFamily="思源黑体" color="rgba(0, 212, 255, 1)" bold="true" letterSpacing="3" wrap="false">
+          <p>CORE CAPABILITIES · 六大核心能力</p>
+        </content>
+      </shape>
+      <shape width="832" height="40" topLeftX="64" topLeftY="80" type="text" id="blS">
+        <content textType="title" fontSize="30" fontFamily="思源黑体" color="rgba(255, 255, 255, 1)" bold="true" wrap="false">
+          <p>从消息采集到知识沉淀，全链路自动化</p>
+        </content>
+      </shape>
+      <line id="blu" startX="64" startY="136" endX="896.0006009613214" endY="136">
+        <border color="rgba(30, 41, 59, 1)" width="1"/>
+      </line>
+      <shape width="50" height="36" topLeftX="64" topLeftY="160" type="text" id="bHI">
+        <content textType="title" fontSize="28" fontFamily="思源黑体" color="rgba(0, 212, 255, 1)" bold="true" wrap="false">
+          <p>01</p>
+        </content>
+      </shape>
+      <shape width="320" height="24" topLeftX="120" topLeftY="164" type="text" id="blG">
+        <content fontSize="15" fontFamily="思源黑体" color="rgba(255, 255, 255, 1)" bold="true" wrap="false">
+          <p>红点自动检测</p>
+        </content>
+      </shape>
+      <shape width="320" height="36" topLeftX="120" topLeftY="190" type="text" id="blM">
+        <content textType="caption" fontSize="11" fontFamily="思源黑体" color="rgba(100, 116, 139, 1)" lineSpacing="multiple:1.4">
+          <p>模板匹配优先+HSV六特征兜底，后台无感运行，60s联系人冷却</p>
+        </content>
+      </shape>
+      <shape width="50" height="36" topLeftX="500" topLeftY="160" type="text" id="bHl">
+        <content textType="title" fontSize="28" fontFamily="思源黑体" color="rgba(0, 212, 255, 1)" bold="true" wrap="false">
+          <p>02</p>
+        </content>
+      </shape>
+      <shape width="320" height="24" topLeftX="556" topLeftY="164" type="text" id="blE">
+        <content fontSize="15" fontFamily="思源黑体" color="rgba(255, 255, 255, 1)" bold="true" wrap="false">
+          <p>PaddleOCR 文字识别</p>
+        </content>
+      </shape>
+      <shape width="320" height="36" topLeftX="556" topLeftY="190" type="text" id="blT">
+        <content textType="caption" fontSize="11" fontFamily="思源黑体" color="rgba(100, 116, 139, 1)" lineSpacing="multiple:1.4">
+          <p>中英混合识别，收发方区分90%+，帧差异检测CPU降70%</p>
+        </content>
+      </shape>
+      <line id="bHH" startX="64" startY="240" endX="896.0006009613214" endY="240">
+        <border color="rgba(30, 41, 59, 1)" width="1"/>
+      </line>
+      <shape width="50" height="36" topLeftX="64" topLeftY="260" type="text" id="blc">
+        <content textType="title" fontSize="28" fontFamily="思源黑体" color="rgba(168, 85, 247, 1)" bold="true" wrap="false">
+          <p>03</p>
+        </content>
+      </shape>
+      <shape width="320" height="24" topLeftX="120" topLeftY="264" type="text" id="bla">
+        <content fontSize="15" fontFamily="思源黑体" color="rgba(255, 255, 255, 1)" bold="true" wrap="false">
+          <p>AI 智能回复</p>
+        </content>
+      </shape>
+      <shape width="320" height="36" topLeftX="120" topLeftY="290" type="text" id="blf">
+        <content textType="caption" fontSize="11" fontFamily="思源黑体" color="rgba(100, 116, 139, 1)" lineSpacing="multiple:1.4">
+          <p>多角色配置，预览确认模式，双路径防重发，已读闭环校验</p>
+        </content>
+      </shape>
+      <shape width="50" height="36" topLeftX="500" topLeftY="260" type="text" id="bHi">
+        <content textType="title" fontSize="28" fontFamily="思源黑体" color="rgba(168, 85, 247, 1)" bold="true" wrap="false">
+          <p>04</p>
+        </content>
+      </shape>
+      <shape width="320" height="24" topLeftX="556" topLeftY="264" type="text" id="blY">
+        <content fontSize="15" fontFamily="思源黑体" color="rgba(255, 255, 255, 1)" bold="true" wrap="false">
+          <p>AI 信息抽取</p>
+        </content>
+      </shape>
+      <shape width="320" height="36" topLeftX="556" topLeftY="290" type="text" id="blZ">
+        <content textType="caption" fontSize="11" fontFamily="思源黑体" color="rgba(100, 116, 139, 1)" lineSpacing="multiple:1.4">
+          <p>自动分类/待办提取/情绪识别/1-5级紧急度打分，正则自定义规则</p>
+        </content>
+      </shape>
+      <line id="blh" startX="64" startY="340" endX="896.0006009613214" endY="340">
+        <border color="rgba(30, 41, 59, 1)" width="1"/>
+      </line>
+      <shape width="50" height="36" topLeftX="64" topLeftY="360" type="text" id="bHz">
+        <content textType="title" fontSize="28" fontFamily="思源黑体" color="rgba(0, 212, 255, 1)" bold="true" wrap="false">
+          <p>05</p>
+        </content>
+      </shape>
+      <shape width="320" height="24" topLeftX="120" topLeftY="364" type="text" id="blX">
+        <content fontSize="15" fontFamily="思源黑体" color="rgba(255, 255, 255, 1)" bold="true" wrap="false">
+          <p>Obsidian 知识库沉淀</p>
+        </content>
+      </shape>
+      <shape width="320" height="36" topLeftX="120" topLeftY="390" type="text" id="blm">
+        <content textType="caption" fontSize="11" fontFamily="思源黑体" color="rgba(100, 116, 139, 1)" lineSpacing="multiple:1.4">
+          <p>AI会话摘要/联系人画像/社交图谱/项目笔记/每日简报，双同步模式</p>
+        </content>
+      </shape>
+      <shape width="50" height="36" topLeftX="500" topLeftY="360" type="text" id="blF">
+        <content textType="title" fontSize="28" fontFamily="思源黑体" color="rgba(0, 212, 255, 1)" bold="true" wrap="false">
+          <p>06</p>
+        </content>
+      </shape>
+      <shape width="320" height="24" topLeftX="556" topLeftY="364" type="text" id="bHn">
+        <content fontSize="15" fontFamily="思源黑体" color="rgba(255, 255, 255, 1)" bold="true" wrap="false">
+          <p>工程化交付</p>
+        </content>
+      </shape>
+      <shape width="320" height="36" topLeftX="556" topLeftY="390" type="text" id="blb">
+        <content textType="caption" fontSize="11" fontFamily="思源黑体" color="rgba(100, 116, 139, 1)" lineSpacing="multiple:1.4">
+          <p>Ctrl+T全局快捷键一键启停，已打包Windows EXE，SQLite持久化</p>
+        </content>
+      </shape>
+      <line id="blD" startX="64" startY="440" endX="896.0006009613214" endY="440">
+        <border color="rgba(30, 41, 59, 1)" width="1"/>
+      </line>
+      <shape width="832" height="48" topLeftX="64" topLeftY="464" presetHandlers="0" type="rect" id="bld">
+        <fill>
+          <fillColor color="rgba(0, 212, 255, 0.08)"/>
+        </fill>
+        <border color="rgba(0, 212, 255, 0.3)" width="1"/>
+        <content fontSize="16" fontFamily="思源黑体" color="rgba(31, 35, 41, 1)"/>
+      </shape>
+      <shape width="800" height="20" topLeftX="84" topLeftY="472" type="text" id="bHQ">
+        <content fontSize="13" fontFamily="思源黑体" color="rgba(0, 212, 255, 1)" bold="true" wrap="false">
+          <p>全链路闭环：红点检测 → 截图采集 → OCR识别 → AI理解 → 智能回复 → 信息抽取 → Obsidian沉淀</p>
+        </content>
+      </shape>
+      <shape width="800" height="16" topLeftX="84" topLeftY="494" type="text" id="blt">
+        <content textType="caption" fontSize="10" fontFamily="思源黑体" color="rgba(100, 116, 139, 1)" wrap="false">
+          <p>全部数据本地存储，不经过第三方服务器 · 非微信协议逆向，纯屏幕截图OCR方案</p>
+        </content>
+      </shape>
+    </data>
+    <note id="blk">
+      <content>
+        <p>这一页是 NOYA Chat 的六大核心能力。第一，红点自动检测，用模板匹配加 HSV 六特征实现后台无感运行。第二，PaddleOCR 文字识别，中英混合，收发方区分准确率 90% 以上。第三，AI 智能回复，支持多角色配置，默认预览确认模式，双路径防重发。第四，AI 信息抽取，自动分类、待办提取、情绪识别和紧急度打分。第五，Obsidian 知识库沉淀，五大 AI 赋能能力让微信数据变成可复用知识。第六，工程化交付，全局快捷键、EXE 打包、SQLite 持久化。这六个能力构成了从消息采集到知识沉淀的完整闭环。</p>
+      </content>
+    </note>
+  </slide>
+  <slide id="pOM">
+    <style>
+      <fill id="fOM">
+        <fillColor color="rgba(10, 14, 26, 1)"/>
+      </fill>
+    </style>
+    <data>
+      <shape width="500" height="24" topLeftX="64" topLeftY="40" type="text" id="bHk">
+        <content textType="caption" fontSize="12" fontFamily="思源黑体" color="rgba(168, 85, 247, 1)" bold="true" letterSpacing="3" wrap="false">
+          <p>SYSTEM ARCHITECTURE · 系统架构</p>
+        </content>
+      </shape>
+      <shape width="832" height="36" topLeftX="64" topLeftY="72" type="text" id="bHh">
+        <content textType="title" fontSize="28" fontFamily="思源黑体" color="rgba(255, 255, 255, 1)" bold="true" wrap="false">
+          <p>四层架构，从 GUI 到数据持久化的完整链路</p>
+        </content>
+      </shape>
+      <shape width="720" height="64" topLeftX="120" topLeftY="124" presetHandlers="0" type="rect" id="bOI">
+        <fill>
+          <fillColor color="rgba(0, 212, 255, 0.12)"/>
+        </fill>
+        <border color="rgba(0, 212, 255, 0.5)" width="1"/>
+        <content fontSize="16" fontFamily="思源黑体" color="rgba(31, 35, 41, 1)"/>
+      </shape>
+      <shape width="120" height="20" topLeftX="140" topLeftY="134" type="text" id="bHt">
+        <content textType="caption" fontSize="11" fontFamily="思源黑体" color="rgba(0, 212, 255, 1)" bold="true" letterSpacing="1" wrap="false">
+          <p>UI 层</p>
+        </content>
+      </shape>
+      <shape width="680" height="24" topLeftX="140" topLeftY="156" type="text" id="bHm">
+        <content fontSize="13" fontFamily="思源黑体" color="rgba(226, 232, 240, 1)" wrap="false">
+          <p>customtkinter 现代化 GUI · 监控面板 / 回复设置 / 系统配置 / 数据检索 / 统计面板</p>
+        </content>
+      </shape>
+      <line id="bHD" startX="480" startY="188" endX="480" endY="204.0312195418814">
+        <border color="rgba(100, 116, 139, 1)" width="1"/>
+        <endArrow type="arrow"/>
+      </line>
+      <shape width="720" height="72" topLeftX="120" topLeftY="204" presetHandlers="0" type="rect" id="bHf">
+        <fill>
+          <fillColor color="rgba(168, 85, 247, 0.1)"/>
+        </fill>
+        <border color="rgba(168, 85, 247, 0.4)" width="1"/>
+        <content fontSize="16" fontFamily="思源黑体" color="rgba(31, 35, 41, 1)"/>
+      </shape>
+      <shape width="160" height="20" topLeftX="140" topLeftY="214" type="text" id="bOO">
+        <content textType="caption" fontSize="11" fontFamily="思源黑体" color="rgba(168, 85, 247, 1)" bold="true" letterSpacing="1" wrap="false">
+          <p>核心引擎层</p>
+        </content>
+      </shape>
+      <shape width="680" height="32" topLeftX="140" topLeftY="236" type="text" id="bHE">
+        <content fontSize="12" fontFamily="思源黑体" color="rgba(203, 213, 225, 1)">
+          <p>WeChatEngine 主控 · 红点监控器（模板匹配+HSV六特征） · 消息解析器（收发方区分/去重）</p>
+          <p>智能帧监测（增量帧+pHash） · AI训练引擎 · 窗口管理器（屏幕外自愈）</p>
+        </content>
+      </shape>
+      <line id="bHM" startX="480.00000000000006" startY="276" endX="480.00000000000006" endY="292.0312195418814">
+        <border color="rgba(100, 116, 139, 1)" width="1"/>
+        <endArrow type="arrow"/>
+      </line>
+      <shape width="720" height="72" topLeftX="120" topLeftY="292" presetHandlers="0" type="rect" id="bHd">
+        <fill>
+          <fillColor color="rgba(0, 212, 255, 0.08)"/>
+        </fill>
+        <border color="rgba(0, 212, 255, 0.3)" width="1"/>
+        <content fontSize="16" fontFamily="思源黑体" color="rgba(31, 35, 41, 1)"/>
+      </shape>
+      <shape width="160" height="20" topLeftX="140" topLeftY="302" type="text" id="bOH">
+        <content textType="caption" fontSize="11" fontFamily="思源黑体" color="rgba(0, 212, 255, 1)" bold="true" letterSpacing="1" wrap="false">
+          <p>识别能力层</p>
+        </content>
+      </shape>
+      <shape width="680" height="32" topLeftX="140" topLeftY="324" type="text" id="bHZ">
+        <content fontSize="12" fontFamily="思源黑体" color="rgba(203, 213, 225, 1)">
+          <p>截图模块（PrintWindow→BitBlt→全屏 三重链路） · OCR引擎（PaddleOCR+微信内置 双引擎）</p>
+          <p>LLM客户端（通义千问 Qwen3.7-Flash） · 信息抽取器（分类/待办/情绪/正则）</p>
+        </content>
+      </shape>
+      <line id="bHa" startX="480" startY="364" endX="480" endY="380.0312195418814">
+        <border color="rgba(100, 116, 139, 1)" width="1"/>
+        <endArrow type="arrow"/>
+      </line>
+      <shape width="720" height="56" topLeftX="120" topLeftY="380" presetHandlers="0" type="rect" id="bHu">
+        <fill>
+          <fillColor color="rgba(168, 85, 247, 0.12)"/>
+        </fill>
+        <border color="rgba(168, 85, 247, 0.5)" width="1"/>
+        <content fontSize="16" fontFamily="思源黑体" color="rgba(31, 35, 41, 1)"/>
+      </shape>
+      <shape width="160" height="20" topLeftX="140" topLeftY="390" type="text" id="bHF">
+        <content textType="caption" fontSize="11" fontFamily="思源黑体" color="rgba(168, 85, 247, 1)" bold="true" letterSpacing="1" wrap="false">
+          <p>数据持久层</p>
+        </content>
+      </shape>
+      <shape width="680" height="20" topLeftX="140" topLeftY="410" type="text" id="bOl">
+        <content fontSize="13" fontFamily="思源黑体" color="rgba(226, 232, 240, 1)" wrap="false">
+          <p>SQLite 消息数据库 · JSON / CSV 多格式导出 · Obsidian 知识库（文件直写 / REST API 双模式）</p>
+        </content>
+      </shape>
+      <shape width="832" height="48" topLeftX="64" topLeftY="464" type="text" id="bHS">
+        <content textType="caption" fontSize="10" fontFamily="思源黑体" color="rgba(71, 85, 105, 1)" lineSpacing="multiple:1.6">
+          <p>关键设计决策：最小化=移至屏幕外(-10000,0)保持渲染 · SendMessageW 后台点击不抢占焦点 · 红点6特征检测(颜色/面积/圆度/位置/白字/排序)</p>
+          <p>已处理联系人60s冷却 · UI窗口标题不含&quot;微信&quot;避免自识别 · config.yaml 已 gitignore 防止 API Key 泄露</p>
+        </content>
+      </shape>
+    </data>
+    <note id="bHT">
+      <content>
+        <p>系统采用经典的四层架构。最上层是基于 customtkinter 的 GUI 界面，提供五大功能面板。第二层是核心引擎 WeChatEngine，包含红点监控、消息解析、智能帧监测、AI 训练和窗口管理五大模块。第三层是识别能力层，截图模块采用三重链路兜底，OCR 支持 PaddleOCR 和微信内置双引擎，LLM 接入通义千问。最底层是数据持久层，SQLite 存储消息，支持 JSON/CSV 导出，并同步到 Obsidian 知识库。关键设计决策包括屏幕外最小化保持渲染、SendMessageW 后台点击、红点六特征检测等。</p>
+      </content>
+    </note>
+  </slide>
+  <slide id="pOj">
+    <style>
+      <fill id="fOj">
+        <fillColor color="rgba(10, 14, 26, 1)"/>
+      </fill>
+    </style>
+    <data>
+      <shape width="500" height="24" topLeftX="64" topLeftY="40" type="text" id="bIH">
+        <content textType="caption" fontSize="12" fontFamily="思源黑体" color="rgba(0, 212, 255, 1)" bold="true" letterSpacing="3" wrap="false">
+          <p>TECH HIGHLIGHTS 01 · 智能监控与 OCR</p>
+        </content>
+      </shape>
+      <shape width="832" height="36" topLeftX="64" topLeftY="72" type="text" id="bIq">
+        <content textType="title" fontSize="28" fontFamily="思源黑体" color="rgba(255, 255, 255, 1)" bold="true" wrap="false">
+          <p>后台无感运行，帧差异检测让 CPU 降低 70%+</p>
+        </content>
+      </shape>
+      <line id="bIJ" startX="64" startY="124" endX="440.0013297848825" endY="124">
+        <border color="rgba(0, 212, 255, 0.3)" width="1"/>
+      </line>
+      <line id="bIw" startX="520" startY="124" endX="896.0013297848825" endY="124">
+        <border color="rgba(168, 85, 247, 0.3)" width="1"/>
+      </line>
+      <shape width="200" height="24" topLeftX="64" topLeftY="140" type="text" id="bOu">
+        <content fontSize="16" fontFamily="思源黑体" color="rgba(0, 212, 255, 1)" bold="true" wrap="false">
+          <p>智能消息监控</p>
+        </content>
+      </shape>
+      <shape width="200" height="24" topLeftX="520" topLeftY="140" type="text" id="bIl">
+        <content fontSize="16" fontFamily="思源黑体" color="rgba(168, 85, 247, 1)" bold="true" wrap="false">
+          <p>OCR 文字识别</p>
+        </content>
+      </shape>
+      <shape width="28" height="20" topLeftX="64" topLeftY="176" type="text" id="bIv">
+        <content fontSize="13" fontFamily="思源黑体" color="rgba(0, 212, 255, 1)" bold="true" wrap="false">
+          <p>01</p>
+        </content>
+      </shape>
+      <shape width="340" height="20" topLeftX="100" topLeftY="176" type="text" id="bIs">
+        <content fontSize="13" fontFamily="思源黑体" color="rgba(255, 255, 255, 1)" bold="true" wrap="false">
+          <p>红点双模式检测</p>
+        </content>
+      </shape>
+      <shape width="340" height="20" topLeftX="100" topLeftY="198" type="text" id="bIo">
+        <content textType="caption" fontSize="11" fontFamily="思源黑体" color="rgba(100, 116, 139, 1)" wrap="false">
+          <p>模板匹配优先 + HSV六特征兜底，适配不同DPI和主题</p>
+        </content>
+      </shape>
+      <shape width="28" height="20" topLeftX="64" topLeftY="228" type="text" id="bOS">
+        <content fontSize="13" fontFamily="思源黑体" color="rgba(0, 212, 255, 1)" bold="true" wrap="false">
+          <p>02</p>
+        </content>
+      </shape>
+      <shape width="340" height="20" topLeftX="100" topLeftY="228" type="text" id="bOk">
+        <content fontSize="13" fontFamily="思源黑体" color="rgba(255, 255, 255, 1)" bold="true" wrap="false">
+          <p>后台无感运行</p>
+        </content>
+      </shape>
+      <shape width="340" height="20" topLeftX="100" topLeftY="250" type="text" id="bII">
+        <content textType="caption" fontSize="11" fontFamily="思源黑体" color="rgba(100, 116, 139, 1)" wrap="false">
+          <p>屏幕外最小化(-10000,0)保持渲染，SendMessageW后台点击</p>
+        </content>
+      </shape>
+      <shape width="28" height="20" topLeftX="64" topLeftY="280" type="text" id="bIW">
+        <content fontSize="13" fontFamily="思源黑体" color="rgba(0, 212, 255, 1)" bold="true" wrap="false">
+          <p>03</p>
+        </content>
+      </shape>
+      <shape width="340" height="20" topLeftX="100" topLeftY="280" type="text" id="bIr">
+        <content fontSize="13" fontFamily="思源黑体" color="rgba(255, 255, 255, 1)" bold="true" wrap="false">
+          <p>三重截图链路兜底</p>
+        </content>
+      </shape>
+      <shape width="340" height="20" topLeftX="100" topLeftY="302" type="text" id="bIp">
+        <content textType="caption" fontSize="11" fontFamily="思源黑体" color="rgba(100, 116, 139, 1)" wrap="false">
+          <p>PrintWindow(flags=3) → BitBlt → 全屏兜底，逐级降级</p>
+        </content>
+      </shape>
+      <shape width="28" height="20" topLeftX="64" topLeftY="332" type="text" id="bOt">
+        <content fontSize="13" fontFamily="思源黑体" color="rgba(0, 212, 255, 1)" bold="true" wrap="false">
+          <p>04</p>
+        </content>
+      </shape>
+      <shape width="340" height="20" topLeftX="100" topLeftY="332" type="text" id="bOD">
+        <content fontSize="13" fontFamily="思源黑体" color="rgba(255, 255, 255, 1)" bold="true" wrap="false">
+          <p>渲染健康度校验</p>
+        </content>
+      </shape>
+      <shape width="340" height="20" topLeftX="100" topLeftY="354" type="text" id="bIO">
+        <content textType="caption" fontSize="11" fontFamily="思源黑体" color="rgba(100, 116, 139, 1)" wrap="false">
+          <p>局部方差快筛半渲染/黑图，两帧一致性拦截加载中帧</p>
+        </content>
+      </shape>
+      <shape width="28" height="20" topLeftX="520" topLeftY="176" type="text" id="bIC">
+        <content fontSize="13" fontFamily="思源黑体" color="rgba(168, 85, 247, 1)" bold="true" wrap="false">
+          <p>01</p>
+        </content>
+      </shape>
+      <shape width="340" height="20" topLeftX="556" topLeftY="176" type="text" id="bIB">
+        <content fontSize="13" fontFamily="思源黑体" color="rgba(255, 255, 255, 1)" bold="true" wrap="false">
+          <p>PaddleOCR 中英混合识别</p>
+        </content>
+      </shape>
+      <shape width="340" height="20" topLeftX="556" topLeftY="198" type="text" id="bIV">
+        <content textType="caption" fontSize="11" fontFamily="思源黑体" color="rgba(100, 116, 139, 1)" wrap="false">
+          <p>支持中文/英文/数字/符号，收发方区分率90%+</p>
+        </content>
+      </shape>
+      <shape width="28" height="20" topLeftX="520" topLeftY="228" type="text" id="bOm">
+        <content fontSize="13" fontFamily="思源黑体" color="rgba(168, 85, 247, 1)" bold="true" wrap="false">
+          <p>02</p>
+        </content>
+      </shape>
+      <shape width="340" height="20" topLeftX="556" topLeftY="228" type="text" id="bOd">
+        <content fontSize="13" fontFamily="思源黑体" color="rgba(255, 255, 255, 1)" bold="true" wrap="false">
+          <p>帧差异检测 + pHash去重</p>
+        </content>
+      </shape>
+      <shape width="340" height="20" topLeftX="556" topLeftY="250" type="text" id="bIQ">
+        <content textType="caption" fontSize="11" fontFamily="思源黑体" color="rgba(100, 116, 139, 1)" wrap="false">
+          <p>画面静止跳过OCR，CPU占用降低70%+</p>
+        </content>
+      </shape>
+      <shape width="28" height="20" topLeftX="520" topLeftY="280" type="text" id="bIe">
+        <content fontSize="13" fontFamily="思源黑体" color="rgba(168, 85, 247, 1)" bold="true" wrap="false">
+          <p>03</p>
+        </content>
+      </shape>
+      <shape width="340" height="20" topLeftX="556" topLeftY="280" type="text" id="bIx">
+        <content fontSize="13" fontFamily="思源黑体" color="rgba(255, 255, 255, 1)" bold="true" wrap="false">
+          <p>模糊帧过滤</p>
+        </content>
+      </shape>
+      <shape width="340" height="20" topLeftX="556" topLeftY="302" type="text" id="bIR">
+        <content textType="caption" fontSize="11" fontFamily="思源黑体" color="rgba(100, 116, 139, 1)" wrap="false">
+          <p>Laplacian方差评分，过滤微信动画过渡无效帧</p>
+        </content>
+      </shape>
+      <shape width="28" height="20" topLeftX="520" topLeftY="332" type="text" id="bOZ">
+        <content fontSize="13" fontFamily="思源黑体" color="rgba(168, 85, 247, 1)" bold="true" wrap="false">
+          <p>04</p>
+        </content>
+      </shape>
+      <shape width="340" height="20" topLeftX="556" topLeftY="332" type="text" id="bOF">
+        <content fontSize="13" fontFamily="思源黑体" color="rgba(255, 255, 255, 1)" bold="true" wrap="false">
+          <p>OCR假可用自动降级</p>
+        </content>
+      </shape>
+      <shape width="340" height="20" topLeftX="556" topLeftY="354" type="text" id="bIn">
+        <content textType="caption" fontSize="11" fontFamily="思源黑体" color="rgba(100, 116, 139, 1)" wrap="false">
+          <p>微信内置OCR连续5次空结果，自动降级PaddleOCR</p>
+        </content>
+      </shape>
+      <shape width="832" height="100" topLeftX="64" topLeftY="400" presetHandlers="0" type="rect" id="bIL">
+        <fill>
+          <fillColor color="rgba(0, 212, 255, 0.06)"/>
+        </fill>
+        <border color="rgba(0, 212, 255, 0.2)" width="1"/>
+        <content fontSize="16" fontFamily="思源黑体" color="rgba(31, 35, 41, 1)"/>
+      </shape>
+      <shape width="200" height="20" topLeftX="84" topLeftY="416" type="text" id="bIK">
+        <content textType="caption" fontSize="11" fontFamily="思源黑体" color="rgba(0, 212, 255, 1)" bold="true" letterSpacing="1" wrap="false">
+          <p>性能指标</p>
+        </content>
+      </shape>
+      <shape width="180" height="40" topLeftX="84" topLeftY="440" type="text" id="bIU">
+        <content textType="title" fontSize="32" fontFamily="思源黑体" color="rgba(255, 255, 255, 1)" bold="true" wrap="false">
+          <p>70%+</p>
+        </content>
+      </shape>
+      <shape width="180" height="16" topLeftX="84" topLeftY="478" type="text" id="bOT">
+        <content textType="caption" fontSize="10" fontFamily="思源黑体" color="rgba(100, 116, 139, 1)" wrap="false">
+          <p>CPU占用降低</p>
+        </content>
+      </shape>
+      <line id="bOa" startX="280.00000000000006" startY="424" endX="280.00000000000006" endY="490.007575322837">
+        <border color="rgba(30, 41, 59, 1)" width="1"/>
+      </line>
+      <shape width="180" height="40" topLeftX="300" topLeftY="440" type="text" id="bOh">
+        <content textType="title" fontSize="32" fontFamily="思源黑体" color="rgba(255, 255, 255, 1)" bold="true" wrap="false">
+          <p>90%+</p>
+        </content>
+      </shape>
+      <shape width="180" height="16" topLeftX="300" topLeftY="478" type="text" id="bIz">
+        <content textType="caption" fontSize="10" fontFamily="思源黑体" color="rgba(100, 116, 139, 1)" wrap="false">
+          <p>收发方区分准确率</p>
+        </content>
+      </shape>
+      <line id="bIj" startX="500" startY="424" endX="500" endY="490.007575322837">
+        <border color="rgba(30, 41, 59, 1)" width="1"/>
+      </line>
+      <shape width="180" height="40" topLeftX="520" topLeftY="440" type="text" id="bIg">
+        <content textType="title" fontSize="32" fontFamily="思源黑体" color="rgba(255, 255, 255, 1)" bold="true" wrap="false">
+          <p>3重</p>
+        </content>
+      </shape>
+      <shape width="180" height="16" topLeftX="520" topLeftY="478" type="text" id="bOf">
+        <content textType="caption" fontSize="10" fontFamily="思源黑体" color="rgba(100, 116, 139, 1)" wrap="false">
+          <p>截图链路兜底</p>
+        </content>
+      </shape>
+      <line id="bIi" startX="720" startY="424" endX="720" endY="490.007575322837">
+        <border color="rgba(30, 41, 59, 1)" width="1"/>
+      </line>
+      <shape width="160" height="40" topLeftX="724" topLeftY="440" type="text" id="bIA">
+        <content textType="title" fontSize="32" fontFamily="思源黑体" color="rgba(255, 255, 255, 1)" bold="true" wrap="false">
+          <p>60s</p>
+        </content>
+      </shape>
+      <shape width="160" height="16" topLeftX="724" topLeftY="478" type="text" id="bIy">
+        <content textType="caption" fontSize="10" fontFamily="思源黑体" color="rgba(100, 116, 139, 1)" wrap="false">
+          <p>联系人冷却保护</p>
+        </content>
+      </shape>
+    </data>
+    <note id="bOM">
+      <content>
+        <p>这一页深入讲解智能监控和 OCR 识别的技术细节。左侧是智能消息监控的四大技术：红点双模式检测用模板匹配加 HSV 六特征适配不同环境；后台无感运行通过屏幕外最小化和 SendMessageW 后台点击实现；三重截图链路逐级降级保障稳定性；渲染健康度校验从源头杜绝无效帧。右侧是 OCR 识别的四大技术：PaddleOCR 中英混合识别收发方区分率 90% 以上；帧差异检测加 pHash 去重让 CPU 降低 70%；模糊帧过滤用 Laplacian 方差评分；OCR 假可用自动降级保障识别不空转。底部是四个关键性能指标。</p>
+      </content>
+    </note>
+  </slide>
+  <slide id="pOR">
+    <style>
+      <fill id="fOR">
+        <fillColor color="rgba(10, 14, 26, 1)"/>
+      </fill>
+    </style>
+    <data>
+      <shape width="500" height="24" topLeftX="64" topLeftY="40" type="text" id="bnQ">
+        <content textType="caption" fontSize="12" fontFamily="思源黑体" color="rgba(168, 85, 247, 1)" bold="true" letterSpacing="3" wrap="false">
+          <p>TECH HIGHLIGHTS 02 · AI 回复与信息抽取</p>
+        </content>
+      </shape>
+      <shape width="832" height="36" topLeftX="64" topLeftY="72" type="text" id="bne">
+        <content textType="title" fontSize="28" fontFamily="思源黑体" color="rgba(255, 255, 255, 1)" bold="true" wrap="false">
+          <p>多角色人格化回复，AI 自动抽取待办与情绪</p>
+        </content>
+      </shape>
+      <line id="bnx" startX="64" startY="124" endX="440.0013297848825" endY="124">
+        <border color="rgba(168, 85, 247, 0.3)" width="1"/>
+      </line>
+      <line id="bnK" startX="520" startY="124" endX="896.0013297848825" endY="124">
+        <border color="rgba(0, 212, 255, 0.3)" width="1"/>
+      </line>
+      <shape width="200" height="24" topLeftX="64" topLeftY="140" type="text" id="bIm">
+        <content fontSize="16" fontFamily="思源黑体" color="rgba(168, 85, 247, 1)" bold="true" wrap="false">
+          <p>AI 智能回复</p>
+        </content>
+      </shape>
+      <shape width="200" height="24" topLeftX="520" topLeftY="140" type="text" id="bId">
+        <content fontSize="16" fontFamily="思源黑体" color="rgba(0, 212, 255, 1)" bold="true" wrap="false">
+          <p>AI 信息抽取</p>
+        </content>
+      </shape>
+      <shape width="28" height="20" topLeftX="64" topLeftY="176" type="text" id="bnn">
+        <content fontSize="13" fontFamily="思源黑体" color="rgba(168, 85, 247, 1)" bold="true" wrap="false">
+          <p>01</p>
+        </content>
+      </shape>
+      <shape width="340" height="20" topLeftX="100" topLeftY="176" type="text" id="bnL">
+        <content fontSize="13" fontFamily="思源黑体" color="rgba(255, 255, 255, 1)" bold="true" wrap="false">
+          <p>多角色配置</p>
+        </content>
+      </shape>
+      <shape width="340" height="20" topLeftX="100" topLeftY="198" type="text" id="bng">
+        <content textType="caption" fontSize="11" fontFamily="思源黑体" color="rgba(100, 116, 139, 1)" wrap="false">
+          <p>技术顾问/商务伙伴/好友/段子手，按联系人独立设定</p>
+        </content>
+      </shape>
+      <shape width="28" height="20" topLeftX="64" topLeftY="228" type="text" id="bIa">
+        <content fontSize="13" fontFamily="思源黑体" color="rgba(168, 85, 247, 1)" bold="true" wrap="false">
+          <p>02</p>
+        </content>
+      </shape>
+      <shape width="340" height="20" topLeftX="100" topLeftY="228" type="text" id="bIF">
+        <content fontSize="13" fontFamily="思源黑体" color="rgba(255, 255, 255, 1)" bold="true" wrap="false">
+          <p>预览确认模式</p>
+        </content>
+      </shape>
+      <shape width="340" height="20" topLeftX="100" topLeftY="250" type="text" id="bnz">
+        <content textType="caption" fontSize="11" fontFamily="思源黑体" color="rgba(100, 116, 139, 1)" wrap="false">
+          <p>AI生成回复粘贴输入框，人工确认后发送，规避风险</p>
+        </content>
+      </shape>
+      <shape width="28" height="20" topLeftX="64" topLeftY="280" type="text" id="bnj">
+        <content fontSize="13" fontFamily="思源黑体" color="rgba(168, 85, 247, 1)" bold="true" wrap="false">
+          <p>03</p>
+        </content>
+      </shape>
+      <shape width="340" height="20" topLeftX="100" topLeftY="280" type="text" id="bny">
+        <content fontSize="13" fontFamily="思源黑体" color="rgba(255, 255, 255, 1)" bold="true" wrap="false">
+          <p>双路径防重发</p>
+        </content>
+      </shape>
+      <shape width="340" height="20" topLeftX="100" topLeftY="302" type="text" id="bIT">
+        <content textType="caption" fontSize="11" fontFamily="思源黑体" color="rgba(100, 116, 139, 1)" wrap="false">
+          <p>轮询+红点共享回复指纹(contact|content md5)，绝不重复</p>
+        </content>
+      </shape>
+      <shape width="28" height="20" topLeftX="64" topLeftY="332" type="text" id="bIh">
+        <content fontSize="13" fontFamily="思源黑体" color="rgba(168, 85, 247, 1)" bold="true" wrap="false">
+          <p>04</p>
+        </content>
+      </shape>
+      <shape width="340" height="20" topLeftX="100" topLeftY="332" type="text" id="bni">
+        <content fontSize="13" fontFamily="思源黑体" color="rgba(255, 255, 255, 1)" bold="true" wrap="false">
+          <p>聚合回复 + 已读闭环</p>
+        </content>
+      </shape>
+      <shape width="340" height="36" topLeftX="100" topLeftY="354" type="text" id="bnA">
+        <content textType="caption" fontSize="11" fontFamily="思源黑体" color="rgba(100, 116, 139, 1)" lineSpacing="multiple:1.4">
+          <p>短时间多条消息合并一次LLM回复，避免逐条轰炸；发送后重截OCR校验我方气泡确认真正送达</p>
+        </content>
+      </shape>
+      <shape width="28" height="20" topLeftX="520" topLeftY="176" type="text" id="bnw">
+        <content fontSize="13" fontFamily="思源黑体" color="rgba(0, 212, 255, 1)" bold="true" wrap="false">
+          <p>01</p>
+        </content>
+      </shape>
+      <shape width="340" height="20" topLeftX="556" topLeftY="176" type="text" id="bIf">
+        <content fontSize="13" fontFamily="思源黑体" color="rgba(255, 255, 255, 1)" bold="true" wrap="false">
+          <p>消息自动分类</p>
+        </content>
+      </shape>
+      <shape width="340" height="20" topLeftX="556" topLeftY="198" type="text" id="bnH">
+        <content textType="caption" fontSize="11" fontFamily="思源黑体" color="rgba(100, 116, 139, 1)" wrap="false">
+          <p>工作/生活/广告/验证码/通知/其他，自动标记</p>
+        </content>
+      </shape>
+      <shape width="28" height="20" topLeftX="520" topLeftY="228" type="text" id="bnq">
+        <content fontSize="13" fontFamily="思源黑体" color="rgba(0, 212, 255, 1)" bold="true" wrap="false">
+          <p>02</p>
+        </content>
+      </shape>
+      <shape width="340" height="20" topLeftX="556" topLeftY="228" type="text" id="bnJ">
+        <content fontSize="13" fontFamily="思源黑体" color="rgba(255, 255, 255, 1)" bold="true" wrap="false">
+          <p>紧急度评级</p>
+        </content>
+      </shape>
+      <shape width="340" height="20" topLeftX="556" topLeftY="250" type="text" id="bno">
+        <content textType="caption" fontSize="11" fontFamily="思源黑体" color="rgba(100, 116, 139, 1)" wrap="false">
+          <p>1-5级紧急度打分，重要消息高亮提醒</p>
+        </content>
+      </shape>
+      <shape width="28" height="20" topLeftX="520" topLeftY="280" type="text" id="bIM">
+        <content fontSize="13" fontFamily="思源黑体" color="rgba(0, 212, 255, 1)" bold="true" wrap="false">
+          <p>03</p>
+        </content>
+      </shape>
+      <shape width="340" height="20" topLeftX="556" topLeftY="280" type="text" id="bnl">
+        <content fontSize="13" fontFamily="思源黑体" color="rgba(255, 255, 255, 1)" bold="true" wrap="false">
+          <p>待办事项提取</p>
+        </content>
+      </shape>
+      <shape width="340" height="20" topLeftX="556" topLeftY="302" type="text" id="bnv">
+        <content textType="caption" fontSize="11" fontFamily="思源黑体" color="rgba(100, 116, 139, 1)" wrap="false">
+          <p>自动识别任务和截止时间，输出Obsidian Tasks格式</p>
+        </content>
+      </shape>
+      <shape width="28" height="20" topLeftX="520" topLeftY="332" type="text" id="bns">
+        <content fontSize="13" fontFamily="思源黑体" color="rgba(0, 212, 255, 1)" bold="true" wrap="false">
+          <p>04</p>
+        </content>
+      </shape>
+      <shape width="340" height="20" topLeftX="556" topLeftY="332" type="text" id="bIu">
+        <content fontSize="13" fontFamily="思源黑体" color="rgba(255, 255, 255, 1)" bold="true" wrap="false">
+          <p>情绪识别 + 自定义规则</p>
+        </content>
+      </shape>
+      <shape width="340" height="36" topLeftX="556" topLeftY="354" type="text" id="bnI">
+        <content textType="caption" fontSize="11" fontFamily="思源黑体" color="rgba(100, 116, 139, 1)" lineSpacing="multiple:1.4">
+          <p>识别积极/中性/消极情绪；支持正则表达式自定义关键词匹配逻辑</p>
+        </content>
+      </shape>
+      <shape width="832" height="88" topLeftX="64" topLeftY="412" presetHandlers="0" type="rect" id="bnW">
+        <fill>
+          <fillColor color="rgba(168, 85, 247, 0.08)"/>
+        </fill>
+        <border color="rgba(168, 85, 247, 0.3)" width="1"/>
+        <content fontSize="16" fontFamily="思源黑体" color="rgba(31, 35, 41, 1)"/>
+      </shape>
+      <shape width="300" height="20" topLeftX="84" topLeftY="424" type="text" id="bnr">
+        <content textType="caption" fontSize="11" fontFamily="思源黑体" color="rgba(168, 85, 247, 1)" bold="true" letterSpacing="1" wrap="false">
+          <p>安全机制</p>
+        </content>
+      </shape>
+      <shape width="380" height="40" topLeftX="84" topLeftY="448" type="text" id="bIk">
+        <content fontSize="12" fontFamily="思源黑体" color="rgba(203, 213, 225, 1)">
+          <p>自动回复默认关闭，推荐预览确认模式</p>
+          <p>LLM调用前后双重校验停止标记</p>
+        </content>
+      </shape>
+      <line id="bnO" startX="480.00000000000006" startY="432" endX="480.00000000000006" endY="484.00961449578335">
+        <border color="rgba(30, 41, 59, 1)" width="1"/>
+      </line>
+      <shape width="300" height="20" topLeftX="500" topLeftY="424" type="text" id="bnC">
+        <content textType="caption" fontSize="11" fontFamily="思源黑体" color="rgba(0, 212, 255, 1)" bold="true" letterSpacing="1" wrap="false">
+          <p>人格化回复</p>
+        </content>
+      </shape>
+      <shape width="380" height="40" topLeftX="500" topLeftY="448" type="text" id="bnB">
+        <content fontSize="12" fontFamily="思源黑体" color="rgba(203, 213, 225, 1)">
+          <p>注入联系人AI画像(身份/关系/风格/亲密度)</p>
+          <p>相关项目上下文，回复贴合你们的关系</p>
+        </content>
+      </shape>
+    </data>
+    <note id="bID">
+      <content>
+        <p>这一页讲解 AI 智能回复和信息抽取两大能力。左侧 AI 智能回复有四大特点：多角色配置支持技术顾问、商务、好友、段子手等风格；预览确认模式让 AI 生成回复后人工确认再发送，规避风险；双路径防重发通过共享回复指纹确保同一消息绝不重复回复；聚合回复加已读闭环避免逐条轰炸并确认真正送达。右侧 AI 信息抽取包括：消息自动分类、1-5 级紧急度评级、待办事项提取输出 Obsidian Tasks 格式、情绪识别加自定义正则规则。底部是安全机制和人格化回复两大亮点。</p>
+      </content>
+    </note>
+  </slide>
+  <slide id="pOA">
+    <style>
+      <fill id="fOA">
+        <fillColor color="rgba(10, 14, 26, 1)"/>
+      </fill>
+    </style>
+    <data>
+      <shape width="500" height="24" topLeftX="64" topLeftY="40" type="text" id="bOw">
+        <content textType="caption" fontSize="12" fontFamily="思源黑体" color="rgba(0, 212, 255, 1)" bold="true" letterSpacing="3" wrap="false">
+          <p>AI EMPOWERMENT · AI 赋能 Obsidian</p>
+        </content>
+      </shape>
+      <shape width="400" height="40" topLeftX="64" topLeftY="72" type="text" id="bOb">
+        <content textType="title" fontSize="30" fontFamily="思源黑体" color="rgba(255, 255, 255, 1)" bold="true" wrap="false">
+          <p>微信数据 → 个人知识库</p>
+        </content>
+      </shape>
+      <shape width="400" height="20" topLeftX="64" topLeftY="116" type="text" id="bOW">
+        <content textType="caption" fontSize="12" fontFamily="思源黑体" color="rgba(100, 116, 139, 1)" wrap="false">
+          <p>双同步模式：文件直写 + REST API，兼容所有Obsidian版本</p>
+        </content>
+      </shape>
+      <line id="bOB" startX="64" startY="156" endX="440.0013297848825" endY="156">
+        <border color="rgba(0, 212, 255, 0.3)" width="1"/>
+      </line>
+      <shape width="40" height="32" topLeftX="64" topLeftY="180" type="text" id="bOo">
+        <content textType="title" fontSize="24" fontFamily="思源黑体" color="rgba(0, 212, 255, 1)" bold="true" wrap="false">
+          <p>01</p>
+        </content>
+      </shape>
+      <shape width="320" height="20" topLeftX="112" topLeftY="184" type="text" id="bOX">
+        <content fontSize="14" fontFamily="思源黑体" color="rgba(255, 255, 255, 1)" bold="true" wrap="false">
+          <p>AI 会话摘要</p>
+        </content>
+      </shape>
+      <shape width="320" height="20" topLeftX="112" topLeftY="206" type="text" id="bOC">
+        <content textType="caption" fontSize="11" fontFamily="思源黑体" color="rgba(100, 116, 139, 1)" wrap="false">
+          <p>每天自动生成对话摘要，关键信息不遗漏</p>
+        </content>
+      </shape>
+      <shape width="40" height="32" topLeftX="64" topLeftY="240" type="text" id="bOJ">
+        <content textType="title" fontSize="24" fontFamily="思源黑体" color="rgba(0, 212, 255, 1)" bold="true" wrap="false">
+          <p>02</p>
+        </content>
+      </shape>
+      <shape width="320" height="20" topLeftX="112" topLeftY="244" type="text" id="bOP">
+        <content fontSize="14" fontFamily="思源黑体" color="rgba(255, 255, 255, 1)" bold="true" wrap="false">
+          <p>联系人画像</p>
+        </content>
+      </shape>
+      <shape width="320" height="20" topLeftX="112" topLeftY="266" type="text" id="bOq">
+        <content textType="caption" fontSize="11" fontFamily="思源黑体" color="rgba(100, 116, 139, 1)" wrap="false">
+          <p>身份/关系/沟通风格/亲密度，四维建模</p>
+        </content>
+      </shape>
+      <shape width="40" height="32" topLeftX="64" topLeftY="300" type="text" id="bOs">
+        <content textType="title" fontSize="24" fontFamily="思源黑体" color="rgba(168, 85, 247, 1)" bold="true" wrap="false">
+          <p>03</p>
+        </content>
+      </shape>
+      <shape width="320" height="20" topLeftX="112" topLeftY="304" type="text" id="bON">
+        <content fontSize="14" fontFamily="思源黑体" color="rgba(255, 255, 255, 1)" bold="true" wrap="false">
+          <p>社交图谱</p>
+        </content>
+      </shape>
+      <shape width="320" height="20" topLeftX="112" topLeftY="326" type="text" id="bOv">
+        <content textType="caption" fontSize="11" fontFamily="思源黑体" color="rgba(100, 116, 139, 1)" wrap="false">
+          <p>联系人关系网络可视化，发现隐藏连接</p>
+        </content>
+      </shape>
+      <shape width="40" height="32" topLeftX="64" topLeftY="360" type="text" id="bOj">
+        <content textType="title" fontSize="24" fontFamily="思源黑体" color="rgba(168, 85, 247, 1)" bold="true" wrap="false">
+          <p>04</p>
+        </content>
+      </shape>
+      <shape width="320" height="20" topLeftX="112" topLeftY="364" type="text" id="bOg">
+        <content fontSize="14" fontFamily="思源黑体" color="rgba(255, 255, 255, 1)" bold="true" wrap="false">
+          <p>项目笔记</p>
+        </content>
+      </shape>
+      <shape width="320" height="20" topLeftX="112" topLeftY="386" type="text" id="bOR">
+        <content textType="caption" fontSize="11" fontFamily="思源黑体" color="rgba(100, 116, 139, 1)" wrap="false">
+          <p>按项目聚合相关对话，上下文自动关联</p>
+        </content>
+      </shape>
+      <shape width="40" height="32" topLeftX="64" topLeftY="420" type="text" id="bOE">
+        <content textType="title" fontSize="24" fontFamily="思源黑体" color="rgba(168, 85, 247, 1)" bold="true" wrap="false">
+          <p>05</p>
+        </content>
+      </shape>
+      <shape width="320" height="20" topLeftX="112" topLeftY="424" type="text" id="bOz">
+        <content fontSize="14" fontFamily="思源黑体" color="rgba(255, 255, 255, 1)" bold="true" wrap="false">
+          <p>每日简报</p>
+        </content>
+      </shape>
+      <shape width="320" height="20" topLeftX="112" topLeftY="446" type="text" id="bOA">
+        <content textType="caption" fontSize="11" fontFamily="思源黑体" color="rgba(100, 116, 139, 1)" wrap="false">
+          <p>汇总当日重要消息、待办和情绪趋势</p>
+        </content>
+      </shape>
+      <shape width="396" height="360" topLeftX="500" topLeftY="120" presetHandlers="0" type="rect" id="bOy">
+        <fill>
+          <fillColor color="rgba(15, 23, 42, 1)"/>
+        </fill>
+        <border color="rgba(30, 41, 59, 1)" width="1"/>
+        <content fontSize="16" fontFamily="思源黑体" color="rgba(31, 35, 41, 1)"/>
+      </shape>
+      <shape width="360" height="20" topLeftX="520" topLeftY="140" type="text" id="bOU">
+        <content textType="caption" fontSize="11" fontFamily="思源黑体" color="rgba(148, 163, 184, 1)" letterSpacing="1" wrap="false">
+          <p>数据流转示意</p>
+        </content>
+      </shape>
+      <shape width="356" height="44" topLeftX="520" topLeftY="176" type="slides-full-round-rect" id="bOG">
+        <fill>
+          <fillColor color="rgba(0, 212, 255, 0.12)"/>
+        </fill>
+        <border color="rgba(0, 212, 255, 0.4)" width="1"/>
+        <content fontSize="16" fontFamily="思源黑体" color="rgba(31, 35, 41, 1)"/>
+      </shape>
+      <shape width="320" height="28" topLeftX="540" topLeftY="184" type="text" id="bOi">
+        <content fontSize="13" fontFamily="思源黑体" color="rgba(0, 212, 255, 1)" bold="true" wrap="false">
+          <p>微信消息流（截图 + OCR）</p>
+        </content>
+      </shape>
+      <line id="bOe" startX="698" startY="220" endX="698" endY="240.0249843945008">
+        <border color="rgba(100, 116, 139, 1)" width="1"/>
+        <endArrow type="arrow"/>
+      </line>
+      <shape width="356" height="44" topLeftX="520" topLeftY="240" type="slides-full-round-rect" id="bOx">
+        <fill>
+          <fillColor color="rgba(168, 85, 247, 0.12)"/>
+        </fill>
+        <border color="rgba(168, 85, 247, 0.4)" width="1"/>
+        <content fontSize="16" fontFamily="思源黑体" color="rgba(31, 35, 41, 1)"/>
+      </shape>
+      <shape width="320" height="28" topLeftX="540" topLeftY="248" type="text" id="bOp">
+        <content fontSize="13" fontFamily="思源黑体" color="rgba(168, 85, 247, 1)" bold="true" wrap="false">
+          <p>AI 理解层（分类/抽取/摘要/画像）</p>
+        </content>
+      </shape>
+      <line id="bOY" startX="698" startY="284" endX="698" endY="304.0249843945008">
+        <border color="rgba(100, 116, 139, 1)" width="1"/>
+        <endArrow type="arrow"/>
+      </line>
+      <shape width="356" height="44" topLeftX="520" topLeftY="304" type="slides-full-round-rect" id="bOQ">
+        <fill>
+          <fillColor color="rgba(0, 212, 255, 0.12)"/>
+        </fill>
+        <border color="rgba(0, 212, 255, 0.4)" width="1"/>
+        <content fontSize="16" fontFamily="思源黑体" color="rgba(31, 35, 41, 1)"/>
+      </shape>
+      <shape width="320" height="28" topLeftX="540" topLeftY="312" type="text" id="bOL">
+        <content fontSize="13" fontFamily="思源黑体" color="rgba(0, 212, 255, 1)" bold="true" wrap="false">
+          <p>结构化数据（SQLite + Markdown）</p>
+        </content>
+      </shape>
+      <line id="bOK" startX="698" startY="348" endX="698" endY="368.0249843945008">
+        <border color="rgba(100, 116, 139, 1)" width="1"/>
+        <endArrow type="arrow"/>
+      </line>
+      <shape width="356" height="44" topLeftX="520" topLeftY="368" type="slides-full-round-rect" id="bOV">
+        <fill>
+          <fillColor color="rgba(168, 85, 247, 0.15)"/>
+        </fill>
+        <border color="rgba(168, 85, 247, 0.5)" width="1"/>
+        <content fontSize="16" fontFamily="思源黑体" color="rgba(31, 35, 41, 1)"/>
+      </shape>
+      <shape width="320" height="28" topLeftX="540" topLeftY="376" type="text" id="bOc">
+        <content fontSize="13" fontFamily="思源黑体" color="rgba(168, 85, 247, 1)" bold="true" wrap="false">
+          <p>Obsidian 知识库（双向链接 + 图谱）</p>
+        </content>
+      </shape>
+      <shape width="356" height="40" topLeftX="520" topLeftY="428" type="text" id="bOn">
+        <content textType="caption" fontSize="10" fontFamily="思源黑体" color="rgba(71, 85, 105, 1)">
+          <p>所有数据本地存储，不经过第三方服务器</p>
+          <p>支持 Obsidian Tasks / Dataview / Graph View 插件</p>
+        </content>
+      </shape>
+    </data>
+    <note id="bOr">
+      <content>
+        <p>这是 NOYA Chat 最有差异化的能力——AI 赋能 Obsidian。五大 AI 能力：第一，AI 会话摘要，每天自动生成对话摘要；第二，联系人画像，从身份、关系、沟通风格、亲密度四个维度建模；第三，社交图谱，可视化联系人关系网络；第四，项目笔记，按项目聚合相关对话自动关联上下文；第五，每日简报，汇总当日重要消息、待办和情绪趋势。右侧是数据流转示意：微信消息流经过截图和 OCR，进入 AI 理解层做分类、抽取、摘要和画像，转化为结构化数据存储在 SQLite 和 Markdown 中，最终同步到 Obsidian 知识库，支持双向链接和图谱视图。所有数据本地存储，不经过第三方服务器。</p>
+      </content>
+    </note>
+  </slide>
+  <slide id="pOE">
+    <style>
+      <fill id="fOE">
+        <fillColor color="rgba(10, 14, 26, 1)"/>
+      </fill>
+    </style>
+    <data>
+      <shape width="500" height="24" topLeftX="64" topLeftY="40" type="text" id="bIX">
+        <content textType="caption" fontSize="12" fontFamily="思源黑体" color="rgba(168, 85, 247, 1)" bold="true" letterSpacing="3" wrap="false">
+          <p>PRODUCT INTERFACE · 产品界面</p>
+        </content>
+      </shape>
+      <shape width="832" height="36" topLeftX="64" topLeftY="72" type="text" id="bIc">
+        <content textType="title" fontSize="28" fontFamily="思源黑体" color="rgba(255, 255, 255, 1)" bold="true" wrap="false">
+          <p>现代化 GUI，五大功能面板一目了然</p>
+        </content>
+      </shape>
+      <line id="bIE" startX="64" startY="120" endX="896.0006009613214" endY="120">
+        <border color="rgba(30, 41, 59, 1)" width="1"/>
+      </line>
+      <img id="bIS" src="SouOblLn7oS1IExC0hDchtrenJb" width="400" height="272" topLeftX="64" topLeftY="144">
+        <crop type="rect" leftOffset="0" rightOffset="0" topOffset="0.9763205828779462" bottomOffset="0.9763205828779746" presetHandlers="8"/>
+        <border color="rgba(30, 41, 59, 1)" width="1"/>
+      </img>
+      <shape width="400" height="20" topLeftX="64" topLeftY="424" type="text" id="bIP">
+        <content fontSize="13" fontFamily="思源黑体" color="rgba(0, 212, 255, 1)" bold="true" wrap="false">
+          <p>监控面板</p>
+        </content>
+      </shape>
+      <shape width="400" height="36" topLeftX="64" topLeftY="446" type="text" id="bIb">
+        <content textType="caption" fontSize="11" fontFamily="思源黑体" color="rgba(100, 116, 139, 1)" lineSpacing="multiple:1.4">
+          <p>实时显示微信窗口状态、红点检测、OCR识别结果和消息日志</p>
+        </content>
+      </shape>
+      <img id="bIY" src="FqSjbfhNyo0LFIxhMXQcCvJInob" width="400" height="272" topLeftX="496" topLeftY="144">
+        <crop type="rect" leftOffset="0" rightOffset="-5.684341886080802e-14" topOffset="0.009732360097302717" bottomOffset="0.009732360097245873" presetHandlers="8"/>
+        <border color="rgba(30, 41, 59, 1)" width="1"/>
+      </img>
+      <shape width="400" height="20" topLeftX="496" topLeftY="424" type="text" id="bIG">
+        <content fontSize="13" fontFamily="思源黑体" color="rgba(168, 85, 247, 1)" bold="true" wrap="false">
+          <p>回复设置面板</p>
+        </content>
+      </shape>
+      <shape width="400" height="36" topLeftX="496" topLeftY="446" type="text" id="bIt">
+        <content textType="caption" fontSize="11" fontFamily="思源黑体" color="rgba(100, 116, 139, 1)" lineSpacing="multiple:1.4">
+          <p>多角色人格配置、AI回复开关、预览确认模式、自动回复规则</p>
+        </content>
+      </shape>
+      <shape width="832" height="20" topLeftX="64" topLeftY="496" type="text" id="bIZ">
+        <content textType="caption" fontSize="10" fontFamily="思源黑体" color="rgba(71, 85, 105, 1)" wrap="false">
+          <p>基于 customtkinter 现代化界面 · 支持深色主题 · 全局快捷键 Ctrl+T 一键启停</p>
+        </content>
+      </shape>
+    </data>
+    <note id="bIN">
+      <content>
+        <p>这一页展示 NOYA Chat 的产品界面。左侧是监控面板，实时显示微信窗口状态、红点检测、OCR 识别结果和消息日志，让用户对系统运行状态一目了然。右侧是回复设置面板，可以配置多角色人格、AI 回复开关、预览确认模式和自动回复规则。整个界面基于 customtkinter 构建，支持深色主题，与系统风格统一。全局快捷键 Ctrl+T 可以一键启停监控，不需要打开窗口就能控制。后续还会加入数据检索和统计面板，让用户可以搜索历史消息和查看使用统计。</p>
+      </content>
+    </note>
+  </slide>
+  <slide id="pOJ">
+    <style>
+      <fill id="fOJ">
+        <fillColor color="rgba(10, 14, 26, 1)"/>
+      </fill>
+    </style>
+    <data>
+      <shape width="500" height="24" topLeftX="64" topLeftY="56" type="text" id="bnE">
+        <content textType="caption" fontSize="12" fontFamily="思源黑体" color="rgba(0, 212, 255, 1)" bold="true" letterSpacing="3" wrap="false">
+          <p>SUMMARY &amp; ROADMAP · 总结与未来规划</p>
+        </content>
+      </shape>
+      <shape width="832" height="56" topLeftX="64" topLeftY="92" type="text" id="bnM">
+        <content textType="title" fontSize="44" fontFamily="思源黑体" color="rgba(255, 255, 255, 1)" bold="true" letterSpacing="0.5" wrap="false">
+          <p>让微信数据</p>
+        </content>
+      </shape>
+      <shape width="832" height="56" topLeftX="64" topLeftY="148" type="text" id="bnd">
+        <content textType="title" fontSize="44" fontFamily="思源黑体" color="rgba(168, 85, 247, 1)" bold="true" letterSpacing="0.5" wrap="false">
+          <p>真正属于你</p>
+        </content>
+      </shape>
+      <line id="bnN" startX="64" startY="224" endX="200.00367642089677" endY="224">
+        <border color="rgba(0, 212, 255, 1)"/>
+      </line>
+      <shape width="200" height="20" topLeftX="64" topLeftY="248" type="text" id="bnt">
+        <content textType="caption" fontSize="11" fontFamily="思源黑体" color="rgba(0, 212, 255, 1)" bold="true" letterSpacing="1" wrap="false">
+          <p>核心价值</p>
+        </content>
+      </shape>
+      <shape width="200" height="20" topLeftX="64" topLeftY="272" type="text" id="bnD">
+        <content fontSize="13" fontFamily="思源黑体" color="rgba(255, 255, 255, 1)" bold="true" wrap="false">
+          <p>零协议逆向</p>
+        </content>
+      </shape>
+      <shape width="200" height="16" topLeftX="64" topLeftY="294" type="text" id="bnf">
+        <content textType="caption" fontSize="10" fontFamily="思源黑体" color="rgba(100, 116, 139, 1)" wrap="false">
+          <p>纯截图OCR，合规安全</p>
+        </content>
+      </shape>
+      <shape width="200" height="20" topLeftX="64" topLeftY="320" type="text" id="bnP">
+        <content fontSize="13" fontFamily="思源黑体" color="rgba(255, 255, 255, 1)" bold="true" wrap="false">
+          <p>数据本地化</p>
+        </content>
+      </shape>
+      <shape width="200" height="16" topLeftX="64" topLeftY="342" type="text" id="bnS">
+        <content textType="caption" fontSize="10" fontFamily="思源黑体" color="rgba(100, 116, 139, 1)" wrap="false">
+          <p>SQLite存储，不出域</p>
+        </content>
+      </shape>
+      <shape width="200" height="20" topLeftX="64" topLeftY="368" type="text" id="bnk">
+        <content fontSize="13" fontFamily="思源黑体" color="rgba(255, 255, 255, 1)" bold="true" wrap="false">
+          <p>AI全链路赋能</p>
+        </content>
+      </shape>
+      <shape width="200" height="16" topLeftX="64" topLeftY="390" type="text" id="bnh">
+        <content textType="caption" fontSize="10" fontFamily="思源黑体" color="rgba(100, 116, 139, 1)" wrap="false">
+          <p>回复/抽取/摘要/画像</p>
+        </content>
+      </shape>
+      <line id="bnX" startX="300.00000000000006" startY="248" endX="300.00000000000006" endY="410.00308639035245">
+        <border color="rgba(30, 41, 59, 1)" width="1"/>
+      </line>
+      <shape width="200" height="20" topLeftX="324" topLeftY="248" type="text" id="bnZ">
+        <content textType="caption" fontSize="11" fontFamily="思源黑体" color="rgba(168, 85, 247, 1)" bold="true" letterSpacing="1" wrap="false">
+          <p>未来规划</p>
+        </content>
+      </shape>
+      <shape width="200" height="20" topLeftX="324" topLeftY="272" type="text" id="bQl">
+        <content fontSize="13" fontFamily="思源黑体" color="rgba(255, 255, 255, 1)" bold="true" wrap="false">
+          <p>跨平台支持</p>
+        </content>
+      </shape>
+      <shape width="200" height="16" topLeftX="324" topLeftY="294" type="text" id="bnb">
+        <content textType="caption" fontSize="10" fontFamily="思源黑体" color="rgba(100, 116, 139, 1)" wrap="false">
+          <p>Mac / Linux 适配</p>
+        </content>
+      </shape>
+      <shape width="200" height="20" topLeftX="324" topLeftY="320" type="text" id="bnm">
+        <content fontSize="13" fontFamily="思源黑体" color="rgba(255, 255, 255, 1)" bold="true" wrap="false">
+          <p>多IM扩展</p>
+        </content>
+      </shape>
+      <shape width="200" height="16" topLeftX="324" topLeftY="342" type="text" id="bQH">
+        <content textType="caption" fontSize="10" fontFamily="思源黑体" color="rgba(100, 116, 139, 1)" wrap="false">
+          <p>QQ / Telegram / 钉钉</p>
+        </content>
+      </shape>
+      <shape width="200" height="20" topLeftX="324" topLeftY="368" type="text" id="bnV">
+        <content fontSize="13" fontFamily="思源黑体" color="rgba(255, 255, 255, 1)" bold="true" wrap="false">
+          <p>插件系统</p>
+        </content>
+      </shape>
+      <shape width="200" height="16" topLeftX="324" topLeftY="390" type="text" id="bnc">
+        <content textType="caption" fontSize="10" fontFamily="思源黑体" color="rgba(100, 116, 139, 1)" wrap="false">
+          <p>第三方能力扩展生态</p>
+        </content>
+      </shape>
+      <line id="bnT" startX="560" startY="248" endX="560" endY="410.00308639035245">
+        <border color="rgba(30, 41, 59, 1)" width="1"/>
+      </line>
+      <shape width="200" height="20" topLeftX="584" topLeftY="248" type="text" id="bQO">
+        <content textType="caption" fontSize="11" fontFamily="思源黑体" color="rgba(0, 212, 255, 1)" bold="true" letterSpacing="1" wrap="false">
+          <p>技术栈</p>
+        </content>
+      </shape>
+      <shape width="300" height="20" topLeftX="584" topLeftY="272" type="text" id="bnp">
+        <content fontSize="13" fontFamily="思源黑体" color="rgba(255, 255, 255, 1)" bold="true" wrap="false">
+          <p>Python 3.10+</p>
+        </content>
+      </shape>
+      <shape width="300" height="16" topLeftX="584" topLeftY="294" type="text" id="bnY">
+        <content textType="caption" fontSize="10" fontFamily="思源黑体" color="rgba(100, 116, 139, 1)" wrap="false">
+          <p>customtkinter / PaddleOCR / OpenCV</p>
+        </content>
+      </shape>
+      <shape width="300" height="20" topLeftX="584" topLeftY="320" type="text" id="bna">
+        <content fontSize="13" fontFamily="思源黑体" color="rgba(255, 255, 255, 1)" bold="true" wrap="false">
+          <p>通义千问 Qwen</p>
+        </content>
+      </shape>
+      <shape width="300" height="16" topLeftX="584" topLeftY="342" type="text" id="bQI">
+        <content textType="caption" fontSize="10" fontFamily="思源黑体" color="rgba(100, 116, 139, 1)" wrap="false">
+          <p>mss / pywin32 / SQLite / Obsidian</p>
+        </content>
+      </shape>
+      <shape width="300" height="20" topLeftX="584" topLeftY="368" type="text" id="bnU">
+        <content fontSize="13" fontFamily="思源黑体" color="rgba(255, 255, 255, 1)" bold="true" wrap="false">
+          <p>已打包 Windows EXE</p>
+        </content>
+      </shape>
+      <shape width="300" height="16" topLeftX="584" topLeftY="390" type="text" id="bnG">
+        <content textType="caption" fontSize="10" fontFamily="思源黑体" color="rgba(100, 116, 139, 1)" wrap="false">
+          <p>当前版本 v3.1 · 全局快捷键 Ctrl+T</p>
+        </content>
+      </shape>
+      <shape width="832" height="56" topLeftX="64" topLeftY="448" presetHandlers="0" type="rect" id="bnu">
+        <fill>
+          <fillColor color="rgba(0, 212, 255, 0.08)"/>
+        </fill>
+        <border color="rgba(0, 212, 255, 0.3)" width="1"/>
+        <content fontSize="16" fontFamily="思源黑体" color="rgba(31, 35, 41, 1)"/>
+      </shape>
+      <shape width="800" height="20" topLeftX="84" topLeftY="458" type="text" id="bnF">
+        <content fontSize="14" fontFamily="思源黑体" color="rgba(0, 212, 255, 1)" bold="true" wrap="false">
+          <p>NOYA Chat — 你的个人社交数据操作系统</p>
+        </content>
+      </shape>
+      <shape width="800" height="16" topLeftX="84" topLeftY="480" type="text" id="bQn">
+        <content textType="caption" fontSize="10" fontFamily="思源黑体" color="rgba(100, 116, 139, 1)" wrap="false">
+          <p>从消息采集到知识沉淀，全链路自动化 · 数据本地存储 · 非协议逆向 · 开源可审计</p>
+        </content>
+      </shape>
+    </data>
+    <note id="bnR">
+      <content>
+        <p>最后总结 NOYA Chat 的核心价值和未来规划。核心价值有三点：零协议逆向，纯截图 OCR 方案合规安全；数据本地化，SQLite 存储不出域；AI 全链路赋能，从回复到抽取到摘要到画像。未来规划包括跨平台支持 Mac 和 Linux、多 IM 扩展到 QQ/Telegram/钉钉、以及插件系统构建第三方能力生态。技术栈基于 Python 3.10+，使用 customtkinter、PaddleOCR、OpenCV、通义千问等，已打包 Windows EXE，当前版本 v3.1。NOYA Chat 的愿景是成为你的个人社交数据操作系统，让微信数据真正属于你。</p>
+      </content>
+    </note>
+  </slide>
+</presentation>

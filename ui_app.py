@@ -126,6 +126,7 @@ class WeChatAIApp(ctk.CTk):
             self.config_data = {}
 
     def _build_ui(self):
+        print("[DBG-BUILD] start")
         # 2列布局：侧栏(52) | 主内容(满宽)
         self.grid_columnconfigure(0, weight=0, minsize=52)
         self.grid_columnconfigure(1, weight=1)
@@ -497,6 +498,13 @@ class WeChatAIApp(ctk.CTk):
             command=self._toggle_batch_mode)
         self._batch_toggle_btn.place(relx=1.0, rely=0.5, anchor="e", x=-4)
 
+        self._refresh_contacts_btn = ctk.CTkButton(
+            search_wrap, text="🔄", width=26, height=26,
+            font=ctk.CTkFont(size=10),
+            fg_color=WC_COLORS["text_muted2"], hover_color=WC_COLORS["text_muted"],
+            command=self._refresh_contacts_btn_click)
+        self._refresh_contacts_btn.place(relx=1.0, rely=0.5, anchor="e", x=-58)
+
         # 会话列表滚动
         self.contact_list_frame = ctk.CTkScrollableFrame(
             parent, fg_color=WC_COLORS["card_hover"], corner_radius=0, border_width=0,
@@ -524,7 +532,10 @@ class WeChatAIApp(ctk.CTk):
         self._msg_index = {}           # 去重索引 contact -> {msg_key: idx}
         self._all_messages_live = []   # "全部会话"视图下的实时新增（尚未落库）
         self._storage_cache = None     # 自建存储对象缓存（避免 engine 未初始化时删除/查询失效）
+        self._msg_bubble_cache = {}    # 消息气泡缓存: {contact: {msg_key: CTkFrame}}
+        self._last_rendered_key = None  # 上次渲染的会话标识，用于增量更新判断
         self._load_history()
+        print(f"[启动诊断] _load_history 完成, _conv_index={len(self._conv_index)} 个联系人")
 
         # V3.2: 顶部两张系统卡（永远存在，置于最上方）：
         #   「📖 使用说明」 —— 独立卡片，点击显示使用说明聊天记录（最早、最顶）
@@ -571,6 +582,8 @@ class WeChatAIApp(ctk.CTk):
         - before=某 frame：插入到该 frame 之前（用于「全部会话」卡排在「使用说明」之后）。
         点击 → _set_active_contact(key)；悬停高亮；禁止右键删除菜单。"""
         try:
+            # CTkScrollableFrame 标准用法：直接 pack 进 CTkScrollableFrame 本身，
+            # CTk 自动重定向到内部滚动内容区。
             if top:
                 wrap = ctk.CTkFrame(self.contact_list_frame, fg_color=WC_COLORS["card_hover"], height=52)
                 wrap.pack(side="top", fill="x")
@@ -775,6 +788,12 @@ class WeChatAIApp(ctk.CTk):
                 _idx["preview"] = _content
                 _idx["last_sender"] = _sender
                 _idx["last_time"] = _r["timestamp"] or _idx["last_time"]
+            # 诊断日志：记录前5个联系人
+            try:
+                _sample = list(self._conv_index.keys())[:5]
+                self._debug_log(f"[会话索引] 构建完成: {len(self._conv_index)} 个联系人 | 前5: {_sample}")
+            except Exception:
+                pass
         except Exception as _e:
             try:
                 self._on_log("warning", f"[会话索引] 构建失败: {_e}")
@@ -790,7 +809,11 @@ class WeChatAIApp(ctk.CTk):
         if _st is not None:
             try:
                 import sqlite3
-                _db = getattr(_st, "db_path", "data/messages.db")
+                import os as _os
+                _db = getattr(_st, "db_path", _app_path("data", "messages.db"))
+                if not _os.path.isabs(_db):
+                    _db = _app_path(_db)
+                self._debug_log(f"[懒加载] 联系人 {contact!r}: db_path={_db}")
                 _conn = sqlite3.connect(_db)
                 _conn.row_factory = sqlite3.Row
                 _rows = _conn.execute(
@@ -858,7 +881,17 @@ class WeChatAIApp(ctk.CTk):
             pass
         return _out
 
+    def _refresh_contacts_btn_click(self):
+        """手动刷新联系人列表：从 DB 重建会话索引，然后重建左栏卡片。"""
+        try:
+            self._rebuild_conv_index()
+            self._rebuild_contact_list()
+            self._on_log("info", f"[刷新] 已重建联系人列表 ({len(self._conv_index)} 个会话)")
+        except Exception as _e:
+            self._on_log("error", f"[刷新] 联系人列表重建失败: {_e}")
+
     def _rebuild_contact_list(self):
+        print("[DBG-RCL] CALLED")
         """重建左侧会话卡片（两张系统卡：📖使用说明 / 📋全部会话 永远保留，且位于最顶）。
         Ctrl+D / 删除历史 / 刷新 等场景调用。
 
@@ -869,7 +902,9 @@ class WeChatAIApp(ctk.CTk):
         """
         try:
             if not hasattr(self, "contact_list_frame") or not self.contact_list_frame.winfo_exists():
+                print("[DBG-RCL] early return: contact_list_frame not exists")
                 return
+            print(f"[DBG-RCL] enter, conv_index={len(getattr(self,'_conv_index',{}))}, card_frames={len(getattr(self,'_contact_card_frames',set()))}")
 
             # 兜底：若会话索引为空（例如 db 尚未就绪 / 上次启动异常），
             # 先重建索引再渲染，避免「重启后左栏只剩系统卡」被静默吞掉。
@@ -900,9 +935,13 @@ class WeChatAIApp(ctk.CTk):
                 preview = str(idx.get("preview", ""))[:26]
                 is_group = bool(idx.get("is_group", False))
                 unread = int(idx.get("unread", 0) or 0)
-                self._append_contact_card(
-                    contact, preview, is_group=is_group, unread=unread,
-                    active=(contact == active))
+                try:
+                    self._append_contact_card(
+                        contact, preview, is_group=is_group, unread=unread,
+                        active=(contact == active))
+                except Exception as _dbg_e:
+                    import traceback as _tb
+                    print(f"[DBG-REBUILD] 建卡失败 {contact!r}: {_tb.format_exc()}")
 
             # 4) 显式重排顺序（根治 CTkScrollableFrame 的 pack 顺序不可靠）：
             #    [使用说明, 全部会话, *联系人卡] 从上到下
@@ -1009,8 +1048,12 @@ class WeChatAIApp(ctk.CTk):
             return info["frame"]
 
         # 新卡片（微信PC：60px 高，悬停浅灰，选中深灰，底部 1px 分割线）
-        card = tk.Frame(self.contact_list_frame, bg=WC_COLORS["card_hover"], height=60,
-                        highlightthickness=0, width=218)
+        # CTkScrollableFrame 标准用法：直接 pack 进 CTkScrollableFrame 本身，
+        # CTk 会自动把子件重定向到内部滚动内容区（_parent_frame）。
+        # 使用 CTkFrame 而非 tk.Frame，确保 CTkScrollableFrame 正确重定向到 _parent_frame，
+        # 避免重启后卡片被 canvas 遮挡而不可见。
+        card = ctk.CTkFrame(self.contact_list_frame, fg_color=WC_COLORS["card_hover"], height=60,
+                            border_width=0, corner_radius=0, width=218)
         card.pack(fill="x", side="top")
         card.pack_propagate(False)
         # V3.3: 登记到联系人卡集合（rebuild 时精确销毁，不依赖 winfo_children）
@@ -1064,14 +1107,16 @@ class WeChatAIApp(ctk.CTk):
         preview.pack(fill="x", side="top")
 
         def _on_enter(_e):
-            for w in (card, text_wrap, header_row):
+            card.configure(fg_color=WC_COLORS["card_hover"])
+            for w in (text_wrap, header_row):
                 w.configure(bg=WC_COLORS["card_hover"])
             title_lbl.configure(bg=WC_COLORS["card_hover"])
             preview.configure(bg=WC_COLORS["card_hover"])
 
         def _on_leave(_e):
             bg_new = WC_COLORS["card_active"] if self._active_contact == contact else WC_COLORS["card_hover"]
-            for w in (card, text_wrap, header_row):
+            card.configure(fg_color=bg_new)
+            for w in (text_wrap, header_row):
                 w.configure(bg=bg_new)
             title_lbl.configure(bg=bg_new)
             preview.configure(bg=bg_new)
@@ -1759,6 +1804,10 @@ class WeChatAIApp(ctk.CTk):
 
         # 顶部对齐（调用方按"最新在前"顺序逐条打包，实现最新置顶）
         row.pack(side="top", fill="x", padx=4, pady=2)
+        mk = m.get("msg_key")
+        if mk:
+            _c = m.get("contact", "")
+            self._msg_bubble_cache.setdefault(_c, {})[mk] = row
         return row
 
     def _build_usage_bubbles(self, parent):
@@ -1810,7 +1859,7 @@ class WeChatAIApp(ctk.CTk):
                       corner_radius=10, command=self._show_usage_dialog).pack(side="right", padx=6)
 
     def _show_usage_dialog(self):
-        """V3.1: 使用说明弹窗（覆盖核心操作流程）。"""
+        """V3.4: 使用说明弹窗（覆盖核心操作流程）。"""
         dlg = ctk.CTkToplevel(self)
         dlg.title("NOYA Chat 使用说明")
         dlg.geometry("560x640")
@@ -1869,6 +1918,14 @@ class WeChatAIApp(ctk.CTk):
         _title("7. 提示")
         _line("· 全部为本地处理，数据不上传第三方。")
         _line("· 自动发送存在账号风控风险，默认关闭，优先用预览模式。")
+
+        _title("8. v3.4 新功能")
+        _line("· 语义向量去重：自动理解消息语义，避免相似内容重复处理。")
+        _line("· RAG 知识库检索：AI 回复时自动关联历史相关消息，回答更精准。")
+        _line("· 情感分析 + 紧急度分级：自动识别紧急消息，优先处理。")
+        _line("· CNN 红点分类器：更准确识别未读红点，减少误触。")
+        _line("· UIA 无渲染监控：最小化时通过系统 API 零延迟检测未读。")
+        _line("· 自适应点击：像素级验证 + 智能偏移，点击准确率大幅提升。")
         _line("· 更多见 GitHub README 与「关于」页面。")
 
         ctk.CTkButton(dlg, text="知道了", width=120, height=34,
@@ -1876,11 +1933,11 @@ class WeChatAIApp(ctk.CTk):
                       command=dlg.destroy).pack(pady=10)
 
     def _show_about_dialog(self):
-        """V3.1: 关于页面——软件简介 + 作者介绍 + 网站。"""
+        """V3.4: 关于页面——软件简介 + 更新内容 + 作者介绍 + 网站。"""
         import webbrowser
         dlg = ctk.CTkToplevel(self)
         dlg.title("关于 NOYA Chat")
-        dlg.geometry("480x560")
+        dlg.geometry("480x680")
         dlg.transient(self)
         dlg.grab_set()
         dlg.focus_force()
@@ -1898,7 +1955,7 @@ class WeChatAIApp(ctk.CTk):
         ctk.CTkLabel(main, text="NOYA Chat 微信助手",
                      font=ctk.CTkFont(family=FONT_FAMILY, size=22, weight="bold"),
                      text_color=WC_COLORS["text"]).pack(pady=(4, 2))
-        ctk.CTkLabel(main, text="v3.1 · 本地微信消息智能中枢",
+        ctk.CTkLabel(main, text="v3.4 · 本地微信消息智能中枢",
                      font=ctk.CTkFont(family=FONT_FAMILY, size=12),
                      text_color=WC_COLORS["accent"]).pack(pady=(0, 10))
 
@@ -1916,6 +1973,30 @@ class WeChatAIApp(ctk.CTk):
         )
         ctk.CTkLabel(main, text=intro, font=ctk.CTkFont(family=FONT_FAMILY, size=12),
                      text_color=WC_COLORS["text"], wraplength=420,
+                     justify="left", anchor="w").pack(anchor="w", pady=4)
+
+        # 分隔
+        ctk.CTkFrame(main, fg_color=WC_COLORS["border"], height=1).pack(fill="x", pady=12)
+
+        ctk.CTkLabel(main, text="🆕 v3.4 更新内容",
+                     font=ctk.CTkFont(size=14, weight="bold"),
+                     text_color=WC_COLORS["accent"]).pack(anchor="w", pady=(0, 6))
+        updates = (
+            "· 语义向量去重 — 本地 Embedding 模型理解语义，\n"
+            "  杜绝短文本/语义相似消息的重复处理\n"
+            "· RAG 本地知识库 — 历史消息向量检索，\n"
+            "  LLM 回复时自动注入相关上下文，回答更精准\n"
+            "· 消息情感分析 + 紧急度自动分级 — 三阶段流水线\n"
+            "  （规则引擎→统计模型→LLM），紧急消息优先处理\n"
+            "· CNN 红点分类器 — 轻量深度学习模型替代传统\n"
+            "  HSV+模板匹配，消除红色头像/红包图标误触发\n"
+            "· UIA 无渲染监控 — 最小化/屏幕外时通过 Windows\n"
+            "  无障碍 API 直接读取未读，零截图延迟\n"
+            "· 自适应点击优化 — 像素级验证 + 智能 Y 偏移\n"
+            "  + 直方图变化检测，点击准确率大幅提升"
+        )
+        ctk.CTkLabel(main, text=updates, font=ctk.CTkFont(family=FONT_FAMILY, size=11),
+                     text_color=WC_COLORS["text_muted"], wraplength=420,
                      justify="left", anchor="w").pack(anchor="w", pady=4)
 
         # 分隔
@@ -2050,6 +2131,49 @@ class WeChatAIApp(ctk.CTk):
                 self._debug_log("[重建消息列表] 异常:\n" + _msg)
             except Exception:
                 pass
+
+    def _refresh_bubble_in_place(self, contact, msg_key, msg_data):
+        """更新单个气泡的提取信息（关键词/标签/重要性），不触发全量重建。
+        避免 basic→update 两次渲染造成的视觉重复/闪烁。"""
+        try:
+            cache = self._msg_bubble_cache.setdefault(contact, {})
+            bubble = cache.get(msg_key)
+            if bubble is None or not bubble.winfo_exists():
+                self._rebuild_message_list()
+                return
+            cache[msg_key] = bubble
+
+            extracted = msg_data.get("extracted") or {}
+            is_important = msg_data.get("is_important", False)
+            tags = extracted.get("tags", []) or []
+            keywords = extracted.get("keywords", []) or []
+
+            for child in list(bubble.winfo_children()):
+                try:
+                    if isinstance(child, ctk.CTkFrame) and getattr(child, "_bubble_tag_bar", False):
+                        child.destroy()
+                except Exception:
+                    pass
+
+            has_extra = bool(tags or keywords or is_important)
+            if not has_extra:
+                return
+
+            tag_bar = ctk.CTkFrame(bubble, fg_color="transparent", height=18)
+            tag_bar._bubble_tag_bar = True
+            tag_bar.pack(fill="x", padx=4, pady=(2, 0), after=bubble.winfo_children()[-1] if bubble.winfo_children() else None)
+
+            for t in tags[:3]:
+                ctk.CTkLabel(tag_bar, text=t, font=ctk.CTkFont(size=8),
+                             text_color=WC_COLORS["accent"], padx=4).pack(side="left", padx=1)
+            for kw in keywords[:2]:
+                ctk.CTkLabel(tag_bar, text=f"#{kw}", font=ctk.CTkFont(size=8),
+                             text_color=WC_COLORS["text_muted"], padx=4).pack(side="left", padx=1)
+            if is_important:
+                ctk.CTkLabel(tag_bar, text="⚠重要", font=ctk.CTkFont(size=8),
+                             text_color=WC_COLORS["danger"], padx=4).pack(side="left", padx=1)
+        except Exception:
+            self._rebuild_message_list()
 
     def _build_reply_tab(self):
         tab = self.tab_reply
@@ -3541,15 +3665,11 @@ class WeChatAIApp(ctk.CTk):
         _ckey = f"{contact}|{sender}|{content}"
         _last = self._recent_ui_keys.get(_ckey)
         if _last is not None and (_now - _last) < 10.0:
-            mk = mk or _ckey  # 用内容键兜底，走下面的 msg_key 更新分支
+            # 内容级兜底去重：同一消息在10s内重复上报，用内容键更新而非新建
+            mk = _ckey
         else:
             self._recent_ui_keys[_ckey] = _now
-        # 老化清理（避免长期运行内存膨胀）
-        if len(self._recent_ui_keys) > 500:
-            _cut = _now - 30.0
-            self._recent_ui_keys = {k: v for k, v in self._recent_ui_keys.items() if v >= _cut}
-
-        mk = msg_data.get("msg_key") or _ckey
+            mk = msg_data.get("msg_key") or _ckey
         store = self._messages_store.setdefault(contact, [])
         if not hasattr(self, "_msg_index"):
             self._msg_index = {}
@@ -3567,7 +3687,10 @@ class WeChatAIApp(ctk.CTk):
                 except Exception:
                     pass
                 self._schedule_history_save()
-                self._rebuild_message_list()
+                try:
+                    self._refresh_bubble_in_place(contact, mk, merged)
+                except Exception:
+                    self._rebuild_message_list()
                 return
         self._msg_seq += 1
         stored = dict(msg_data)
@@ -4348,7 +4471,7 @@ class WeChatAIApp(ctk.CTk):
                     self.btn_stop.configure(state="normal"),
                     self._on_log("info", "✅ 监控已成功启动！")
                 ])
-                # 启动自动统计刷新
+                self.after(0, self._rebuild_contact_list)
                 self.after(1000, self._auto_refresh_stats)
                 self._on_log("info", "📊 自动刷新已启动（每10秒更新）")
             else:

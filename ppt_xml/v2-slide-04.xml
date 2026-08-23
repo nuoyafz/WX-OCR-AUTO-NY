@@ -1,0 +1,142 @@
+<slide>
+  <style>
+    <fill>
+      <fillColor color="rgb(10,14,26)"/>
+    </fill>
+  </style>
+  <data>
+    <shape type="text" topLeftX="64" topLeftY="48" width="500" height="24">
+      <content textType="caption" fontSize="12" color="rgba(0,212,255,1)" bold="true" letterSpacing="3" wrap="false">
+        <p>CORE CAPABILITIES · 六大核心能力</p>
+      </content>
+    </shape>
+    <shape type="text" topLeftX="64" topLeftY="80" width="832" height="40">
+      <content textType="title" fontSize="30" color="rgba(255,255,255,1)" bold="true" wrap="false">
+        <p>从消息采集到知识沉淀，全链路自动化</p>
+      </content>
+    </shape>
+    <line startX="64" startY="136" endX="896" endY="136">
+      <border color="rgba(30,41,59,1)" width="1"/>
+    </line>
+    <shape type="text" topLeftX="64" topLeftY="160" width="50" height="36">
+      <content textType="title" fontSize="28" color="rgba(0,212,255,1)" bold="true" wrap="false">
+        <p>01</p>
+      </content>
+    </shape>
+    <shape type="text" topLeftX="120" topLeftY="164" width="320" height="24">
+      <content textType="body" fontSize="15" color="rgba(255,255,255,1)" bold="true" wrap="false">
+        <p>红点自动检测</p>
+      </content>
+    </shape>
+    <shape type="text" topLeftX="120" topLeftY="190" width="320" height="36">
+      <content textType="caption" fontSize="11" color="rgba(100,116,139,1)" lineSpacing="multiple:1.4">
+        <p>模板匹配优先+HSV六特征兜底，后台无感运行，60s联系人冷却</p>
+      </content>
+    </shape>
+    <shape type="text" topLeftX="500" topLeftY="160" width="50" height="36">
+      <content textType="title" fontSize="28" color="rgba(0,212,255,1)" bold="true" wrap="false">
+        <p>02</p>
+      </content>
+    </shape>
+    <shape type="text" topLeftX="556" topLeftY="164" width="320" height="24">
+      <content textType="body" fontSize="15" color="rgba(255,255,255,1)" bold="true" wrap="false">
+        <p>PaddleOCR 文字识别</p>
+      </content>
+    </shape>
+    <shape type="text" topLeftX="556" topLeftY="190" width="320" height="36">
+      <content textType="caption" fontSize="11" color="rgba(100,116,139,1)" lineSpacing="multiple:1.4">
+        <p>中英混合识别，收发方区分90%+，帧差异检测CPU降70%</p>
+      </content>
+    </shape>
+    <line startX="64" startY="240" endX="896" endY="240">
+      <border color="rgba(30,41,59,1)" width="1"/>
+    </line>
+    <shape type="text" topLeftX="64" topLeftY="260" width="50" height="36">
+      <content textType="title" fontSize="28" color="rgba(168,85,247,1)" bold="true" wrap="false">
+        <p>03</p>
+      </content>
+    </shape>
+    <shape type="text" topLeftX="120" topLeftY="264" width="320" height="24">
+      <content textType="body" fontSize="15" color="rgba(255,255,255,1)" bold="true" wrap="false">
+        <p>AI 智能回复</p>
+      </content>
+    </shape>
+    <shape type="text" topLeftX="120" topLeftY="290" width="320" height="36">
+      <content textType="caption" fontSize="11" color="rgba(100,116,139,1)" lineSpacing="multiple:1.4">
+        <p>多角色配置，预览确认模式，双路径防重发，已读闭环校验</p>
+      </content>
+    </shape>
+    <shape type="text" topLeftX="500" topLeftY="260" width="50" height="36">
+      <content textType="title" fontSize="28" color="rgba(168,85,247,1)" bold="true" wrap="false">
+        <p>04</p>
+      </content>
+    </shape>
+    <shape type="text" topLeftX="556" topLeftY="264" width="320" height="24">
+      <content textType="body" fontSize="15" color="rgba(255,255,255,1)" bold="true" wrap="false">
+        <p>AI 信息抽取</p>
+      </content>
+    </shape>
+    <shape type="text" topLeftX="556" topLeftY="290" width="320" height="36">
+      <content textType="caption" fontSize="11" color="rgba(100,116,139,1)" lineSpacing="multiple:1.4">
+        <p>自动分类/待办提取/情绪识别/1-5级紧急度打分，正则自定义规则</p>
+      </content>
+    </shape>
+    <line startX="64" startY="340" endX="896" endY="340">
+      <border color="rgba(30,41,59,1)" width="1"/>
+    </line>
+    <shape type="text" topLeftX="64" topLeftY="360" width="50" height="36">
+      <content textType="title" fontSize="28" color="rgba(0,212,255,1)" bold="true" wrap="false">
+        <p>05</p>
+      </content>
+    </shape>
+    <shape type="text" topLeftX="120" topLeftY="364" width="320" height="24">
+      <content textType="body" fontSize="15" color="rgba(255,255,255,1)" bold="true" wrap="false">
+        <p>Obsidian 知识库沉淀</p>
+      </content>
+    </shape>
+    <shape type="text" topLeftX="120" topLeftY="390" width="320" height="36">
+      <content textType="caption" fontSize="11" color="rgba(100,116,139,1)" lineSpacing="multiple:1.4">
+        <p>AI会话摘要/联系人画像/社交图谱/项目笔记/每日简报，双同步模式</p>
+      </content>
+    </shape>
+    <shape type="text" topLeftX="500" topLeftY="360" width="50" height="36">
+      <content textType="title" fontSize="28" color="rgba(0,212,255,1)" bold="true" wrap="false">
+        <p>06</p>
+      </content>
+    </shape>
+    <shape type="text" topLeftX="556" topLeftY="364" width="320" height="24">
+      <content textType="body" fontSize="15" color="rgba(255,255,255,1)" bold="true" wrap="false">
+        <p>工程化交付</p>
+      </content>
+    </shape>
+    <shape type="text" topLeftX="556" topLeftY="390" width="320" height="36">
+      <content textType="caption" fontSize="11" color="rgba(100,116,139,1)" lineSpacing="multiple:1.4">
+        <p>Ctrl+T全局快捷键一键启停，已打包Windows EXE，SQLite持久化</p>
+      </content>
+    </shape>
+    <line startX="64" startY="440" endX="896" endY="440">
+      <border color="rgba(30,41,59,1)" width="1"/>
+    </line>
+    <shape type="rect" topLeftX="64" topLeftY="464" width="832" height="48">
+      <fill>
+        <fillColor color="rgba(0,212,255,0.08)"/>
+      </fill>
+      <border color="rgba(0,212,255,0.3)" width="1"/>
+    </shape>
+    <shape type="text" topLeftX="84" topLeftY="472" width="800" height="20">
+      <content textType="body" fontSize="13" color="rgba(0,212,255,1)" bold="true" wrap="false">
+        <p>全链路闭环：红点检测 → 截图采集 → OCR识别 → AI理解 → 智能回复 → 信息抽取 → Obsidian沉淀</p>
+      </content>
+    </shape>
+    <shape type="text" topLeftX="84" topLeftY="494" width="800" height="16">
+      <content textType="caption" fontSize="10" color="rgba(100,116,139,1)" wrap="false">
+        <p>全部数据本地存储，不经过第三方服务器 · 非微信协议逆向，纯屏幕截图OCR方案</p>
+      </content>
+    </shape>
+  </data>
+  <note>
+    <content textType="body">
+      <p>这一页是 NOYA Chat 的六大核心能力。第一，红点自动检测，用模板匹配加 HSV 六特征实现后台无感运行。第二，PaddleOCR 文字识别，中英混合，收发方区分准确率 90% 以上。第三，AI 智能回复，支持多角色配置，默认预览确认模式，双路径防重发。第四，AI 信息抽取，自动分类、待办提取、情绪识别和紧急度打分。第五，Obsidian 知识库沉淀，五大 AI 赋能能力让微信数据变成可复用知识。第六，工程化交付，全局快捷键、EXE 打包、SQLite 持久化。这六个能力构成了从消息采集到知识沉淀的完整闭环。</p>
+    </content>
+  </note>
+</slide>

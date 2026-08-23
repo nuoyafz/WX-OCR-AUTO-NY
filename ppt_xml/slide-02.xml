@@ -1,0 +1,131 @@
+<slide>
+  <style>
+    <fill>
+      <fillColor color="rgb(242,244,248)"/>
+    </fill>
+  </style>
+  <data>
+    <shape type="text" topLeftX="72" topLeftY="56" width="200" height="40">
+      <content textType="title" fontSize="28" color="rgba(13,19,38,1)" bold="true" letterSpacing="1" wrap="false">
+        <p>目录</p>
+      </content>
+    </shape>
+    <shape type="text" topLeftX="72" topLeftY="96" width="200" height="20">
+      <content textType="caption" fontSize="11" color="rgba(83,97,116,1)" letterSpacing="2" wrap="false">
+        <p>CONTENTS</p>
+      </content>
+    </shape>
+    <line startX="72" startY="128" endX="888" endY="128">
+      <border color="rgba(200,210,225,1)" width="1"/>
+    </line>
+    <shape type="text" topLeftX="72" topLeftY="164" width="60" height="48">
+      <content textType="title" fontSize="36" color="rgba(37,99,235,1)" bold="true" wrap="false">
+        <p>01</p>
+      </content>
+    </shape>
+    <shape type="text" topLeftX="148" topLeftY="168" width="280" height="24">
+      <content textType="body" fontSize="16" color="rgba(13,19,38,1)" bold="true" wrap="false">
+        <p>项目背景与痛点</p>
+      </content>
+    </shape>
+    <shape type="text" topLeftX="148" topLeftY="194" width="280" height="18">
+      <content textType="caption" fontSize="11" color="rgba(83,97,116,1)" wrap="false">
+        <p>微信信息过载与个人知识管理困境</p>
+      </content>
+    </shape>
+    <shape type="text" topLeftX="500" topLeftY="164" width="60" height="48">
+      <content textType="title" fontSize="36" color="rgba(37,99,235,1)" bold="true" wrap="false">
+        <p>02</p>
+      </content>
+    </shape>
+    <shape type="text" topLeftX="576" topLeftY="168" width="280" height="24">
+      <content textType="body" fontSize="16" color="rgba(13,19,38,1)" bold="true" wrap="false">
+        <p>产品概览与核心理念</p>
+      </content>
+    </shape>
+    <shape type="text" topLeftX="576" topLeftY="194" width="280" height="18">
+      <content textType="caption" fontSize="11" color="rgba(83,97,116,1)" wrap="false">
+        <p>微信采集入口，Obsidian沉淀出口</p>
+      </content>
+    </shape>
+    <line startX="72" startY="234" endX="888" endY="234">
+      <border color="rgba(220,228,240,1)" width="1"/>
+    </line>
+    <shape type="text" topLeftX="72" topLeftY="258" width="60" height="48">
+      <content textType="title" fontSize="36" color="rgba(37,99,235,1)" bold="true" wrap="false">
+        <p>03</p>
+      </content>
+    </shape>
+    <shape type="text" topLeftX="148" topLeftY="262" width="280" height="24">
+      <content textType="body" fontSize="16" color="rgba(13,19,38,1)" bold="true" wrap="false">
+        <p>系统架构与技术栈</p>
+      </content>
+    </shape>
+    <shape type="text" topLeftX="148" topLeftY="288" width="280" height="18">
+      <content textType="caption" fontSize="11" color="rgba(83,97,116,1)" wrap="false">
+        <p>四层架构：UI / 引擎 / 识别 / 数据</p>
+      </content>
+    </shape>
+    <shape type="text" topLeftX="500" topLeftY="258" width="60" height="48">
+      <content textType="title" fontSize="36" color="rgba(37,99,235,1)" bold="true" wrap="false">
+        <p>04</p>
+      </content>
+    </shape>
+    <shape type="text" topLeftX="576" topLeftY="262" width="280" height="24">
+      <content textType="body" fontSize="16" color="rgba(13,19,38,1)" bold="true" wrap="false">
+        <p>核心功能模块</p>
+      </content>
+    </shape>
+    <shape type="text" topLeftX="576" topLeftY="288" width="280" height="18">
+      <content textType="caption" fontSize="11" color="rgba(83,97,116,1)" wrap="false">
+        <p>监控 / OCR / AI回复 / 信息抽取 / 知识库</p>
+      </content>
+    </shape>
+    <line startX="72" startY="328" endX="888" endY="328">
+      <border color="rgba(220,228,240,1)" width="1"/>
+    </line>
+    <shape type="text" topLeftX="72" topLeftY="352" width="60" height="48">
+      <content textType="title" fontSize="36" color="rgba(37,99,235,1)" bold="true" wrap="false">
+        <p>05</p>
+      </content>
+    </shape>
+    <shape type="text" topLeftX="148" topLeftY="356" width="280" height="24">
+      <content textType="body" fontSize="16" color="rgba(13,19,38,1)" bold="true" wrap="false">
+        <p>技术创新与性能优化</p>
+      </content>
+    </shape>
+    <shape type="text" topLeftX="148" topLeftY="382" width="280" height="18">
+      <content textType="caption" fontSize="11" color="rgba(83,97,116,1)" wrap="false">
+        <p>三重截图链路 / 帧差异检测 / CPU降70%</p>
+      </content>
+    </shape>
+    <shape type="text" topLeftX="500" topLeftY="352" width="60" height="48">
+      <content textType="title" fontSize="36" color="rgba(37,99,235,1)" bold="true" wrap="false">
+        <p>06</p>
+      </content>
+    </shape>
+    <shape type="text" topLeftX="576" topLeftY="356" width="280" height="24">
+      <content textType="body" fontSize="16" color="rgba(13,19,38,1)" bold="true" wrap="false">
+        <p>未来规划与总结</p>
+      </content>
+    </shape>
+    <shape type="text" topLeftX="576" topLeftY="382" width="280" height="18">
+      <content textType="caption" fontSize="11" color="rgba(83,97,116,1)" wrap="false">
+        <p>语音转写 / 多模态 / 跨平台 / AI代理</p>
+      </content>
+    </shape>
+    <line startX="72" startY="422" endX="888" endY="422">
+      <border color="rgba(220,228,240,1)" width="1"/>
+    </line>
+    <shape type="text" topLeftX="72" topLeftY="488" width="400" height="20">
+      <content textType="caption" fontSize="10" color="rgba(120,135,165,1)" wrap="false">
+        <p>NOYA Chat v3.1 · 基于 Python 3.10+ / PaddleOCR / 通义千问</p>
+      </content>
+    </shape>
+  </data>
+  <note>
+    <content textType="body">
+      <p>本次汇报分为六个部分。首先介绍项目背景和当前微信信息管理的痛点，然后阐述产品的核心理念和整体定位，第三部分展示系统架构和技术选型，第四部分深入讲解五大核心功能模块，第五部分分享技术创新点和性能优化成果，最后是未来规划和总结。</p>
+    </content>
+  </note>
+</slide>

@@ -1,0 +1,139 @@
+<slide>
+  <style>
+    <fill>
+      <fillColor color="rgb(242,244,248)"/>
+    </fill>
+  </style>
+  <data>
+    <shape type="text" topLeftX="72" topLeftY="48" width="816" height="36">
+      <content textType="title" fontSize="26" color="rgba(13,19,38,1)" bold="true" letterSpacing="0.5" wrap="false">
+        <p>v3.1 AI 赋能：从聊天记录到活的社交数据中心</p>
+      </content>
+    </shape>
+    <line startX="72" startY="96" endX="160" endY="96">
+      <border color="rgba(37,99,235,1)" width="3"/>
+    </line>
+    <shape type="text" topLeftX="72" topLeftY="112" width="500" height="18">
+      <content textType="caption" fontSize="10" color="rgba(83,97,116,1)" wrap="false">
+        <p>OBSIDIAN AI EMPOWERMENT · 五大 AI 自动沉淀能力</p>
+      </content>
+    </shape>
+    <shape type="rect" topLeftX="72" topLeftY="148" width="380" height="80">
+      <fill>
+        <fillColor color="rgba(255,255,255,1)"/>
+      </fill>
+      <border color="rgba(220,228,240,1)" width="1"/>
+    </shape>
+    <shape type="text" topLeftX="92" topLeftY="160" width="40" height="24">
+      <content textType="body" fontSize="18" color="rgba(37,99,235,1)" bold="true" wrap="false">
+        <p>01</p>
+      </content>
+    </shape>
+    <shape type="text" topLeftX="140" topLeftY="160" width="290" height="24">
+      <content textType="body" fontSize="14" color="rgba(13,19,38,1)" bold="true" wrap="false">
+        <p>AI 会话摘要</p>
+      </content>
+    </shape>
+    <shape type="text" topLeftX="140" topLeftY="186" width="290" height="32">
+      <content textType="body" fontSize="11" color="rgba(83,97,116,1)" lineSpacing="multiple:1.4">
+        <p>每联系人日笔记自动生成 LLM 自然语言摘要：话题主线 / 对方情绪 / 待办跟进 / 风险提示，失败自动降级统计版。</p>
+      </content>
+    </shape>
+    <shape type="rect" topLeftX="508" topLeftY="148" width="380" height="80">
+      <fill>
+        <fillColor color="rgba(255,255,255,1)"/>
+      </fill>
+      <border color="rgba(220,228,240,1)" width="1"/>
+    </shape>
+    <shape type="text" topLeftX="528" topLeftY="160" width="40" height="24">
+      <content textType="body" fontSize="18" color="rgba(37,99,235,1)" bold="true" wrap="false">
+        <p>02</p>
+      </content>
+    </shape>
+    <shape type="text" topLeftX="576" topLeftY="160" width="290" height="24">
+      <content textType="body" fontSize="14" color="rgba(13,19,38,1)" bold="true" wrap="false">
+        <p>AI 联系人画像</p>
+      </content>
+    </shape>
+    <shape type="text" topLeftX="576" topLeftY="186" width="290" height="32">
+      <content textType="body" fontSize="11" color="rgba(83,97,116,1)" lineSpacing="multiple:1.4">
+        <p>独立画像笔记持续累积：身份 / 关系类型 / 沟通风格 / 亲密度(1-5)，以 AI_PROFILE 标记段刷新不重复累积。</p>
+      </content>
+    </shape>
+    <shape type="rect" topLeftX="72" topLeftY="244" width="380" height="80">
+      <fill>
+        <fillColor color="rgba(255,255,255,1)"/>
+      </fill>
+      <border color="rgba(220,228,240,1)" width="1"/>
+    </shape>
+    <shape type="text" topLeftX="92" topLeftY="256" width="40" height="24">
+      <content textType="body" fontSize="18" color="rgba(37,99,235,1)" bold="true" wrap="false">
+        <p>03</p>
+      </content>
+    </shape>
+    <shape type="text" topLeftX="140" topLeftY="256" width="290" height="24">
+      <content textType="body" fontSize="14" color="rgba(13,19,38,1)" bold="true" wrap="false">
+        <p>AI 社交图谱</p>
+      </content>
+    </shape>
+    <shape type="text" topLeftX="140" topLeftY="282" width="290" height="40">
+      <content textType="body" fontSize="11" color="rgba(83,97,116,1)" lineSpacing="multiple:1.3">
+        <p>生成 .canvas 关系图谱（文件模式即可用）：我/联系人/群成员为节点，往来频率+AI亲密度连边，按亲密度冷暖着色。</p>
+      </content>
+    </shape>
+    <shape type="rect" topLeftX="508" topLeftY="244" width="380" height="80">
+      <fill>
+        <fillColor color="rgba(255,255,255,1)"/>
+      </fill>
+      <border color="rgba(220,228,240,1)" width="1"/>
+    </shape>
+    <shape type="text" topLeftX="528" topLeftY="256" width="40" height="24">
+      <content textType="body" fontSize="18" color="rgba(37,99,235,1)" bold="true" wrap="false">
+        <p>04</p>
+      </content>
+    </shape>
+    <shape type="text" topLeftX="576" topLeftY="256" width="290" height="24">
+      <content textType="body" fontSize="14" color="rgba(13,19,38,1)" bold="true" wrap="false">
+        <p>AI 项目笔记</p>
+      </content>
+    </shape>
+    <shape type="text" topLeftX="576" topLeftY="282" width="290" height="32">
+      <content textType="body" fontSize="11" color="rgba(83,97,116,1)" lineSpacing="multiple:1.4">
+        <p>群聊与项目关键词消息自动抽取：名称 / 目标 / 进展 / 相关人 / 风险，项目节点自动连入社交图谱。</p>
+      </content>
+    </shape>
+    <shape type="rect" topLeftX="72" topLeftY="340" width="816" height="72">
+      <fill>
+        <fillColor color="rgba(13,19,38,1)"/>
+      </fill>
+    </shape>
+    <shape type="text" topLeftX="92" topLeftY="352" width="40" height="24">
+      <content textType="body" fontSize="18" color="rgba(191,215,255,1)" bold="true" wrap="false">
+        <p>05</p>
+      </content>
+    </shape>
+    <shape type="text" topLeftX="140" topLeftY="352" width="300" height="24">
+      <content textType="body" fontSize="14" color="rgba(255,255,255,1)" bold="true" wrap="false">
+        <p>每日简报 + 人格化回复</p>
+      </content>
+    </shape>
+    <shape type="text" topLeftX="140" topLeftY="378" width="720" height="30">
+      <content textType="body" fontSize="11" color="rgba(191,215,255,1)" lineSpacing="multiple:1.4">
+        <p>程序退出时 LLM 汇总当日全局要事（总览 / 待办 / 风险 / 主动联系）写入每日简报；回复前读取联系人画像+项目上下文注入 LLM，回复风格贴合关系亲密度。</p>
+      </content>
+    </shape>
+    <line startX="72" startY="436" endX="888" endY="436">
+      <border color="rgba(200,210,225,1)" width="1"/>
+    </line>
+    <shape type="text" topLeftX="72" topLeftY="456" width="816" height="48">
+      <content textType="body" fontSize="12" color="rgba(83,97,116,1)" lineSpacing="multiple:1.6">
+        <p>双同步模式：本地 Vault 文件直写 / Obsidian REST API 远程同步；按「联系人-日期」自动创建笔记归档；支持 Dataview / Tasks / Kanban 等插件联动，打造个人 CRM、待办管理、周报自动生成等高级玩法。</p>
+      </content>
+    </shape>
+  </data>
+  <note>
+    <content textType="body">
+      <p>v3.1 版本最大的升级是 Obsidian 知识库的 AI 赋能。我们实现了五大 AI 自动沉淀能力：AI 会话摘要自动提炼每段聊天的话题、情绪和待办；AI 联系人画像持续更新每个人的身份、关系和亲密度；AI 社交图谱生成可视化的 .canvas 关系图，文件模式即可用不需要 API；AI 项目笔记从群聊中自动抽取项目信息；最后是每日简报和人格化回复，让 AI 回复更加贴合你和对方的关系。这些功能让 Obsidian 从静态知识库升级为活的社交数据中心。</p>
+    </content>
+  </note>
+</slide>

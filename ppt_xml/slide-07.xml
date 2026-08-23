@@ -1,0 +1,135 @@
+<slide>
+  <style>
+    <fill>
+      <fillColor color="rgb(242,244,248)"/>
+    </fill>
+  </style>
+  <data>
+    <shape type="text" topLeftX="72" topLeftY="48" width="816" height="36">
+      <content textType="title" fontSize="26" color="rgba(13,19,38,1)" bold="true" letterSpacing="0.5" wrap="false">
+        <p>六项技术创新，帧差异检测使 CPU 占用降低 70%+</p>
+      </content>
+    </shape>
+    <line startX="72" startY="96" endX="160" endY="96">
+      <border color="rgba(37,99,235,1)" width="3"/>
+    </line>
+    <shape type="text" topLeftX="72" topLeftY="112" width="400" height="18">
+      <content textType="caption" fontSize="10" color="rgba(83,97,116,1)" wrap="false">
+        <p>TECHNICAL INNOVATION · 性能优化与关键指标</p>
+      </content>
+    </shape>
+    <shape type="rect" topLeftX="72" topLeftY="148" width="180" height="90">
+      <fill>
+        <fillColor color="rgba(13,19,38,1)"/>
+      </fill>
+    </shape>
+    <shape type="text" topLeftX="88" topLeftY="158" width="150" height="44">
+      <content textType="title" fontSize="36" color="rgba(255,255,255,1)" bold="true" wrap="false">
+        <p>70%+</p>
+      </content>
+    </shape>
+    <shape type="text" topLeftX="88" topLeftY="204" width="150" height="24">
+      <content textType="caption" fontSize="10" color="rgba(191,215,255,1)" wrap="false">
+        <p>CPU 占用降低（帧差异检测）</p>
+      </content>
+    </shape>
+    <shape type="rect" topLeftX="272" topLeftY="148" width="180" height="90">
+      <fill>
+        <fillColor color="rgba(37,99,235,0.15)"/>
+      </fill>
+    </shape>
+    <shape type="text" topLeftX="288" topLeftY="158" width="150" height="44">
+      <content textType="title" fontSize="36" color="rgba(37,99,235,1)" bold="true" wrap="false">
+        <p>90%+</p>
+      </content>
+    </shape>
+    <shape type="text" topLeftX="288" topLeftY="204" width="150" height="24">
+      <content textType="caption" fontSize="10" color="rgba(83,97,116,1)" wrap="false">
+        <p>收发方消息区分准确率</p>
+      </content>
+    </shape>
+    <shape type="rect" topLeftX="472" topLeftY="148" width="180" height="90">
+      <fill>
+        <fillColor color="rgba(37,99,235,0.15)"/>
+      </fill>
+    </shape>
+    <shape type="text" topLeftX="488" topLeftY="158" width="150" height="44">
+      <content textType="title" fontSize="36" color="rgba(37,99,235,1)" bold="true" wrap="false">
+        <p>3重</p>
+      </content>
+    </shape>
+    <shape type="text" topLeftX="488" topLeftY="204" width="150" height="24">
+      <content textType="caption" fontSize="10" color="rgba(83,97,116,1)" wrap="false">
+        <p>三重截图链路兜底保障</p>
+      </content>
+    </shape>
+    <shape type="rect" topLeftX="672" topLeftY="148" width="216" height="90">
+      <fill>
+        <fillColor color="rgba(37,99,235,0.15)"/>
+      </fill>
+    </shape>
+    <shape type="text" topLeftX="688" topLeftY="158" width="200" height="44">
+      <content textType="title" fontSize="32" color="rgba(37,99,235,1)" bold="true" wrap="false">
+        <p>0 协议逆向</p>
+      </content>
+    </shape>
+    <shape type="text" topLeftX="688" topLeftY="204" width="200" height="24">
+      <content textType="caption" fontSize="10" color="rgba(83,97,116,1)" wrap="false">
+        <p>纯屏幕截图 OCR 方案，合规安全</p>
+      </content>
+    </shape>
+    <line startX="72" startY="268" endX="888" endY="268">
+      <border color="rgba(200,210,225,1)" width="1"/>
+    </line>
+    <shape type="text" topLeftX="72" topLeftY="288" width="380" height="24">
+      <content textType="body" fontSize="14" color="rgba(13,19,38,1)" bold="true" wrap="false">
+        <p>创新点一：渲染健康度校验体系</p>
+      </content>
+    </shape>
+    <shape type="text" topLeftX="72" topLeftY="316" width="380" height="40">
+      <content textType="body" fontSize="11" color="rgba(83,97,116,1)" lineSpacing="multiple:1.5">
+        <p>局部方差快筛半渲染/纯色/黑图，未画完的帧直接重截；两帧像素一致性比对拦截加载中中间帧，杜绝无效帧喂给 OCR。</p>
+      </content>
+    </shape>
+    <shape type="text" topLeftX="500" topLeftY="288" width="380" height="24">
+      <content textType="body" fontSize="14" color="rgba(13,19,38,1)" bold="true" wrap="false">
+        <p>创新点二：双路径防重发机制</p>
+      </content>
+    </shape>
+    <shape type="text" topLeftX="500" topLeftY="316" width="380" height="40">
+      <content textType="body" fontSize="11" color="rgba(83,97,116,1)" lineSpacing="multiple:1.5">
+        <p>轮询+红点两条触发路径共享回复指纹（contact|content md5），同一消息绝不重复回复；发送后重截 OCR 校验我方气泡，确认真正送达。</p>
+      </content>
+    </shape>
+    <shape type="text" topLeftX="72" topLeftY="372" width="380" height="24">
+      <content textType="body" fontSize="14" color="rgba(13,19,38,1)" bold="true" wrap="false">
+        <p>创新点三：窗口渲染自愈机制</p>
+      </content>
+    </shape>
+    <shape type="text" topLeftX="72" topLeftY="400" width="380" height="40">
+      <content textType="body" fontSize="11" color="rgba(83,97,116,1)" lineSpacing="multiple:1.5">
+        <p>最小化时移至屏幕外(-10000,0)保持 Qt 渲染；独立线程检测前台窗口立即还原；SendMessageW 后台点击不抢占焦点、不闪现窗口。</p>
+      </content>
+    </shape>
+    <shape type="text" topLeftX="500" topLeftY="372" width="380" height="24">
+      <content textType="body" fontSize="14" color="rgba(13,19,38,1)" bold="true" wrap="false">
+        <p>创新点四：OCR 假可用自动降级</p>
+      </content>
+    </shape>
+    <shape type="text" topLeftX="500" topLeftY="400" width="380" height="40">
+      <content textType="body" fontSize="11" color="rgba(83,97,116,1)" lineSpacing="multiple:1.5">
+        <p>微信内置 OCR 连续 5 次空结果自动降级 PaddleOCR，识别不空转；三重去重策略（帧内/跨帧/会话轮次）杜绝消息重复入库。</p>
+      </content>
+    </shape>
+    <shape type="text" topLeftX="72" topLeftY="460" width="816" height="40">
+      <content textType="caption" fontSize="10" color="rgba(120,135,165,1)" lineSpacing="multiple:1.4">
+        <p>性能数据基于 Windows 11 / Python 3.10 / PaddleOCR 2.9.1 实测环境；CPU 降低比例对比全量 OCR 方案，具体数值因硬件配置而异。</p>
+      </content>
+    </shape>
+  </data>
+  <note>
+    <content textType="body">
+      <p>这一页是项目的技术亮点。最上方四个关键指标：帧差异检测让 CPU 占用降低 70% 以上，收发方区分准确率超过 90%，三重截图链路兜底保障稳定性，零协议逆向确保合规。下方是四项核心技术创新：渲染健康度校验从源头杜绝无效帧，双路径防重发保证消息不重复不遗漏，窗口渲染自愈实现后台无感运行，OCR 假可用降级确保识别不空转。这些创新共同构成了 NOYA Chat 的技术壁垒。</p>
+    </content>
+  </note>
+</slide>

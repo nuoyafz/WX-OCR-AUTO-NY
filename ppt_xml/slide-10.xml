@@ -1,0 +1,121 @@
+<slide>
+  <style>
+    <fill>
+      <fillColor color="rgb(242,244,248)"/>
+    </fill>
+  </style>
+  <data>
+    <shape type="text" topLeftX="72" topLeftY="40" width="816" height="36">
+      <content textType="title" fontSize="26" color="rgba(13,19,38,1)" bold="true" letterSpacing="0.5" wrap="false">
+        <p>未来规划：从工具到 AI 代理，三阶段演进路线</p>
+      </content>
+    </shape>
+    <line startX="72" startY="88" endX="160" endY="88">
+      <border color="rgba(37,99,235,1)" width="3"/>
+    </line>
+    <shape type="text" topLeftX="72" topLeftY="100" width="500" height="18">
+      <content textType="caption" fontSize="10" color="rgba(83,97,116,1)" wrap="false">
+        <p>ROADMAP · 短期 / 中期 / 长期三阶段规划</p>
+      </content>
+    </shape>
+    <shape type="rect" topLeftX="72" topLeftY="136" width="256" height="220">
+      <fill>
+        <fillColor color="rgba(255,255,255,1)"/>
+      </fill>
+      <border color="rgba(220,228,240,1)" width="1"/>
+    </shape>
+    <shape type="rect" topLeftX="72" topLeftY="136" width="256" height="40">
+      <fill>
+        <fillColor color="rgba(37,99,235,1)"/>
+      </fill>
+    </shape>
+    <shape type="text" topLeftX="88" topLeftY="144" width="224" height="24">
+      <content textType="body" fontSize="14" color="rgba(255,255,255,1)" bold="true" wrap="false">
+        <p>短期 v3.2 - v3.5</p>
+      </content>
+    </shape>
+    <shape type="text" topLeftX="88" topLeftY="190" width="224" height="150">
+      <content textType="body" fontSize="11" color="rgba(83,97,116,1)" lineSpacing="multiple:1.8">
+        <p>语音消息转写（Whisper）</p>
+        <p>多模态图片消息理解</p>
+        <p>多微信客户端同时监控</p>
+        <p>单联系人 Markdown 导出</p>
+        <p>每日 23:00 自动定时简报</p>
+      </content>
+    </shape>
+    <shape type="rect" topLeftX="352" topLeftY="136" width="256" height="220">
+      <fill>
+        <fillColor color="rgba(255,255,255,1)"/>
+      </fill>
+      <border color="rgba(220,228,240,1)" width="1"/>
+    </shape>
+    <shape type="rect" topLeftX="352" topLeftY="136" width="256" height="40">
+      <fill>
+        <fillColor color="rgba(13,19,38,1)"/>
+      </fill>
+    </shape>
+    <shape type="text" topLeftX="368" topLeftY="144" width="224" height="24">
+      <content textType="body" fontSize="14" color="rgba(255,255,255,1)" bold="true" wrap="false">
+        <p>中期 v3.6 - v4.0</p>
+      </content>
+    </shape>
+    <shape type="text" topLeftX="368" topLeftY="190" width="224" height="150">
+      <content textType="body" fontSize="11" color="rgba(83,97,116,1)" lineSpacing="multiple:1.8">
+        <p>智能日程：约会会议自动入历</p>
+        <p>联系人情绪趋势长期报告</p>
+        <p>高频场景回复模板库</p>
+        <p>插件系统：开放扩展接口</p>
+        <p>AI 主动问候久未联系的人</p>
+      </content>
+    </shape>
+    <shape type="rect" topLeftX="632" topLeftY="136" width="256" height="220">
+      <fill>
+        <fillColor color="rgba(255,255,255,1)"/>
+      </fill>
+      <border color="rgba(220,228,240,1)" width="1"/>
+    </shape>
+    <shape type="rect" topLeftX="632" topLeftY="136" width="256" height="40">
+      <fill>
+        <fillColor color="rgba(37,99,235,0.7)"/>
+      </fill>
+    </shape>
+    <shape type="text" topLeftX="648" topLeftY="144" width="224" height="24">
+      <content textType="body" fontSize="14" color="rgba(255,255,255,1)" bold="true" wrap="false">
+        <p>长期愿景</p>
+      </content>
+    </shape>
+    <shape type="text" topLeftX="648" topLeftY="190" width="224" height="150">
+      <content textType="body" fontSize="11" color="rgba(83,97,116,1)" lineSpacing="multiple:1.8">
+        <p>AI 代理模式：自主判断是否回复</p>
+        <p>自主生成回复内容并执行</p>
+        <p>跨平台适配：macOS / Linux</p>
+        <p>个人数字助理完整形态</p>
+        <p>社交数据驱动的决策支持</p>
+      </content>
+    </shape>
+    <line startX="72" startY="380" endX="888" endY="380">
+      <border color="rgba(200,210,225,1)" width="1"/>
+    </line>
+    <shape type="rect" topLeftX="72" topLeftY="404" width="816" height="92">
+      <fill>
+        <fillColor color="rgba(13,19,38,1)"/>
+      </fill>
+    </shape>
+    <shape type="text" topLeftX="96" topLeftY="418" width="780" height="24">
+      <content textType="body" fontSize="16" color="rgba(255,255,255,1)" bold="true" wrap="false">
+        <p>NOYA Chat：让微信里的每一条信息，都成为你知识体系的一部分</p>
+      </content>
+    </shape>
+    <shape type="text" topLeftX="96" topLeftY="448" width="780" height="40">
+      <content textType="body" fontSize="11" color="rgba(191,215,255,1)" lineSpacing="multiple:1.6">
+        <p>基于窗口截图 + PaddleOCR 的合规方案  ·  通义千问大模型语义理解  ·  Obsidian 知识库自动沉淀  ·  全部数据本地存储，安全可控</p>
+        <p>MIT 开源协议  ·  Python 3.10+  ·  已打包 Windows EXE  ·  v3.1 当前版本</p>
+      </content>
+    </shape>
+  </data>
+  <note>
+    <content textType="body">
+      <p>最后是未来规划。我们规划了三个阶段：短期 v3.2 到 v3.5 聚焦语音转写、多模态理解、多实例支持等基础能力；中期 v3.6 到 v4.0 规划智能日程、情绪趋势、回复模板库和插件系统；长期愿景是实现 AI 代理模式，让大模型自主判断是否回复、生成内容并执行，同时跨平台适配 macOS 和 Linux。NOYA Chat 的终极目标是让微信里的每一条信息都成为你知识体系的一部分，打造真正属于个人的数字助理。感谢各位评委，以上就是我的项目汇报。</p>
+    </content>
+  </note>
+</slide>

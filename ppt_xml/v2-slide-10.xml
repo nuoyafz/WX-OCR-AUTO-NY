@@ -1,0 +1,159 @@
+<slide>
+  <style>
+    <fill>
+      <fillColor color="rgb(10,14,26)"/>
+    </fill>
+  </style>
+  <data>
+    <shape type="text" topLeftX="64" topLeftY="56" width="500" height="24">
+      <content textType="caption" fontSize="12" color="rgba(0,212,255,1)" bold="true" letterSpacing="3" wrap="false">
+        <p>SUMMARY &amp; ROADMAP · 总结与未来规划</p>
+      </content>
+    </shape>
+    <shape type="text" topLeftX="64" topLeftY="92" width="832" height="56">
+      <content textType="title" fontSize="44" color="rgba(255,255,255,1)" bold="true" letterSpacing="0.5" wrap="false">
+        <p>让微信数据</p>
+      </content>
+    </shape>
+    <shape type="text" topLeftX="64" topLeftY="148" width="832" height="56">
+      <content textType="title" fontSize="44" color="rgba(168,85,247,1)" bold="true" letterSpacing="0.5" wrap="false">
+        <p>真正属于你</p>
+      </content>
+    </shape>
+    <line startX="64" startY="224" endX="200" endY="224">
+      <border color="rgba(0,212,255,1)" width="2"/>
+    </line>
+    <shape type="text" topLeftX="64" topLeftY="248" width="200" height="20">
+      <content textType="caption" fontSize="11" color="rgba(0,212,255,1)" bold="true" letterSpacing="1" wrap="false">
+        <p>核心价值</p>
+      </content>
+    </shape>
+    <shape type="text" topLeftX="64" topLeftY="272" width="200" height="20">
+      <content textType="body" fontSize="13" color="rgba(255,255,255,1)" bold="true" wrap="false">
+        <p>零协议逆向</p>
+      </content>
+    </shape>
+    <shape type="text" topLeftX="64" topLeftY="294" width="200" height="16">
+      <content textType="caption" fontSize="10" color="rgba(100,116,139,1)" wrap="false">
+        <p>纯截图OCR，合规安全</p>
+      </content>
+    </shape>
+    <shape type="text" topLeftX="64" topLeftY="320" width="200" height="20">
+      <content textType="body" fontSize="13" color="rgba(255,255,255,1)" bold="true" wrap="false">
+        <p>数据本地化</p>
+      </content>
+    </shape>
+    <shape type="text" topLeftX="64" topLeftY="342" width="200" height="16">
+      <content textType="caption" fontSize="10" color="rgba(100,116,139,1)" wrap="false">
+        <p>SQLite存储，不出域</p>
+      </content>
+    </shape>
+    <shape type="text" topLeftX="64" topLeftY="368" width="200" height="20">
+      <content textType="body" fontSize="13" color="rgba(255,255,255,1)" bold="true" wrap="false">
+        <p>AI全链路赋能</p>
+      </content>
+    </shape>
+    <shape type="text" topLeftX="64" topLeftY="390" width="200" height="16">
+      <content textType="caption" fontSize="10" color="rgba(100,116,139,1)" wrap="false">
+        <p>回复/抽取/摘要/画像</p>
+      </content>
+    </shape>
+    <line startX="300" startY="248" endX="300" endY="410">
+      <border color="rgba(30,41,59,1)" width="1"/>
+    </line>
+    <shape type="text" topLeftX="324" topLeftY="248" width="200" height="20">
+      <content textType="caption" fontSize="11" color="rgba(168,85,247,1)" bold="true" letterSpacing="1" wrap="false">
+        <p>未来规划</p>
+      </content>
+    </shape>
+    <shape type="text" topLeftX="324" topLeftY="272" width="200" height="20">
+      <content textType="body" fontSize="13" color="rgba(255,255,255,1)" bold="true" wrap="false">
+        <p>跨平台支持</p>
+      </content>
+    </shape>
+    <shape type="text" topLeftX="324" topLeftY="294" width="200" height="16">
+      <content textType="caption" fontSize="10" color="rgba(100,116,139,1)" wrap="false">
+        <p>Mac / Linux 适配</p>
+      </content>
+    </shape>
+    <shape type="text" topLeftX="324" topLeftY="320" width="200" height="20">
+      <content textType="body" fontSize="13" color="rgba(255,255,255,1)" bold="true" wrap="false">
+        <p>多IM扩展</p>
+      </content>
+    </shape>
+    <shape type="text" topLeftX="324" topLeftY="342" width="200" height="16">
+      <content textType="caption" fontSize="10" color="rgba(100,116,139,1)" wrap="false">
+        <p>QQ / Telegram / 钉钉</p>
+      </content>
+    </shape>
+    <shape type="text" topLeftX="324" topLeftY="368" width="200" height="20">
+      <content textType="body" fontSize="13" color="rgba(255,255,255,1)" bold="true" wrap="false">
+        <p>插件系统</p>
+      </content>
+    </shape>
+    <shape type="text" topLeftX="324" topLeftY="390" width="200" height="16">
+      <content textType="caption" fontSize="10" color="rgba(100,116,139,1)" wrap="false">
+        <p>第三方能力扩展生态</p>
+      </content>
+    </shape>
+    <line startX="560" startY="248" endX="560" endY="410">
+      <border color="rgba(30,41,59,1)" width="1"/>
+    </line>
+    <shape type="text" topLeftX="584" topLeftY="248" width="200" height="20">
+      <content textType="caption" fontSize="11" color="rgba(0,212,255,1)" bold="true" letterSpacing="1" wrap="false">
+        <p>技术栈</p>
+      </content>
+    </shape>
+    <shape type="text" topLeftX="584" topLeftY="272" width="300" height="20">
+      <content textType="body" fontSize="13" color="rgba(255,255,255,1)" bold="true" wrap="false">
+        <p>Python 3.10+</p>
+      </content>
+    </shape>
+    <shape type="text" topLeftX="584" topLeftY="294" width="300" height="16">
+      <content textType="caption" fontSize="10" color="rgba(100,116,139,1)" wrap="false">
+        <p>customtkinter / PaddleOCR / OpenCV</p>
+      </content>
+    </shape>
+    <shape type="text" topLeftX="584" topLeftY="320" width="300" height="20">
+      <content textType="body" fontSize="13" color="rgba(255,255,255,1)" bold="true" wrap="false">
+        <p>通义千问 Qwen</p>
+      </content>
+    </shape>
+    <shape type="text" topLeftX="584" topLeftY="342" width="300" height="16">
+      <content textType="caption" fontSize="10" color="rgba(100,116,139,1)" wrap="false">
+        <p>mss / pywin32 / SQLite / Obsidian</p>
+      </content>
+    </shape>
+    <shape type="text" topLeftX="584" topLeftY="368" width="300" height="20">
+      <content textType="body" fontSize="13" color="rgba(255,255,255,1)" bold="true" wrap="false">
+        <p>已打包 Windows EXE</p>
+      </content>
+    </shape>
+    <shape type="text" topLeftX="584" topLeftY="390" width="300" height="16">
+      <content textType="caption" fontSize="10" color="rgba(100,116,139,1)" wrap="false">
+        <p>当前版本 v3.1 · 全局快捷键 Ctrl+T</p>
+      </content>
+    </shape>
+    <shape type="rect" topLeftX="64" topLeftY="448" width="832" height="56">
+      <fill>
+        <fillColor color="rgba(0,212,255,0.08)"/>
+      </fill>
+      <border color="rgba(0,212,255,0.3)" width="1"/>
+    </shape>
+    <shape type="text" topLeftX="84" topLeftY="458" width="800" height="20">
+      <content textType="body" fontSize="14" color="rgba(0,212,255,1)" bold="true" wrap="false">
+        <p>NOYA Chat — 你的个人社交数据操作系统</p>
+      </content>
+    </shape>
+    <shape type="text" topLeftX="84" topLeftY="480" width="800" height="16">
+      <content textType="caption" fontSize="10" color="rgba(100,116,139,1)" wrap="false">
+        <p>从消息采集到知识沉淀，全链路自动化 · 数据本地存储 · 非协议逆向 · 开源可审计</p>
+      </content>
+    </shape>
+  </data>
+  <note>
+    <content textType="body">
+      <p>最后总结 NOYA Chat 的核心价值和未来规划。核心价值有三点：零协议逆向，纯截图 OCR 方案合规安全；数据本地化，SQLite 存储不出域；AI 全链路赋能，从回复到抽取到摘要到画像。未来规划包括跨平台支持 Mac 和 Linux、多 IM 扩展到 QQ/Telegram/钉钉、以及插件系统构建第三方能力生态。技术栈基于 Python 3.10+，使用 customtkinter、PaddleOCR、OpenCV、通义千问等，已打包 Windows EXE，当前版本 v3.1。NOYA Chat 的愿景是成为你的个人社交数据操作系统，让微信数据真正属于你。</p>
+    </content>
+  </note>
+</slide>

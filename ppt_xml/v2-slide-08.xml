@@ -1,0 +1,180 @@
+<slide>
+  <style>
+    <fill>
+      <fillColor color="rgb(10,14,26)"/>
+    </fill>
+  </style>
+  <data>
+    <shape type="text" topLeftX="64" topLeftY="40" width="500" height="24">
+      <content textType="caption" fontSize="12" color="rgba(0,212,255,1)" bold="true" letterSpacing="3" wrap="false">
+        <p>AI EMPOWERMENT · AI 赋能 Obsidian</p>
+      </content>
+    </shape>
+    <shape type="text" topLeftX="64" topLeftY="72" width="400" height="40">
+      <content textType="title" fontSize="30" color="rgba(255,255,255,1)" bold="true" wrap="false">
+        <p>微信数据 → 个人知识库</p>
+      </content>
+    </shape>
+    <shape type="text" topLeftX="64" topLeftY="116" width="400" height="20">
+      <content textType="caption" fontSize="12" color="rgba(100,116,139,1)" wrap="false">
+        <p>双同步模式：文件直写 + REST API，兼容所有Obsidian版本</p>
+      </content>
+    </shape>
+    <line startX="64" startY="156" endX="440" endY="156">
+      <border color="rgba(0,212,255,0.3)" width="1"/>
+    </line>
+    <shape type="text" topLeftX="64" topLeftY="180" width="40" height="32">
+      <content textType="title" fontSize="24" color="rgba(0,212,255,1)" bold="true" wrap="false">
+        <p>01</p>
+      </content>
+    </shape>
+    <shape type="text" topLeftX="112" topLeftY="184" width="320" height="20">
+      <content textType="body" fontSize="14" color="rgba(255,255,255,1)" bold="true" wrap="false">
+        <p>AI 会话摘要</p>
+      </content>
+    </shape>
+    <shape type="text" topLeftX="112" topLeftY="206" width="320" height="20">
+      <content textType="caption" fontSize="11" color="rgba(100,116,139,1)" wrap="false">
+        <p>每天自动生成对话摘要，关键信息不遗漏</p>
+      </content>
+    </shape>
+    <shape type="text" topLeftX="64" topLeftY="240" width="40" height="32">
+      <content textType="title" fontSize="24" color="rgba(0,212,255,1)" bold="true" wrap="false">
+        <p>02</p>
+      </content>
+    </shape>
+    <shape type="text" topLeftX="112" topLeftY="244" width="320" height="20">
+      <content textType="body" fontSize="14" color="rgba(255,255,255,1)" bold="true" wrap="false">
+        <p>联系人画像</p>
+      </content>
+    </shape>
+    <shape type="text" topLeftX="112" topLeftY="266" width="320" height="20">
+      <content textType="caption" fontSize="11" color="rgba(100,116,139,1)" wrap="false">
+        <p>身份/关系/沟通风格/亲密度，四维建模</p>
+      </content>
+    </shape>
+    <shape type="text" topLeftX="64" topLeftY="300" width="40" height="32">
+      <content textType="title" fontSize="24" color="rgba(168,85,247,1)" bold="true" wrap="false">
+        <p>03</p>
+      </content>
+    </shape>
+    <shape type="text" topLeftX="112" topLeftY="304" width="320" height="20">
+      <content textType="body" fontSize="14" color="rgba(255,255,255,1)" bold="true" wrap="false">
+        <p>社交图谱</p>
+      </content>
+    </shape>
+    <shape type="text" topLeftX="112" topLeftY="326" width="320" height="20">
+      <content textType="caption" fontSize="11" color="rgba(100,116,139,1)" wrap="false">
+        <p>联系人关系网络可视化，发现隐藏连接</p>
+      </content>
+    </shape>
+    <shape type="text" topLeftX="64" topLeftY="360" width="40" height="32">
+      <content textType="title" fontSize="24" color="rgba(168,85,247,1)" bold="true" wrap="false">
+        <p>04</p>
+      </content>
+    </shape>
+    <shape type="text" topLeftX="112" topLeftY="364" width="320" height="20">
+      <content textType="body" fontSize="14" color="rgba(255,255,255,1)" bold="true" wrap="false">
+        <p>项目笔记</p>
+      </content>
+    </shape>
+    <shape type="text" topLeftX="112" topLeftY="386" width="320" height="20">
+      <content textType="caption" fontSize="11" color="rgba(100,116,139,1)" wrap="false">
+        <p>按项目聚合相关对话，上下文自动关联</p>
+      </content>
+    </shape>
+    <shape type="text" topLeftX="64" topLeftY="420" width="40" height="32">
+      <content textType="title" fontSize="24" color="rgba(168,85,247,1)" bold="true" wrap="false">
+        <p>05</p>
+      </content>
+    </shape>
+    <shape type="text" topLeftX="112" topLeftY="424" width="320" height="20">
+      <content textType="body" fontSize="14" color="rgba(255,255,255,1)" bold="true" wrap="false">
+        <p>每日简报</p>
+      </content>
+    </shape>
+    <shape type="text" topLeftX="112" topLeftY="446" width="320" height="20">
+      <content textType="caption" fontSize="11" color="rgba(100,116,139,1)" wrap="false">
+        <p>汇总当日重要消息、待办和情绪趋势</p>
+      </content>
+    </shape>
+    <shape type="rect" topLeftX="500" topLeftY="120" width="396" height="360">
+      <fill>
+        <fillColor color="rgba(15,23,42,1)"/>
+      </fill>
+      <border color="rgba(30,41,59,1)" width="1"/>
+    </shape>
+    <shape type="text" topLeftX="520" topLeftY="140" width="360" height="20">
+      <content textType="caption" fontSize="11" color="rgba(148,163,184,1)" letterSpacing="1" wrap="false">
+        <p>数据流转示意</p>
+      </content>
+    </shape>
+    <shape type="slides-full-round-rect" topLeftX="520" topLeftY="176" width="356" height="44">
+      <fill>
+        <fillColor color="rgba(0,212,255,0.12)"/>
+      </fill>
+      <border color="rgba(0,212,255,0.4)" width="1"/>
+    </shape>
+    <shape type="text" topLeftX="540" topLeftY="184" width="320" height="28">
+      <content textType="body" fontSize="13" color="rgba(0,212,255,1)" bold="true" wrap="false">
+        <p>微信消息流（截图 + OCR）</p>
+      </content>
+    </shape>
+    <line startX="698" startY="220" endX="698" endY="240">
+      <border color="rgba(100,116,139,1)" width="1"/>
+      <endArrow type="arrow"/>
+    </line>
+    <shape type="slides-full-round-rect" topLeftX="520" topLeftY="240" width="356" height="44">
+      <fill>
+        <fillColor color="rgba(168,85,247,0.12)"/>
+      </fill>
+      <border color="rgba(168,85,247,0.4)" width="1"/>
+    </shape>
+    <shape type="text" topLeftX="540" topLeftY="248" width="320" height="28">
+      <content textType="body" fontSize="13" color="rgba(168,85,247,1)" bold="true" wrap="false">
+        <p>AI 理解层（分类/抽取/摘要/画像）</p>
+      </content>
+    </shape>
+    <line startX="698" startY="284" endX="698" endY="304">
+      <border color="rgba(100,116,139,1)" width="1"/>
+      <endArrow type="arrow"/>
+    </line>
+    <shape type="slides-full-round-rect" topLeftX="520" topLeftY="304" width="356" height="44">
+      <fill>
+        <fillColor color="rgba(0,212,255,0.12)"/>
+      </fill>
+      <border color="rgba(0,212,255,0.4)" width="1"/>
+    </shape>
+    <shape type="text" topLeftX="540" topLeftY="312" width="320" height="28">
+      <content textType="body" fontSize="13" color="rgba(0,212,255,1)" bold="true" wrap="false">
+        <p>结构化数据（SQLite + Markdown）</p>
+      </content>
+    </shape>
+    <line startX="698" startY="348" endX="698" endY="368">
+      <border color="rgba(100,116,139,1)" width="1"/>
+      <endArrow type="arrow"/>
+    </line>
+    <shape type="slides-full-round-rect" topLeftX="520" topLeftY="368" width="356" height="44">
+      <fill>
+        <fillColor color="rgba(168,85,247,0.15)"/>
+      </fill>
+      <border color="rgba(168,85,247,0.5)" width="1"/>
+    </shape>
+    <shape type="text" topLeftX="540" topLeftY="376" width="320" height="28">
+      <content textType="body" fontSize="13" color="rgba(168,85,247,1)" bold="true" wrap="false">
+        <p>Obsidian 知识库（双向链接 + 图谱）</p>
+      </content>
+    </shape>
+    <shape type="text" topLeftX="520" topLeftY="428" width="356" height="40">
+      <content textType="caption" fontSize="10" color="rgba(71,85,105,1)" lineSpacing="multiple:1.5">
+        <p>所有数据本地存储，不经过第三方服务器</p>
+        <p>支持 Obsidian Tasks / Dataview / Graph View 插件</p>
+      </content>
+    </shape>
+  </data>
+  <note>
+    <content textType="body">
+      <p>这是 NOYA Chat 最有差异化的能力——AI 赋能 Obsidian。五大 AI 能力：第一，AI 会话摘要，每天自动生成对话摘要；第二，联系人画像，从身份、关系、沟通风格、亲密度四个维度建模；第三，社交图谱，可视化联系人关系网络；第四，项目笔记，按项目聚合相关对话自动关联上下文；第五，每日简报，汇总当日重要消息、待办和情绪趋势。右侧是数据流转示意：微信消息流经过截图和 OCR，进入 AI 理解层做分类、抽取、摘要和画像，转化为结构化数据存储在 SQLite 和 Markdown 中，最终同步到 Obsidian 知识库，支持双向链接和图谱视图。所有数据本地存储，不经过第三方服务器。</p>
+    </content>
+  </note>
+</slide>

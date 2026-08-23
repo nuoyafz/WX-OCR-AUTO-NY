@@ -300,6 +300,18 @@ class WeChatEngine:
             payload["classification"] = extracted.get("classification", "") or ""
             payload["priority"] = extracted.get("priority", 0) or 0
 
+        # 情感分析 + 紧急度分级（本地规则引擎，不依赖 LLM）
+        if self._sentiment_analyzer is not None:
+            try:
+                sa = self._sentiment_analyzer.analyze(content, sender=sender)
+                payload["sentiment"] = payload.get("sentiment") or sa.get("sentiment", "")
+                payload["urgency"] = payload.get("urgency") or sa.get("urgency", 0)
+                payload["is_urgent"] = sa.get("is_urgent", False)
+                payload["urgency_reason"] = sa.get("urgency_reason", "")
+                payload["sentiment_method"] = sa.get("method", "rule")
+            except Exception:
+                pass
+
         try:
             self._on_new_message(payload)
         except Exception as e:
@@ -376,6 +388,59 @@ class WeChatEngine:
         self.ai_trainer = AITrainer(self.llm_config, training_threshold=ai_threshold)
         progress = self.ai_trainer.get_progress()
         self._log("info", f"  ✔ AI训练引擎就绪 (学习进度 {progress['current']}/{ai_threshold})")
+
+        # 步骤7：RAG 本地知识库检索（向量嵌入 + 历史检索增强回复）
+        self._rag_retriever = None
+        rag_cfg = self.role_manager.config.get("rag", {})
+        if rag_cfg.get("enabled", True):
+            try:
+                from rag_retriever import get_rag_retriever
+                self._rag_retriever = get_rag_retriever(rag_cfg)
+                if self._rag_retriever.enabled:
+                    # 注入到 LLM 客户端
+                    if self.llm_client is not None:
+                        self.llm_client.set_rag_retriever(self._rag_retriever)
+                    self._log("info", "  ✔ RAG 本地知识库检索已启用")
+                else:
+                    self._log("info", "  ✔ RAG 检索已跳过（依赖未安装或禁用）")
+            except Exception as e:
+                self._log("info", f"  ✔ RAG 初始化跳过: {e}")
+
+        # 步骤8：情感分析 + 紧急度分级
+        self._sentiment_analyzer = None
+        sent_cfg = self.role_manager.config.get("sentiment", {})
+        if sent_cfg.get("enabled", True):
+            try:
+                from sentiment_analyzer import get_sentiment_analyzer
+                self._sentiment_analyzer = get_sentiment_analyzer(sent_cfg)
+                self._log("info", "  ✔ 情感分析+紧急度分级已启用")
+            except Exception as e:
+                self._log("info", f"  ✔ 情感分析初始化跳过: {e}")
+
+        # 步骤9：Windows UI Automation 无渲染未读监控（最小化/屏幕外均可用）
+        self._uia_monitor = None
+        uia_cfg = self.role_manager.config.get("uia_monitor", {})
+        if uia_cfg.get("enabled", True):
+            try:
+                from uia_monitor import get_uia_monitor
+                self._uia_monitor = get_uia_monitor(uia_cfg)
+                if self._uia_monitor.enabled:
+                    self._log("info", "  ✔ UIA 无渲染未读监控已启用（最小化/屏幕外均可用）")
+                else:
+                    self._log("info", "  ✔ UIA 监控跳过（uiautomation 未安装）")
+            except Exception as e:
+                self._log("info", f"  ✔ UIA 初始化跳过: {e}")
+
+        # 步骤10：自适应点击优化器（像素验证 + 智能偏移 + 直方图变化检测）
+        self._click_optimizer = None
+        click_opt_cfg = self.role_manager.config.get("click_optimizer", {})
+        if click_opt_cfg.get("enabled", True):
+            try:
+                from click_optimizer import get_click_optimizer
+                self._click_optimizer = get_click_optimizer(click_opt_cfg)
+                self._log("info", "  ✔ 自适应点击优化器已启用（像素验证+智能偏移）")
+            except Exception as e:
+                self._log("info", f"  ✔ 点击优化器初始化跳过: {e}")
 
         self._log("info", "===== 全部模块初始化完成，准备开始监控 =====")
 
@@ -523,6 +588,20 @@ class WeChatEngine:
             self._log("warning", f"[存储] 拒绝疑似预览的 contact: '{contact}'")
             return
         self.storage.save(extracted)
+
+        # RAG 索引：将消息加入向量库（异步，不阻塞主流程）
+        if self._rag_retriever is not None:
+            try:
+                self._rag_retriever.index_message(
+                    contact=contact,
+                    sender=extracted.get("sender", "other"),
+                    content=text,
+                    timestamp=extracted.get("timestamp", ""),
+                    is_important=extracted.get("is_important", False),
+                    keywords=extracted.get("matched_keywords"),
+                )
+            except Exception:
+                pass
 
     def _maybe_auto_reply(self, contact, content, sender, context=None, is_group=False):
         """
@@ -1654,39 +1733,61 @@ class WeChatEngine:
 
                 # === 红点监控：检测左侧栏未读消息 ===
                 # 勿扰模式时跳过红点扫描；快速模式触发时立即扫描，否则按正常3秒间隔扫描
-                if self.red_dot_monitor and self.red_dot_monitor.enabled and not dnd_active:
-                    # 快速模式触发时跳过间隔检查，立即扫描
-                    check_interval = 1 if fast_triggered else 3
-                    if fast_triggered or self.red_dot_monitor.should_check(interval=check_interval):
-                        if fast_triggered:
-                            self._log("info", "[快速] 检测到窗口标题未读数，触发红点扫描")
-                        self._log("info", "[红点] 正在扫描左侧栏未读消息...")
-                        unread = self.red_dot_monitor.get_unread_contacts(self.window)
-                        # ★ 红点扫描期间也推送预览（侧边栏截图），避免预览一直"等待截图"
+                if not dnd_active:
+                    unread = None
+                    _scan_method = ""
+
+                    # ★ UIA 快速路径：最小化/屏幕外时优先用 UIA（无渲染，0.05s）
+                    if self._uia_monitor is not None and self._uia_monitor.enabled:
                         try:
-                            _sb_img = getattr(self.red_dot_monitor, '_last_sidebar_img', None)
-                            if _sb_img is not None:
-                                self._on_capture(_sb_img)
+                            from window_manager import is_window_minimized
+                            _is_min = is_window_minimized(self.window)
+                            if _is_min or self.minimize_mode == "offscreen":
+                                unread = self._uia_monitor.get_unread_contacts(self.window)
+                                if unread is not None:
+                                    _scan_method = "uia"
+                                    self._log("info", "[UIA] 无渲染扫描完成: "
+                                              f"{len(unread) if unread else 0} 个未读")
                         except Exception:
                             pass
-                        debug_info = getattr(self.red_dot_monitor, '_last_debug', '')
-                        if debug_info:
-                            self._log("info", f"[红点] 诊断: {debug_info}")
-                        if unread:
-                            self._log("info", f"[红点] 检测到 {len(unread)} 个联系人有未读消息: {[u['contact'] for u in unread]}")
-                            # ★ V3.4 前台不抢窗口：用户正在用微信时不主动切换会话，
-                            #   避免监控抢走用户正在看的窗口（扫描照常，仅跳过切换处理）。
-                            _respect_focus = self.role_manager.config.get(
-                                "monitor", {}).get("respect_user_focus", False)
-                            if _respect_focus and self._is_wechat_foreground():
-                                self._log("info",
-                                    f"[红点] 前台使用中且已开启 respect_user_focus → 本轮跳过切换"
-                                    f"（待处理: {[u['contact'] for u in unread]}），避免打断用户")
-                            else:
-                                self._handle_unread_contacts(unread, contact_name)
-                                continue  # 处理完未读后跳过本轮正常截图
+
+                    # ★ 截图路径：UIA 不可用或无结果时回退
+                    if (unread is None and
+                            self.red_dot_monitor and self.red_dot_monitor.enabled):
+                        check_interval = 1 if fast_triggered else 3
+                        if fast_triggered or self.red_dot_monitor.should_check(interval=check_interval):
+                            if fast_triggered:
+                                self._log("info", "[快速] 检测到窗口标题未读数，触发红点扫描")
+                            self._log("info", "[红点] 正在扫描左侧栏未读消息...")
+                            unread = self.red_dot_monitor.get_unread_contacts(self.window)
+                            _scan_method = "screenshot"
+                            # ★ 红点扫描期间也推送预览（侧边栏截图），避免预览一直"等待截图"
+                            try:
+                                _sb_img = getattr(self.red_dot_monitor, '_last_sidebar_img', None)
+                                if _sb_img is not None:
+                                    self._on_capture(_sb_img)
+                            except Exception:
+                                pass
+                            debug_info = getattr(self.red_dot_monitor, '_last_debug', '')
+                            if debug_info:
+                                self._log("info", f"[红点] 诊断: {debug_info}")
+
+                    if unread:
+                        self._log("info", f"[红点] 检测到 {len(unread)} 个联系人有未读消息"
+                                  f" (方式:{_scan_method}): {[u['contact'] for u in unread]}")
+                        # ★ V3.4 前台不抢窗口：用户正在用微信时不主动切换会话，
+                        #   避免监控抢走用户正在看的窗口（扫描照常，仅跳过切换处理）。
+                        _respect_focus = self.role_manager.config.get(
+                            "monitor", {}).get("respect_user_focus", False)
+                        if _respect_focus and self._is_wechat_foreground():
+                            self._log("info",
+                                f"[红点] 前台使用中且已开启 respect_user_focus → 本轮跳过切换"
+                                f"（待处理: {[u['contact'] for u in unread]}），避免打断用户")
                         else:
-                            self._log("info", "[红点] 未检测到未读消息，继续监控当前窗口")
+                            self._handle_unread_contacts(unread, contact_name)
+                            continue  # 处理完未读后跳过本轮正常截图
+                    elif unread is not None:
+                        self._log("info", f"[红点] 未检测到未读消息 (方式:{_scan_method})，继续监控当前窗口")
 
                 # 0.5 每轮重新解析当前窗口联系人名（红点切换/切回后窗口已变，
                 #     必须刷新 contact_name，否则消息会被存进空 contact "" 幽灵会话）
@@ -2463,25 +2564,56 @@ class WeChatEngine:
             method = item.get("method", "hsv")
             self._log("info", f"[红点] 切换到 {contact} (未读:{unread_count}, 方式:{method})")
 
+            # ★ 点击前快照：保存侧边栏 + 聊天区截图供像素级验证
+            _before_sidebar = None
+            _before_chat = None
+            _red_dot_info = {
+                "center_x": item.get("red_dot_x", 0),
+                "center_y": item.get("red_dot_y", 0),
+                "w": item.get("red_dot_w", 10),
+                "h": item.get("red_dot_h", 10),
+            }
+            if self._click_optimizer is not None and self.red_dot_monitor is not None:
+                try:
+                    _before_sidebar = self.red_dot_monitor.capture_sidebar(self.window)
+                    # 截取当前聊天区供直方图对比
+                    from screenshot import capture_via_printwindow_stable, crop_chat_region_img
+                    _hwnd = getattr(self.window, "_hWnd", None)
+                    if _hwnd:
+                        _full = capture_via_printwindow_stable(_hwnd)
+                        if _full is not None and _full.mean() > 5:
+                            _before_chat = crop_chat_region_img(
+                                _full, bottom_ratio=self.wechat_config.get("capture_ratio_full", 0.85))
+                except Exception:
+                    pass
+
             hwnd = getattr(self.window, "_hWnd", None)
             # 点击前节流：距上次成功点击过近则补足间隔并加随机抖动
             _gap = time.time() - self._last_click_ts
             if _gap < MIN_CLICK_GAP:
                 time.sleep(MIN_CLICK_GAP - _gap + random.uniform(0.0, 0.9))
+
+            # ★ 自适应点击：失败时自动微调 Y 偏移而非固定重试
+            _click_attempt = self._click_retry_counts.get(contact, 0)
             try:
                 if hwnd and _was_offscreen:
                     from window_manager import edge_click_window
-                    # 优先用红点像素Y（几何稳定、无OCR误差），回退到OCR名字Y
-                    _click_y = item.get("red_dot_y", item.get("name_y"))
+                    # 自适应 Y：优先红点Y，失败时自动偏移
+                    _base_y = item.get("red_dot_y", item.get("name_y"))
+                    if self._click_optimizer is not None:
+                        _click_y = self._click_optimizer.get_adaptive_click_y(
+                            _base_y, item.get("name_y", _base_y), _click_attempt)
+                    else:
+                        _click_y = _base_y
                     click_cx, click_cy = self.red_dot_monitor.get_click_client_position(
                         self.window, _click_y, None
                     )
-                    # 边缘点击方案：窗口移到屏幕边缘(露1px)→激活→SendInput物理点击→移回
-                    self._log("info", f"[红点] 边缘点击: ({click_cx}, {click_cy})")
+                    self._log("info", f"[红点] 边缘点击: ({click_cx}, {click_cy})"
+                              f" (尝试#{_click_attempt+1}, Y={_click_y})")
                     ok = edge_click_window(self.window, click_cx, click_cy)
                     if not ok:
-                        self._click_retry_counts[contact] = self._click_retry_counts.get(contact, 0) + 1
-                        retries = self._click_retry_counts.get(contact, 0)
+                        self._click_retry_counts[contact] = _click_attempt + 1
+                        retries = self._click_retry_counts[contact]
                         if retries >= MAX_CLICK_RETRIES:
                             self._log("warning", f"[红点] {contact} 点击重试{retries}次失败，强制标记已处理")
                             self.red_dot_monitor.mark_processed(contact)
@@ -2491,16 +2623,20 @@ class WeChatEngine:
                         continue
                     self._log("info", "[红点] 后台点击完成（待验证切换）")
                 else:
-                    # 优先用红点像素Y（几何稳定、无OCR误差），回退到OCR名字Y
-                    _click_y = item.get("red_dot_y", item.get("name_y"))
+                    _base_y = item.get("red_dot_y", item.get("name_y"))
+                    if self._click_optimizer is not None:
+                        _click_y = self._click_optimizer.get_adaptive_click_y(
+                            _base_y, item.get("name_y", _base_y), _click_attempt)
+                    else:
+                        _click_y = _base_y
                     click_cx, click_cy = self.red_dot_monitor.get_click_client_position(
                         self.window, _click_y, None
                     )
-                    self._log("info", f"[红点] 模拟点击(无鼠标移动)坐标: ({click_cx}, {click_cy})")
+                    self._log("info", f"[红点] 模拟点击(无鼠标移动)坐标: ({click_cx}, {click_cy})"
+                              f" (尝试#{_click_attempt+1}, Y={_click_y})")
                     from window_manager import simulate_click_window
                     ok = simulate_click_window(self.window, click_cx, click_cy)
                     if not ok:
-                        # 兜底：SendMessageW 注入失败时退回物理点击
                         self._log("warning", "[红点] SendMessageW 模拟点击失败，退回物理点击")
                         click_x, click_y = self.red_dot_monitor.get_click_position(
                             self.window, _click_y, None
@@ -2517,20 +2653,59 @@ class WeChatEngine:
                     self._log("warning", f"[红点] {contact} 点击重试{retries}次失败，强制跳过")
                 continue
 
-            # === P0 点击后验证闭环 ===
-            # 点击后实测目标联系人红点是否消失，失败则重试/放弃，杜绝『误点已读』。
-            # 验证失败 → 跳过本次消息处理与标记（红点仍在，下一轮会再点）。
-            _verified = self._verify_contact_switched(contact)
+            # === P0 点击后验证闭环（三阶段快速验证） ===
+            time.sleep(0.6)  # 等微信切换会话 + 红点消失动画
+
+            _verified = False
+            _verify_stage = "full_ocr"
+
+            # ★ 阶段1+2：像素级验证 + 直方图变化检测（0.3s，快于全OCR重扫）
+            if (self._click_optimizer is not None and
+                    _before_sidebar is not None and
+                    self.red_dot_monitor is not None):
+                try:
+                    _after_sidebar = self.red_dot_monitor.capture_sidebar(self.window)
+                    # 阶段1：像素级红点验证
+                    _pixel_ok, _pixel_conf = self._click_optimizer.verify_red_dot_gone(
+                        _before_sidebar, _after_sidebar, _red_dot_info)
+                    if _pixel_ok and _pixel_conf > 0.6:
+                        _verified = True
+                        _verify_stage = "pixel"
+                        self._log("info", f"[验证] {contact} 像素验证通过(置信度={_pixel_conf:.2f})")
+                    elif _before_chat is not None:
+                        # 阶段2：聊天区直方图变化检测
+                        _hwnd = getattr(self.window, "_hWnd", None)
+                        if _hwnd:
+                            from screenshot import capture_via_printwindow_stable, crop_chat_region_img
+                            _full = capture_via_printwindow_stable(_hwnd)
+                            if _full is not None and _full.mean() > 5:
+                                _after_chat = crop_chat_region_img(
+                                    _full, bottom_ratio=self.wechat_config.get("capture_ratio_full", 0.85))
+                                _chat_ok, _chat_sim = self._click_optimizer.verify_chat_area_changed(
+                                    _before_chat, _after_chat)
+                                if _chat_ok:
+                                    _verified = True
+                                    _verify_stage = "histogram"
+                                    self._log("info", f"[验证] {contact} 直方图验证通过(相似度={_chat_sim:.2f})")
+                except Exception as e:
+                    self._log("debug", f"[验证] 快速验证异常: {e}")
+
+            # 阶段3：全OCR验证（兜底）
+            if not _verified:
+                _verified = self._verify_contact_switched(contact)
+                _verify_stage = "full_ocr"
+
             if not _verified:
                 self._click_retry_counts[contact] = self._click_retry_counts.get(contact, 0) + 1
                 _retries = self._click_retry_counts[contact]
                 if _retries >= MAX_CLICK_RETRIES:
-                    self._log("warning", f"[红点] {contact} 点击验证失败{_retries}次，强制放弃")
+                    self._log("warning", f"[红点] {contact} 点击验证失败{_retries}次(阶段:{_verify_stage})，强制放弃")
                     self.red_dot_monitor.mark_processed(contact)
                     self._click_retry_counts[contact] = 0
                 else:
-                    self._log("warning", f"[红点] {contact} 点击验证失败 (重试{_retries}/{MAX_CLICK_RETRIES})")
-                continue  # 不处理错误消息、不标记 → 红点仍在，留待下轮再点
+                    self._log("warning", f"[红点] {contact} 点击验证失败(阶段:{_verify_stage}) "
+                              f"(重试{_retries}/{MAX_CLICK_RETRIES})")
+                continue
 
             # === P0+ 标题栏 OCR 双重验证：确认真的切到了目标会话（而非切错人） ===
             _name_ok = self._verify_contact_name(contact)

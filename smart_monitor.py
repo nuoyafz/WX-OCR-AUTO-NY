@@ -1,10 +1,11 @@
 """
-增量检测引擎 — 4层优化替代全量OCR
+增量检测引擎 — 5层优化替代全量OCR
 ==================================
 绝技1: 帧间差异检测 — 画面没变化就跳过OCR
 绝技2: 变化区域裁剪 — 只对变化部分做OCR
 绝技3: 感知哈希去重 — 比MD5更鲁棒的消息去重
 绝技4: 底部新消息检测 — 新消息必在底部，只监控底部
+绝技5: 语义向量去重 — 本地 Embedding 语义级去重（替代 pHash 短文本误判）
 """
 import cv2
 import numpy as np
@@ -39,6 +40,17 @@ class SmartMonitor:
         # 精确匹配去重缓存：短文本pHash误判率高，改用精确匹配
         self._seen_exact = set()
         self._max_exact_cache = 500
+
+        # 绝技5参数：语义向量去重（本地 Embedding）
+        semantic_cfg = self.config.get("semantic_dedup", {})
+        self._semantic_dedup = None
+        if semantic_cfg.get("enabled", True):
+            try:
+                from semantic_dedup import get_semantic_dedup
+                self._semantic_dedup = get_semantic_dedup(semantic_cfg)
+                logger.info("[增量检测] 语义向量去重已启用")
+            except Exception as e:
+                logger.info("[增量检测] 语义去重初始化失败: %s，降级为 pHash", e)
 
         # 绝技4参数：底部检测
         self.bottom_ratio = self.config.get("bottom_ratio", 0.25)  # 只看底部25%
@@ -229,8 +241,8 @@ class SmartMonitor:
 
     def deduplicate(self, text):
         """
-        绝技3：感知哈希去重。
-        判断这条消息是否之前见过（用pHash比MD5更鲁棒）。
+        绝技3+5：语义向量去重 + 感知哈希去重。
+        优先使用本地 Embedding 语义去重，不可用时降级为 pHash。
 
         Returns:
             True = 重复消息（应跳过）
@@ -239,6 +251,17 @@ class SmartMonitor:
         if not text:
             return True
 
+        # === 绝技5：语义向量去重（优先） ===
+        if self._semantic_dedup is not None:
+            try:
+                if self._semantic_dedup.is_duplicate(text):
+                    self.stats["messages_deduplicated"] += 1
+                    return True
+                return False
+            except Exception as e:
+                logger.debug("[语义去重] 异常: %s，降级为 pHash", e)
+
+        # === 绝技3：pHash 降级方案 ===
         # 精确匹配去重（所有长度先查一遍）
         if text in self._seen_exact:
             self.stats["messages_deduplicated"] += 1
@@ -316,6 +339,11 @@ class SmartMonitor:
         self._last_bottom_hash = None
         self._seen_phashes = []
         self._ocr_cache = {}
+        if self._semantic_dedup is not None:
+            try:
+                self._semantic_dedup.reset()
+            except Exception:
+                pass
         self._seen_exact = set()
 
     def get_stats(self):

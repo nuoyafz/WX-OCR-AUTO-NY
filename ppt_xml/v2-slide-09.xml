@@ -1,0 +1,60 @@
+<slide>
+  <style>
+    <fill>
+      <fillColor color="rgb(10,14,26)"/>
+    </fill>
+  </style>
+  <data>
+    <shape type="text" topLeftX="64" topLeftY="40" width="500" height="24">
+      <content textType="caption" fontSize="12" color="rgba(168,85,247,1)" bold="true" letterSpacing="3" wrap="false">
+        <p>PRODUCT INTERFACE · 产品界面</p>
+      </content>
+    </shape>
+    <shape type="text" topLeftX="64" topLeftY="72" width="832" height="36">
+      <content textType="title" fontSize="28" color="rgba(255,255,255,1)" bold="true" wrap="false">
+        <p>现代化 GUI，五大功能面板一目了然</p>
+      </content>
+    </shape>
+    <line startX="64" startY="120" endX="896" endY="120">
+      <border color="rgba(30,41,59,1)" width="1"/>
+    </line>
+    <img src="SouOblLn7oS1IExC0hDchtrenJb" topLeftX="64" topLeftY="144" width="400" height="272">
+      <crop type="rect" presetHandlers="8"/>
+      <border color="rgba(30,41,59,1)" width="1"/>
+    </img>
+    <shape type="text" topLeftX="64" topLeftY="424" width="400" height="20">
+      <content textType="body" fontSize="13" color="rgba(0,212,255,1)" bold="true" wrap="false">
+        <p>监控面板</p>
+      </content>
+    </shape>
+    <shape type="text" topLeftX="64" topLeftY="446" width="400" height="36">
+      <content textType="caption" fontSize="11" color="rgba(100,116,139,1)" lineSpacing="multiple:1.4">
+        <p>实时显示微信窗口状态、红点检测、OCR识别结果和消息日志</p>
+      </content>
+    </shape>
+    <img src="FqSjbfhNyo0LFIxhMXQcCvJInob" topLeftX="496" topLeftY="144" width="400" height="272">
+      <crop type="rect" presetHandlers="8"/>
+      <border color="rgba(30,41,59,1)" width="1"/>
+    </img>
+    <shape type="text" topLeftX="496" topLeftY="424" width="400" height="20">
+      <content textType="body" fontSize="13" color="rgba(168,85,247,1)" bold="true" wrap="false">
+        <p>回复设置面板</p>
+      </content>
+    </shape>
+    <shape type="text" topLeftX="496" topLeftY="446" width="400" height="36">
+      <content textType="caption" fontSize="11" color="rgba(100,116,139,1)" lineSpacing="multiple:1.4">
+        <p>多角色人格配置、AI回复开关、预览确认模式、自动回复规则</p>
+      </content>
+    </shape>
+    <shape type="text" topLeftX="64" topLeftY="496" width="832" height="20">
+      <content textType="caption" fontSize="10" color="rgba(71,85,105,1)" wrap="false">
+        <p>基于 customtkinter 现代化界面 · 支持深色主题 · 全局快捷键 Ctrl+T 一键启停</p>
+      </content>
+    </shape>
+  </data>
+  <note>
+    <content textType="body">
+      <p>这一页展示 NOYA Chat 的产品界面。左侧是监控面板，实时显示微信窗口状态、红点检测、OCR 识别结果和消息日志，让用户对系统运行状态一目了然。右侧是回复设置面板，可以配置多角色人格、AI 回复开关、预览确认模式和自动回复规则。整个界面基于 customtkinter 构建，支持深色主题，与系统风格统一。全局快捷键 Ctrl+T 可以一键启停监控，不需要打开窗口就能控制。后续还会加入数据检索和统计面板，让用户可以搜索历史消息和查看使用统计。</p>
+    </content>
+  </note>
+</slide>

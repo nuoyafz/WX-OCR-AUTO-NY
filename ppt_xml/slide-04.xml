@@ -1,0 +1,126 @@
+<slide>
+  <style>
+    <fill>
+      <fillColor color="rgb(242,244,248)"/>
+    </fill>
+  </style>
+  <data>
+    <shape type="text" topLeftX="72" topLeftY="48" width="816" height="36">
+      <content textType="title" fontSize="26" color="rgba(13,19,38,1)" bold="true" letterSpacing="0.5" wrap="false">
+        <p>微信作为信息采集入口，Obsidian 作为思考沉淀出口</p>
+      </content>
+    </shape>
+    <line startX="72" startY="96" endX="160" endY="96">
+      <border color="rgba(37,99,235,1)" width="3"/>
+    </line>
+    <shape type="text" topLeftX="72" topLeftY="112" width="400" height="20">
+      <content textType="caption" fontSize="11" color="rgba(83,97,116,1)" wrap="false">
+        <p>PRODUCT OVERVIEW · 产品定位</p>
+      </content>
+    </shape>
+    <shape type="text" topLeftX="72" topLeftY="156" width="420" height="28">
+      <content textType="body" fontSize="16" color="rgba(13,19,38,1)" bold="true" wrap="false">
+        <p>核心理念</p>
+      </content>
+    </shape>
+    <shape type="text" topLeftX="72" topLeftY="190" width="420" height="120">
+      <content textType="body" fontSize="14" color="rgba(83,97,116,1)" lineSpacing="multiple:1.7">
+        <p>NOYA Chat 是一款面向 Windows 的本地微信消息智能管理工具。基于窗口截图与 PaddleOCR 实时解析微信聊天会话，接入通义千问大模型完成语义理解、信息抽取与智能回复，并将全部聊天数据自动归档同步至 Obsidian 知识库。</p>
+      </content>
+    </shape>
+    <shape type="text" topLeftX="72" topLeftY="328" width="420" height="28">
+      <content textType="body" fontSize="16" color="rgba(13,19,38,1)" bold="true" wrap="false">
+        <p>安全原则</p>
+      </content>
+    </shape>
+    <shape type="text" topLeftX="72" topLeftY="362" width="420" height="80">
+      <content textType="body" fontSize="13" color="rgba(83,97,116,1)" lineSpacing="multiple:1.6">
+        <p>非微信协议逆向，纯屏幕截图 OCR 方案；所有聊天数据本地存储于 SQLite，不经过任何第三方服务器中转；自动回复默认关闭，推荐预览确认模式。</p>
+      </content>
+    </shape>
+    <shape type="rect" topLeftX="540" topLeftY="156" width="348" height="328">
+      <fill>
+        <fillColor color="rgba(255,255,255,1)"/>
+      </fill>
+      <border color="rgba(220,228,240,1)" width="1"/>
+    </shape>
+    <shape type="text" topLeftX="564" topLeftY="176" width="300" height="24">
+      <content textType="body" fontSize="14" color="rgba(13,19,38,1)" bold="true" wrap="false">
+        <p>六大核心能力</p>
+      </content>
+    </shape>
+    <line startX="564" startY="208" endX="864" endY="208">
+      <border color="rgba(220,228,240,1)" width="1"/>
+    </line>
+    <shape type="text" topLeftX="564" topLeftY="222" width="28" height="24">
+      <content textType="body" fontSize="14" color="rgba(37,99,235,1)" bold="true" wrap="false">
+        <p>01</p>
+      </content>
+    </shape>
+    <shape type="text" topLeftX="600" topLeftY="222" width="260" height="24">
+      <content textType="body" fontSize="13" color="rgba(13,19,38,1)" wrap="false">
+        <p>红点自动检测与消息监控</p>
+      </content>
+    </shape>
+    <shape type="text" topLeftX="564" topLeftY="254" width="28" height="24">
+      <content textType="body" fontSize="14" color="rgba(37,99,235,1)" bold="true" wrap="false">
+        <p>02</p>
+      </content>
+    </shape>
+    <shape type="text" topLeftX="600" topLeftY="254" width="260" height="24">
+      <content textType="body" fontSize="13" color="rgba(13,19,38,1)" wrap="false">
+        <p>PaddleOCR 中英混合文字识别</p>
+      </content>
+    </shape>
+    <shape type="text" topLeftX="564" topLeftY="286" width="28" height="24">
+      <content textType="body" fontSize="14" color="rgba(37,99,235,1)" bold="true" wrap="false">
+        <p>03</p>
+      </content>
+    </shape>
+    <shape type="text" topLeftX="600" topLeftY="286" width="260" height="24">
+      <content textType="body" fontSize="13" color="rgba(13,19,38,1)" wrap="false">
+        <p>多角色 AI 智能回复（预览模式）</p>
+      </content>
+    </shape>
+    <shape type="text" topLeftX="564" topLeftY="318" width="28" height="24">
+      <content textType="body" fontSize="14" color="rgba(37,99,235,1)" bold="true" wrap="false">
+        <p>04</p>
+      </content>
+    </shape>
+    <shape type="text" topLeftX="600" topLeftY="318" width="260" height="24">
+      <content textType="body" fontSize="13" color="rgba(13,19,38,1)" wrap="false">
+        <p>AI 信息抽取：分类 / 待办 / 情绪</p>
+      </content>
+    </shape>
+    <shape type="text" topLeftX="564" topLeftY="350" width="28" height="24">
+      <content textType="body" fontSize="14" color="rgba(37,99,235,1)" bold="true" wrap="false">
+        <p>05</p>
+      </content>
+    </shape>
+    <shape type="text" topLeftX="600" topLeftY="350" width="260" height="24">
+      <content textType="body" fontSize="13" color="rgba(13,19,38,1)" wrap="false">
+        <p>Obsidian 知识库自动归档与 AI 摘要</p>
+      </content>
+    </shape>
+    <shape type="text" topLeftX="564" topLeftY="382" width="28" height="24">
+      <content textType="body" fontSize="14" color="rgba(37,99,235,1)" bold="true" wrap="false">
+        <p>06</p>
+      </content>
+    </shape>
+    <shape type="text" topLeftX="600" topLeftY="382" width="260" height="24">
+      <content textType="body" fontSize="13" color="rgba(13,19,38,1)" wrap="false">
+        <p>AI 社交图谱与联系人画像</p>
+      </content>
+    </shape>
+    <shape type="text" topLeftX="564" topLeftY="428" width="300" height="40">
+      <content textType="caption" fontSize="10" color="rgba(120,135,165,1)" lineSpacing="multiple:1.4">
+        <p>当前版本 v3.1 · Python 3.10+ · customtkinter GUI · 已打包为 Windows EXE</p>
+      </content>
+    </shape>
+  </data>
+  <note>
+    <content textType="body">
+      <p>这一页介绍产品的核心理念和定位。NOYA Chat 的核心思路非常清晰：微信是我们每天接收信息最多的入口，但这些信息很难被有效利用；Obsidian 是目前最流行的个人知识库工具，但它缺少一个自动的信息输入渠道。NOYA Chat 把两者连接起来，让微信里的碎片化信息自动沉淀为结构化的个人知识。同时我们坚持三个安全原则：非协议逆向、数据本地存储、自动回复默认关闭。</p>
+    </content>
+  </note>
+</slide>

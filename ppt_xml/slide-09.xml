@@ -1,0 +1,87 @@
+<slide>
+  <style>
+    <fill>
+      <fillColor color="rgb(242,244,248)"/>
+    </fill>
+  </style>
+  <data>
+    <shape type="text" topLeftX="72" topLeftY="40" width="816" height="36">
+      <content textType="title" fontSize="26" color="rgba(13,19,38,1)" bold="true" letterSpacing="0.5" wrap="false">
+        <p>产品界面：现代化 GUI，五大功能面板一目了然</p>
+      </content>
+    </shape>
+    <line startX="72" startY="88" endX="160" endY="88">
+      <border color="rgba(37,99,235,1)" width="3"/>
+    </line>
+    <shape type="text" topLeftX="72" topLeftY="100" width="500" height="18">
+      <content textType="caption" fontSize="10" color="rgba(83,97,116,1)" wrap="false">
+        <p>PRODUCT INTERFACE · 基于 customtkinter 的现代化桌面应用</p>
+      </content>
+    </shape>
+    <img src="IvW4bcfFFoDvlfxOwGHcKCMqnRW" topLeftX="56" topLeftY="136" width="272" height="185">
+      <crop type="rect" presetHandlers="8"/>
+      <border color="rgba(200,210,225,1)" width="1"/>
+    </img>
+    <shape type="text" topLeftX="56" topLeftY="330" width="272" height="22">
+      <content textType="body" fontSize="13" color="rgba(13,19,38,1)" bold="true" textAlign="center" wrap="false">
+        <p>监控面板</p>
+      </content>
+    </shape>
+    <shape type="text" topLeftX="56" topLeftY="354" width="272" height="36">
+      <content textType="caption" fontSize="10" color="rgba(83,97,116,1)" textAlign="center" lineSpacing="multiple:1.4">
+        <p>实时消息流、运行指标、发送者 Top5 统计可视化</p>
+      </content>
+    </shape>
+    <img src="KKsJbBfVHoNOk1x7BHxchm65nGe" topLeftX="344" topLeftY="136" width="272" height="185">
+      <crop type="rect" presetHandlers="8"/>
+      <border color="rgba(200,210,225,1)" width="1"/>
+    </img>
+    <shape type="text" topLeftX="344" topLeftY="330" width="272" height="22">
+      <content textType="body" fontSize="13" color="rgba(13,19,38,1)" bold="true" textAlign="center" wrap="false">
+        <p>回复设置</p>
+      </content>
+    </shape>
+    <shape type="text" topLeftX="344" topLeftY="354" width="272" height="36">
+      <content textType="caption" fontSize="10" color="rgba(83,97,116,1)" textAlign="center" lineSpacing="multiple:1.4">
+        <p>多角色配置、联系人映射、预览确认模式开关</p>
+      </content>
+    </shape>
+    <img src="ZwqgbR5Vnos2z1xsuv6csmFKnnD" topLeftX="632" topLeftY="136" width="272" height="185">
+      <crop type="rect" presetHandlers="8"/>
+      <border color="rgba(200,210,225,1)" width="1"/>
+    </img>
+    <shape type="text" topLeftX="632" topLeftY="330" width="272" height="22">
+      <content textType="body" fontSize="13" color="rgba(13,19,38,1)" bold="true" textAlign="center" wrap="false">
+        <p>数据检索</p>
+      </content>
+    </shape>
+    <shape type="text" topLeftX="632" topLeftY="354" width="272" height="36">
+      <content textType="caption" fontSize="10" color="rgba(83,97,116,1)" textAlign="center" lineSpacing="multiple:1.4">
+        <p>微信风格消息列表、关键词+联系人+时间多维检索</p>
+      </content>
+    </shape>
+    <line startX="72" startY="416" endX="888" endY="416">
+      <border color="rgba(200,210,225,1)" width="1"/>
+    </line>
+    <shape type="rect" topLeftX="72" topLeftY="440" width="816" height="56">
+      <fill>
+        <fillColor color="rgba(13,19,38,1)"/>
+      </fill>
+    </shape>
+    <shape type="text" topLeftX="96" topLeftY="452" width="780" height="20">
+      <content textType="body" fontSize="12" color="rgba(255,255,255,1)" bold="true" wrap="false">
+        <p>五大功能面板：监控面板 / 回复设置 / 系统配置 / 数据检索 / 统计面板</p>
+      </content>
+    </shape>
+    <shape type="text" topLeftX="96" topLeftY="474" width="780" height="16">
+      <content textType="caption" fontSize="10" color="rgba(191,215,255,1)" wrap="false">
+        <p>全局快捷键 Ctrl+T 一键启停监控  ·  已打包为 Windows EXE 可执行文件  ·  支持窗口校准向导适配不同 DPI</p>
+      </content>
+    </shape>
+  </data>
+  <note>
+    <content textType="body">
+      <p>这是产品的实际界面截图。NOYA Chat 基于 customtkinter 构建现代化 GUI 界面，包含五大功能面板。左侧是监控面板，实时展示消息流和运行指标；中间是回复设置，可以配置多角色和联系人映射；右侧是数据检索，用微信风格的消息列表展示历史聊天。全局快捷键 Ctrl+T 可以在任意窗口下一键启停监控，项目已经打包为 Windows EXE，开箱即用。</p>
+    </content>
+  </note>
+</slide>

@@ -1,0 +1,191 @@
+<slide>
+  <style>
+    <fill>
+      <fillColor color="rgb(10,14,26)"/>
+    </fill>
+  </style>
+  <data>
+    <shape type="text" topLeftX="64" topLeftY="40" width="500" height="24">
+      <content textType="caption" fontSize="12" color="rgba(168,85,247,1)" bold="true" letterSpacing="3" wrap="false">
+        <p>TECH HIGHLIGHTS 02 · AI 回复与信息抽取</p>
+      </content>
+    </shape>
+    <shape type="text" topLeftX="64" topLeftY="72" width="832" height="36">
+      <content textType="title" fontSize="28" color="rgba(255,255,255,1)" bold="true" wrap="false">
+        <p>多角色人格化回复，AI 自动抽取待办与情绪</p>
+      </content>
+    </shape>
+    <line startX="64" startY="124" endX="440" endY="124">
+      <border color="rgba(168,85,247,0.3)" width="1"/>
+    </line>
+    <line startX="520" startY="124" endX="896" endY="124">
+      <border color="rgba(0,212,255,0.3)" width="1"/>
+    </line>
+    <shape type="text" topLeftX="64" topLeftY="140" width="200" height="24">
+      <content textType="body" fontSize="16" color="rgba(168,85,247,1)" bold="true" wrap="false">
+        <p>AI 智能回复</p>
+      </content>
+    </shape>
+    <shape type="text" topLeftX="520" topLeftY="140" width="200" height="24">
+      <content textType="body" fontSize="16" color="rgba(0,212,255,1)" bold="true" wrap="false">
+        <p>AI 信息抽取</p>
+      </content>
+    </shape>
+    <shape type="text" topLeftX="64" topLeftY="176" width="28" height="20">
+      <content textType="body" fontSize="13" color="rgba(168,85,247,1)" bold="true" wrap="false">
+        <p>01</p>
+      </content>
+    </shape>
+    <shape type="text" topLeftX="100" topLeftY="176" width="340" height="20">
+      <content textType="body" fontSize="13" color="rgba(255,255,255,1)" bold="true" wrap="false">
+        <p>多角色配置</p>
+      </content>
+    </shape>
+    <shape type="text" topLeftX="100" topLeftY="198" width="340" height="20">
+      <content textType="caption" fontSize="11" color="rgba(100,116,139,1)" wrap="false">
+        <p>技术顾问/商务伙伴/好友/段子手，按联系人独立设定</p>
+      </content>
+    </shape>
+    <shape type="text" topLeftX="64" topLeftY="228" width="28" height="20">
+      <content textType="body" fontSize="13" color="rgba(168,85,247,1)" bold="true" wrap="false">
+        <p>02</p>
+      </content>
+    </shape>
+    <shape type="text" topLeftX="100" topLeftY="228" width="340" height="20">
+      <content textType="body" fontSize="13" color="rgba(255,255,255,1)" bold="true" wrap="false">
+        <p>预览确认模式</p>
+      </content>
+    </shape>
+    <shape type="text" topLeftX="100" topLeftY="250" width="340" height="20">
+      <content textType="caption" fontSize="11" color="rgba(100,116,139,1)" wrap="false">
+        <p>AI生成回复粘贴输入框，人工确认后发送，规避风险</p>
+      </content>
+    </shape>
+    <shape type="text" topLeftX="64" topLeftY="280" width="28" height="20">
+      <content textType="body" fontSize="13" color="rgba(168,85,247,1)" bold="true" wrap="false">
+        <p>03</p>
+      </content>
+    </shape>
+    <shape type="text" topLeftX="100" topLeftY="280" width="340" height="20">
+      <content textType="body" fontSize="13" color="rgba(255,255,255,1)" bold="true" wrap="false">
+        <p>双路径防重发</p>
+      </content>
+    </shape>
+    <shape type="text" topLeftX="100" topLeftY="302" width="340" height="20">
+      <content textType="caption" fontSize="11" color="rgba(100,116,139,1)" wrap="false">
+        <p>轮询+红点共享回复指纹(contact|content md5)，绝不重复</p>
+      </content>
+    </shape>
+    <shape type="text" topLeftX="64" topLeftY="332" width="28" height="20">
+      <content textType="body" fontSize="13" color="rgba(168,85,247,1)" bold="true" wrap="false">
+        <p>04</p>
+      </content>
+    </shape>
+    <shape type="text" topLeftX="100" topLeftY="332" width="340" height="20">
+      <content textType="body" fontSize="13" color="rgba(255,255,255,1)" bold="true" wrap="false">
+        <p>聚合回复 + 已读闭环</p>
+      </content>
+    </shape>
+    <shape type="text" topLeftX="100" topLeftY="354" width="340" height="36">
+      <content textType="caption" fontSize="11" color="rgba(100,116,139,1)" lineSpacing="multiple:1.4">
+        <p>短时间多条消息合并一次LLM回复，避免逐条轰炸；发送后重截OCR校验我方气泡确认真正送达</p>
+      </content>
+    </shape>
+    <shape type="text" topLeftX="520" topLeftY="176" width="28" height="20">
+      <content textType="body" fontSize="13" color="rgba(0,212,255,1)" bold="true" wrap="false">
+        <p>01</p>
+      </content>
+    </shape>
+    <shape type="text" topLeftX="556" topLeftY="176" width="340" height="20">
+      <content textType="body" fontSize="13" color="rgba(255,255,255,1)" bold="true" wrap="false">
+        <p>消息自动分类</p>
+      </content>
+    </shape>
+    <shape type="text" topLeftX="556" topLeftY="198" width="340" height="20">
+      <content textType="caption" fontSize="11" color="rgba(100,116,139,1)" wrap="false">
+        <p>工作/生活/广告/验证码/通知/其他，自动标记</p>
+      </content>
+    </shape>
+    <shape type="text" topLeftX="520" topLeftY="228" width="28" height="20">
+      <content textType="body" fontSize="13" color="rgba(0,212,255,1)" bold="true" wrap="false">
+        <p>02</p>
+      </content>
+    </shape>
+    <shape type="text" topLeftX="556" topLeftY="228" width="340" height="20">
+      <content textType="body" fontSize="13" color="rgba(255,255,255,1)" bold="true" wrap="false">
+        <p>紧急度评级</p>
+      </content>
+    </shape>
+    <shape type="text" topLeftX="556" topLeftY="250" width="340" height="20">
+      <content textType="caption" fontSize="11" color="rgba(100,116,139,1)" wrap="false">
+        <p>1-5级紧急度打分，重要消息高亮提醒</p>
+      </content>
+    </shape>
+    <shape type="text" topLeftX="520" topLeftY="280" width="28" height="20">
+      <content textType="body" fontSize="13" color="rgba(0,212,255,1)" bold="true" wrap="false">
+        <p>03</p>
+      </content>
+    </shape>
+    <shape type="text" topLeftX="556" topLeftY="280" width="340" height="20">
+      <content textType="body" fontSize="13" color="rgba(255,255,255,1)" bold="true" wrap="false">
+        <p>待办事项提取</p>
+      </content>
+    </shape>
+    <shape type="text" topLeftX="556" topLeftY="302" width="340" height="20">
+      <content textType="caption" fontSize="11" color="rgba(100,116,139,1)" wrap="false">
+        <p>自动识别任务和截止时间，输出Obsidian Tasks格式</p>
+      </content>
+    </shape>
+    <shape type="text" topLeftX="520" topLeftY="332" width="28" height="20">
+      <content textType="body" fontSize="13" color="rgba(0,212,255,1)" bold="true" wrap="false">
+        <p>04</p>
+      </content>
+    </shape>
+    <shape type="text" topLeftX="556" topLeftY="332" width="340" height="20">
+      <content textType="body" fontSize="13" color="rgba(255,255,255,1)" bold="true" wrap="false">
+        <p>情绪识别 + 自定义规则</p>
+      </content>
+    </shape>
+    <shape type="text" topLeftX="556" topLeftY="354" width="340" height="36">
+      <content textType="caption" fontSize="11" color="rgba(100,116,139,1)" lineSpacing="multiple:1.4">
+        <p>识别积极/中性/消极情绪；支持正则表达式自定义关键词匹配逻辑</p>
+      </content>
+    </shape>
+    <shape type="rect" topLeftX="64" topLeftY="412" width="832" height="88">
+      <fill>
+        <fillColor color="rgba(168,85,247,0.08)"/>
+      </fill>
+      <border color="rgba(168,85,247,0.3)" width="1"/>
+    </shape>
+    <shape type="text" topLeftX="84" topLeftY="424" width="300" height="20">
+      <content textType="caption" fontSize="11" color="rgba(168,85,247,1)" bold="true" letterSpacing="1" wrap="false">
+        <p>安全机制</p>
+      </content>
+    </shape>
+    <shape type="text" topLeftX="84" topLeftY="448" width="380" height="40">
+      <content textType="body" fontSize="12" color="rgba(203,213,225,1)" lineSpacing="multiple:1.5">
+        <p>自动回复默认关闭，推荐预览确认模式</p>
+        <p>LLM调用前后双重校验停止标记</p>
+      </content>
+    </shape>
+    <line startX="480" startY="432" endX="480" endY="484">
+      <border color="rgba(30,41,59,1)" width="1"/>
+    </line>
+    <shape type="text" topLeftX="500" topLeftY="424" width="300" height="20">
+      <content textType="caption" fontSize="11" color="rgba(0,212,255,1)" bold="true" letterSpacing="1" wrap="false">
+        <p>人格化回复</p>
+      </content>
+    </shape>
+    <shape type="text" topLeftX="500" topLeftY="448" width="380" height="40">
+      <content textType="body" fontSize="12" color="rgba(203,213,225,1)" lineSpacing="multiple:1.5">
+        <p>注入联系人AI画像(身份/关系/风格/亲密度)</p>
+        <p>相关项目上下文，回复贴合你们的关系</p>
+      </content>
+    </shape>
+  </data>
+  <note>
+    <content textType="body">
+      <p>这一页讲解 AI 智能回复和信息抽取两大能力。左侧 AI 智能回复有四大特点：多角色配置支持技术顾问、商务、好友、段子手等风格；预览确认模式让 AI 生成回复后人工确认再发送，规避风险；双路径防重发通过共享回复指纹确保同一消息绝不重复回复；聚合回复加已读闭环避免逐条轰炸并确认真正送达。右侧 AI 信息抽取包括：消息自动分类、1-5 级紧急度评级、待办事项提取输出 Obsidian Tasks 格式、情绪识别加自定义正则规则。底部是安全机制和人格化回复两大亮点。</p>
+    </content>
+  </note>
+</slide>

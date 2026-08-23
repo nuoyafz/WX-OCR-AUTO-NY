@@ -1,0 +1,118 @@
+<slide>
+  <style>
+    <fill>
+      <fillColor color="rgb(242,244,248)"/>
+    </fill>
+  </style>
+  <data>
+    <shape type="text" topLeftX="72" topLeftY="48" width="816" height="36">
+      <content textType="title" fontSize="26" color="rgba(13,19,38,1)" bold="true" letterSpacing="0.5" wrap="false">
+        <p>微信信息过载时代，重要知识正在悄然流失</p>
+      </content>
+    </shape>
+    <line startX="72" startY="96" endX="160" endY="96">
+      <border color="rgba(37,99,235,1)" width="3"/>
+    </line>
+    <shape type="text" topLeftX="72" topLeftY="112" width="400" height="20">
+      <content textType="caption" fontSize="11" color="rgba(83,97,116,1)" wrap="false">
+        <p>PROBLEM STATEMENT · 项目背景</p>
+      </content>
+    </shape>
+    <shape type="text" topLeftX="72" topLeftY="156" width="380" height="28">
+      <content textType="body" fontSize="17" color="rgba(13,19,38,1)" bold="true" wrap="false">
+        <p>01  消息碎片化</p>
+      </content>
+    </shape>
+    <shape type="text" topLeftX="72" topLeftY="186" width="380" height="40">
+      <content textType="body" fontSize="13" color="rgba(83,97,116,1)" lineSpacing="multiple:1.5">
+        <p>日均数百条微信消息，工作任务、客户需求、生活琐事混杂在同一会话流中，关键信息极易被淹没。</p>
+      </content>
+    </shape>
+    <shape type="text" topLeftX="72" topLeftY="240" width="380" height="28">
+      <content textType="body" fontSize="17" color="rgba(13,19,38,1)" bold="true" wrap="false">
+        <p>02  待办易遗漏</p>
+      </content>
+    </shape>
+    <shape type="text" topLeftX="72" topLeftY="270" width="380" height="40">
+      <content textType="body" fontSize="13" color="rgba(83,97,116,1)" lineSpacing="multiple:1.5">
+        <p>聊天中约定的任务、截止时间、会议安排没有系统化跟踪机制，依赖人工记忆，遗漏率居高不下。</p>
+      </content>
+    </shape>
+    <shape type="text" topLeftX="72" topLeftY="324" width="380" height="28">
+      <content textType="body" fontSize="17" color="rgba(13,19,38,1)" bold="true" wrap="false">
+        <p>03  回复效率低</p>
+      </content>
+    </shape>
+    <shape type="text" topLeftX="72" topLeftY="354" width="380" height="40">
+      <content textType="body" fontSize="13" color="rgba(83,97,116,1)" lineSpacing="multiple:1.5">
+        <p>不同联系人需要不同沟通风格，重复回复消耗大量精力；多角色切换导致回复质量不稳定。</p>
+      </content>
+    </shape>
+    <shape type="text" topLeftX="72" topLeftY="408" width="380" height="28">
+      <content textType="body" fontSize="17" color="rgba(13,19,38,1)" bold="true" wrap="false">
+        <p>04  知识不沉淀</p>
+      </content>
+    </shape>
+    <shape type="text" topLeftX="72" topLeftY="438" width="380" height="40">
+      <content textType="body" fontSize="13" color="rgba(83,97,116,1)" lineSpacing="multiple:1.5">
+        <p>聊天记录封闭在微信生态内，无法检索、无法关联、无法形成个人知识库，信息价值随时间衰减。</p>
+      </content>
+    </shape>
+    <shape type="rect" topLeftX="520" topLeftY="140" width="368" height="340">
+      <fill>
+        <fillColor color="rgba(13,19,38,1)"/>
+      </fill>
+    </shape>
+    <shape type="text" topLeftX="548" topLeftY="168" width="320" height="24">
+      <content textType="body" fontSize="13" color="rgba(191,215,255,1)" letterSpacing="1" wrap="false">
+        <p>信息流失漏斗</p>
+      </content>
+    </shape>
+    <shape type="text" topLeftX="548" topLeftY="200" width="110" height="48">
+      <content textType="title" fontSize="36" color="rgba(255,255,255,1)" bold="true" wrap="false">
+        <p>100%</p>
+      </content>
+    </shape>
+    <shape type="text" topLeftX="670" topLeftY="212" width="200" height="24">
+      <content textType="body" fontSize="12" color="rgba(160,175,200,1)" wrap="false">
+        <p>微信接收的全部消息</p>
+      </content>
+    </shape>
+    <line startX="548" startY="258" endX="860" endY="258">
+      <border color="rgba(37,99,235,0.4)" width="1"/>
+    </line>
+    <shape type="text" topLeftX="548" topLeftY="272" width="110" height="48">
+      <content textType="title" fontSize="36" color="rgba(255,255,255,1)" bold="true" wrap="false">
+        <p>30%</p>
+      </content>
+    </shape>
+    <shape type="text" topLeftX="670" topLeftY="284" width="200" height="24">
+      <content textType="body" fontSize="12" color="rgba(160,175,200,1)" wrap="false">
+        <p>被认真阅读并记住的信息</p>
+      </content>
+    </shape>
+    <line startX="548" startY="330" endX="860" endY="330">
+      <border color="rgba(37,99,235,0.4)" width="1"/>
+    </line>
+    <shape type="text" topLeftX="548" topLeftY="344" width="110" height="48">
+      <content textType="title" fontSize="36" color="rgba(201,48,44,1)" bold="true" wrap="false">
+        <p>5%</p>
+      </content>
+    </shape>
+    <shape type="text" topLeftX="670" topLeftY="356" width="200" height="24">
+      <content textType="body" fontSize="12" color="rgba(160,175,200,1)" wrap="false">
+        <p>最终转化为可复用知识</p>
+      </content>
+    </shape>
+    <shape type="text" topLeftX="548" topLeftY="420" width="300" height="40">
+      <content textType="caption" fontSize="10" color="rgba(120,135,165,1)" lineSpacing="multiple:1.4">
+        <p>数据为基于个人使用场景的估算值，用于说明信息流失趋势，非精确统计。</p>
+      </content>
+    </shape>
+  </data>
+  <note>
+    <content textType="body">
+      <p>我们先来看项目背景。微信已经成为中国人最主要的信息入口，但同时也带来了严重的信息过载问题。我们总结了四大痛点：消息碎片化、待办易遗漏、回复效率低、知识不沉淀。右侧这个信息流失漏斗直观展示了问题的严重性——100%的消息进入微信，最终只有约5%能转化为可复用的知识。NOYA Chat 正是为解决这个问题而生。</p>
+    </content>
+  </note>
+</slide>
