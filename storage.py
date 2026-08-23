@@ -145,29 +145,56 @@ class MessageStorage:
             self._save_csv(extraction_result)
 
     def _save_sqlite(self, result):
-        """保存到SQLite"""
+        """保存到SQLite（带内容级去重，防止重复入库）"""
         try:
+            contact = result.get("contact", "")
+            sender = result.get("sender", "other")
+            raw_text = result.get("raw_text", "")
+            if not raw_text.strip():
+                return
+
+            # 进程内去重键：contact|sender|raw_text（同源重复秒挡，不查db）
+            dedup_key = f"{contact}|{sender}|{raw_text.strip()}"
+            if not hasattr(self, "_seen_keys"):
+                self._seen_keys = set()
+            if dedup_key in self._seen_keys:
+                return
+            # db 兜底去重：跨重启/多入口重复也能挡（同一联系人同内容当天已有则跳过）
             conn = sqlite3.connect(self.db_path)
-            conn.execute("""
-                INSERT INTO messages (
-                    contact, sender, raw_text, timestamp,
-                    matched_keywords, keyword_categories, regex_extracts,
-                    is_important, importance_reason, llm_analysis
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """, (
-                result.get("contact", ""),
-                result.get("sender", "other"),
-                result.get("raw_text", ""),
-                result.get("timestamp", ""),
-                json.dumps(result.get("matched_keywords", []), ensure_ascii=False),
-                json.dumps(result.get("keyword_categories", []), ensure_ascii=False),
-                json.dumps(result.get("regex_extracts", {}), ensure_ascii=False),
-                1 if result.get("is_important") else 0,
-                result.get("importance_reason", ""),
-                json.dumps(result.get("llm_analysis", {}), ensure_ascii=False),
-            ))
-            conn.commit()
-            conn.close()
+            try:
+                _existing = conn.execute(
+                    "SELECT 1 FROM messages WHERE contact=? AND sender=? AND raw_text=? "
+                    "AND date(timestamp)=date('now','localtime') LIMIT 1",
+                    (contact, sender, raw_text.strip()),
+                ).fetchone()
+                if _existing:
+                    self._seen_keys.add(dedup_key)
+                    return
+                conn.execute("""
+                    INSERT INTO messages (
+                        contact, sender, raw_text, timestamp,
+                        matched_keywords, keyword_categories, regex_extracts,
+                        is_important, importance_reason, llm_analysis
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """, (
+                    contact,
+                    sender,
+                    raw_text,
+                    result.get("timestamp", ""),
+                    json.dumps(result.get("matched_keywords", []), ensure_ascii=False),
+                    json.dumps(result.get("keyword_categories", []), ensure_ascii=False),
+                    json.dumps(result.get("regex_extracts", {}), ensure_ascii=False),
+                    1 if result.get("is_important") else 0,
+                    result.get("importance_reason", ""),
+                    json.dumps(result.get("llm_analysis", {}), ensure_ascii=False),
+                ))
+                conn.commit()
+                self._seen_keys.add(dedup_key)
+                # 限制内存集合大小，避免长期运行膨胀
+                if len(self._seen_keys) > 5000:
+                    self._seen_keys = set(list(self._seen_keys)[-2500:])
+            finally:
+                conn.close()
         except Exception as e:
             logger.error(f"保存到SQLite失败: {e}")
 

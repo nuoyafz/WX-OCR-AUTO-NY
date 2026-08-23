@@ -246,9 +246,20 @@ class MessageParser:
                     "sender_confidence": round(candidate.get("sender_confidence", 0.0), 3),
                 })
 
-        # 清理过量候选
-        if len(self.candidate_pool) > 80:
-            self.candidate_pool.clear()
+        # 清理过量候选：只淘汰最老且尚未稳定的候选，避免清空即将确认的候选
+        # 导致下轮重新候选→重复确认→重复入库。
+        # 上限放宽到 200，超过时按 first_seen 排序删除最老的一半（保留稳定的）。
+        if len(self.candidate_pool) > 200:
+            _oldest = sorted(
+                self.candidate_pool.items(),
+                key=lambda kv: kv[1].get("first_seen", 0),
+            )
+            _drop = _oldest[: len(_oldest) // 2]
+            for _k, _v in _drop:
+                # 已达稳定帧的（即将被确认）不删，避免丢消息
+                if _v.get("frames_seen", 0) >= self.stable_frames:
+                    continue
+                del self.candidate_pool[_k]
 
         return {"new_messages": newly_confirmed,
                 "context": list(self.conversation)}

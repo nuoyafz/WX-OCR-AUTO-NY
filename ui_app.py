@@ -3524,7 +3524,25 @@ class WeChatAIApp(ctk.CTk):
 
         # —— 存入按联系人划分的消息池（最新在前，单联系人上限 80）——
         # msg_key 去重：同一 msg_key（基础卡/更新卡、重复上报）原位更新，不新增
-        mk = msg_data.get("msg_key")
+        # 内容级兜底去重：红点路径/主循环路径可能因 timestamp 不同生成不同
+        # msg_key，导致同一条消息建两张卡。用 (contact|sender|content) + 10s
+        # 时间窗兜底，重复上报只更新不新建。
+        import time as _t
+        _now = _t.time()
+        if not hasattr(self, "_recent_ui_keys"):
+            self._recent_ui_keys = {}
+        _ckey = f"{contact}|{sender}|{content}"
+        _last = self._recent_ui_keys.get(_ckey)
+        if _last is not None and (_now - _last) < 10.0:
+            mk = mk or _ckey  # 用内容键兜底，走下面的 msg_key 更新分支
+        else:
+            self._recent_ui_keys[_ckey] = _now
+        # 老化清理（避免长期运行内存膨胀）
+        if len(self._recent_ui_keys) > 500:
+            _cut = _now - 30.0
+            self._recent_ui_keys = {k: v for k, v in self._recent_ui_keys.items() if v >= _cut}
+
+        mk = msg_data.get("msg_key") or _ckey
         store = self._messages_store.setdefault(contact, [])
         if not hasattr(self, "_msg_index"):
             self._msg_index = {}
