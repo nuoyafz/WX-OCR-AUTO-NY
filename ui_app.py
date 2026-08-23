@@ -723,10 +723,9 @@ class WeChatAIApp(ctk.CTk):
             return
         try:
             import sqlite3
-            # V3.4 加固：db_path 强制绝对化，消除 CWD 依赖
-            # （MessageStorage 默认用 config 里的相对路径 data/messages.db，
-            #  若启动时 CWD 不是项目根，getattr 拿到的相对路径会解析到错误位置 → 读空 → 左栏空）
-            _db = getattr(_st, "db_path", "data/messages.db")
+            # db_path 由 MessageStorage 在初始化时统一绝对化到项目根（storage._resolve），
+            # 无论 CWD 在哪、哪个 storage 实例，都指向同一物理文件 → 消除「写入 A / 读 B」。
+            _db = getattr(_st, "db_path", _app_path("data", "messages.db"))
             if not os.path.isabs(_db):
                 _db = _app_path(_db)
             self._debug_log(f"[会话索引] db_path={_db} exists={os.path.exists(_db)}")
@@ -871,6 +870,14 @@ class WeChatAIApp(ctk.CTk):
         try:
             if not hasattr(self, "contact_list_frame") or not self.contact_list_frame.winfo_exists():
                 return
+
+            # 兜底：若会话索引为空（例如 db 尚未就绪 / 上次启动异常），
+            # 先重建索引再渲染，避免「重启后左栏只剩系统卡」被静默吞掉。
+            if not getattr(self, "_conv_index", None):
+                try:
+                    self._rebuild_conv_index()
+                except Exception:
+                    pass
 
             # 1) 精确销毁「旧的联系人卡」（只动 _contact_card_frames，绝不碰系统卡）
             dead = [f for f in self._contact_card_frames

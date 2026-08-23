@@ -15,6 +15,28 @@ from datetime import datetime
 logger = logging.getLogger(__name__)
 
 
+def _app_base():
+    """返回项目根目录（与 ui_app.py 的 APP_BASE 对齐），用于把相对数据路径绝对化。
+
+    根治「运行写入 A 库、重启读 B 库」：无论进程 CWD 在哪、无论哪个
+    MessageStorage 实例（engine 的 / ui 自建缓存的），只要传的是相对路径
+    （data/messages.db），都统一解析到「脚本/可执行文件所在目录」下的同一文件。
+    """
+    import sys
+    if getattr(sys, "frozen", False):
+        return os.path.dirname(os.path.abspath(sys.executable))
+    return os.path.dirname(os.path.abspath(__file__))
+
+
+def _resolve(path):
+    """相对路径基于项目根绝对化；绝对路径原样返回。"""
+    if not path:
+        return path
+    if os.path.isabs(path):
+        return path
+    return os.path.join(_app_base(), path)
+
+
 # -----------------------------
 # 安全工具函数：彻底解决 dict join 报错
 # -----------------------------
@@ -88,9 +110,9 @@ class MessageStorage:
     def __init__(self, storage_config):
         self.config = storage_config or {}
         self.storage_type = self.config.get("type", "sqlite")
-        self.db_path = self.config.get("db_path", "data/messages.db")
-        self.json_path = self.config.get("json_path", "data/messages.json")
-        self.csv_path = self.config.get("csv_path", "data/messages.csv")
+        self.db_path = _resolve(self.config.get("db_path", "data/messages.db"))
+        self.json_path = _resolve(self.config.get("json_path", "data/messages.json"))
+        self.csv_path = _resolve(self.config.get("csv_path", "data/messages.csv"))
 
         # 确保数据目录存在
         db_dir = os.path.dirname(self.db_path)
