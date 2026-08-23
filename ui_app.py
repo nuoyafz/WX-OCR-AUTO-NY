@@ -653,12 +653,11 @@ class WeChatAIApp(ctk.CTk):
         except Exception:
             pass
 
-        # 默认选中"📋 全部会话" + 350ms 后 rebuild 气泡（确保 frame 已布局）
+        # 默认选中"📋 全部会话" + 延迟重建气泡（确保 frame 已布局）。
+        # 性能修复：只触发一次重建，避免 300/450ms 多次全量渲染卡死（渲染 300 条实测 4s+）
         self.after(250, lambda: self._set_active_contact(self._contact_filter_all))
         self.after(450, self._rebuild_message_list)
         self.after(450, self._rebuild_contact_list)
-        if self._messages_store:
-            self.after(300, self._rebuild_message_list)
 
     def _load_history(self):
         """启动加载：只构建轻量会话索引（contact -> count/preview/...），不把全量消息体载入内存。
@@ -830,7 +829,7 @@ class WeChatAIApp(ctk.CTk):
         _base = []
         if _st is not None:
             try:
-                _rows = _st.query(contact=None, limit=300)
+                _rows = _st.query(contact=None, limit=100)
                 for _r in _rows:
                     _base.append({
                         "contact": _r.get("contact") or "?",
@@ -1974,8 +1973,8 @@ class WeChatAIApp(ctk.CTk):
                 # 单会话：按需懒加载（点开才从 db 取该会话全文），按时间倒序（最新在前）
                 items = list(reversed(self._load_conversation(active)))
 
-            # 性能：限制渲染条数（保留最新的 _MAX 条）
-            _MAX = 300
+            # 性能：限制渲染条数（保留最新的 _MAX 条；100 条约 1.4s，300 条实测 4s+ 会卡死 UI）
+            _MAX = 100
             total_items = len(items)
             if total_items > _MAX:
                 items = items[:_MAX]  # 截取头部（最新部分），保持「最新置顶」
