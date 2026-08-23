@@ -503,6 +503,11 @@ class WeChatAIApp(ctk.CTk):
 
         # 会话卡片集合 {contact: info_dict}
         self._contact_cards = {}
+        # V3.3 根治：显式记录 frame 对象，避免依赖 CTkScrollableFrame.winfo_children()
+        # 在 CTkScrollableFrame 上 winfo_children() 返回的是内部 _parent_frame，
+        # 用 str() 比对会误删系统卡/联系人卡。改用对象身份 is 判断。
+        self._system_card_frames = set()   # 系统卡 frame（使用说明 + 全部会话）
+        self._contact_card_frames = set()  # 联系人卡 frame（rebuild 时精确销毁）
         self._active_contact = None
         # 按联系人划分的消息池：contact -> [msg_data, ...]，最新在前（索引0）。
         # 点击会话卡时据此重建右侧消息列表，避免 pack_forget 过滤导致的空白/顺序错乱。
@@ -533,7 +538,7 @@ class WeChatAIApp(ctk.CTk):
             self._create_system_card(
                 key=self._contact_filter_all, title=self._contact_filter_all,
                 preview="默认视图：显示所有会话最新消息", emoji="📋",
-                accent=WC_COLORS["accent"], before=usage_frame)
+                accent=WC_COLORS["accent"], top=True)
 
         # 修正：右侧菜单只在「全部会话」卡上提供「删除全部历史 / 批量模式」
         def _sys_right_click(e):
@@ -597,6 +602,8 @@ class WeChatAIApp(ctk.CTk):
                 "badge": None, "is_group": False, "unread": 0, "avatar": avatar,
                 "_is_system": True, "_is_system_all": (key == self._contact_filter_all),
             }
+            # V3.3: 显式记录系统卡 frame（根治 CTkScrollableFrame winfo_children 误删）
+            self._system_card_frames.add(wrap)
 
             # 悬停/点击绑定
             def _enter(_e):
@@ -836,28 +843,33 @@ class WeChatAIApp(ctk.CTk):
 
     def _rebuild_contact_list(self):
         """重建左侧会话卡片（两张系统卡：📖使用说明 / 📋全部会话 永远保留，且位于最顶）。
-        Ctrl+D / 删除历史 / 刷新 等场景调用。"""
+        Ctrl+D / 删除历史 / 刷新 等场景调用。
+
+        V3.3 根治：不依赖 CTkScrollableFrame.winfo_children()（它返回的是内部
+        _parent_frame，会导致 str() 比对误删）。改用显式 frame 集合 + 对象身份判断：
+          - self._system_card_frames: 系统卡 frame（永远保留、不销毁）
+          - self._contact_card_frames: 联系人卡 frame（rebuild 时精确销毁重建）
+        """
         try:
             if not hasattr(self, "contact_list_frame") or not self.contact_list_frame.winfo_exists():
                 return
-            # 1) 除两张系统卡外，其它卡全部销毁
-            sys_frames = {
-                k: self._contact_cards[k]["frame"]
-                for k in (self._contact_filter_usage, self._contact_filter_all)
-                if k in self._contact_cards
-            }
-            for child in list(self.contact_list_frame.winfo_children()):
+
+            # 1) 精确销毁「旧的联系人卡」（只动 _contact_card_frames，绝不碰系统卡）
+            dead = [f for f in self._contact_card_frames
+                    if f is not None and f.winfo_exists()]
+            for f in dead:
                 try:
-                    if any(str(child) == str(f) for f in sys_frames.values()):
-                        continue
-                    child.destroy()
+                    f.destroy()
                 except Exception:
                     pass
+            self._contact_card_frames.clear()
+
             # 2) 清理 _contact_cards，仅保留两张系统卡
-            keep = {k: self._contact_cards[k] for k in sys_frames}
+            keep = {k: v for k, v in self._contact_cards.items()
+                    if v.get("_is_system")}
             self._contact_cards = keep
+
             # 3) 从会话索引重建所有会话卡（索引里已是“最新消息预览”，无需载入正文）
-            #    联系人卡默认追加在系统卡之下（系统卡创建时已固定顺序：使用说明→全部会话）。
             active = getattr(self, "_active_contact", None)
             for contact, idx in (self._conv_index or {}).items():
                 preview = str(idx.get("preview", ""))[:26]
@@ -866,15 +878,28 @@ class WeChatAIApp(ctk.CTk):
                 self._append_contact_card(
                     contact, preview, is_group=is_group, unread=unread,
                     active=(contact == active))
-            # === 临时诊断（定位联系人卡不显示）===
-            try:
-                self._debug_log(
-                    f"[重建会话列表] _conv_index={len(self._conv_index or {})} "
-                    f"sys_in_cards={all(k in self._contact_cards for k in (self._contact_filter_usage, self._contact_filter_all))} "
-                    f"total_cards={len(self._contact_cards)} "
-                    f"clf_children={len(self.contact_list_frame.winfo_children())}")
-            except Exception:
-                pass
+
+            # 4) 显式重排顺序（根治 CTkScrollableFrame 的 pack 顺序不可靠）：
+            #    [使用说明, 全部会话, *联系人卡] 从上到下
+            ordered = []
+            uf = self._contact_cards.get(self._contact_filter_usage, {}).get("frame")
+            af = self._contact_cards.get(self._contact_filter_all, {}).get("frame")
+            if uf is not None and uf.winfo_exists():
+                ordered.append(uf)
+            if af is not None and af.winfo_exists():
+                ordered.append(af)
+            # 联系人卡：按 _conv_index 顺序（已是最新在前），保证和预览一致
+            for contact in (self._conv_index or {}):
+                info = self._contact_cards.get(contact)
+                if info and info.get("frame") is not None and info["frame"].winfo_exists():
+                    ordered.append(info["frame"])
+            for f in ordered:
+                try:
+                    f.pack_forget()
+                    f.pack(side="top", fill="x")
+                except Exception:
+                    pass
+
             # 强制刷新 CTkScrollableFrame 的 canvas scrollregion，确保新卡进入可视区
             try:
                 self.contact_list_frame.update_idletasks()
@@ -963,6 +988,8 @@ class WeChatAIApp(ctk.CTk):
                         highlightthickness=0, width=218)
         card.pack(fill="x", side="top")
         card.pack_propagate(False)
+        # V3.3: 登记到联系人卡集合（rebuild 时精确销毁，不依赖 winfo_children）
+        self._contact_card_frames.add(card)
         try:
             sep = tk.Frame(card, bg=WC_COLORS["divider"], height=1)
             sep.pack(side="bottom", fill="x")
@@ -1404,6 +1431,7 @@ class WeChatAIApp(ctk.CTk):
                     try:
                         if frame_w.winfo_exists():
                             frame_w.destroy()
+                        self._contact_card_frames.discard(frame_w)
                     except Exception:
                         pass
                 menu_ref = card.get("_menu_ref")
@@ -2268,6 +2296,78 @@ class WeChatAIApp(ctk.CTk):
             self._on_log("error", f"[分类] 保存失败: {e}")
             messagebox.showerror("保存失败", str(e))
 
+    def _save_reply_style(self):
+        """V3.3: 把设置页的「回复风格」写入 config.yaml 的 reply_style_preset 段（保留注释）。"""
+        try:
+            tone = self.style_tone.get().strip()
+            max_sent_raw = self.style_max_sent.get().strip()
+            try:
+                max_sent = int(max_sent_raw) if max_sent_raw else None
+            except ValueError:
+                max_sent = None
+            emoji = bool(self.style_emoji.get())
+            forbidden = [x.strip() for x in self.style_forbidden.get().split(",") if x.strip()]
+            pet_words = [x.strip() for x in self.style_pet.get().split(",") if x.strip()]
+            notes = self.style_notes.get().strip()
+
+            preset = {}
+            if tone:
+                preset["tone"] = tone
+            if max_sent is not None:
+                preset["max_sentences"] = max_sent
+            preset["emoji"] = emoji
+            if forbidden:
+                preset["forbidden"] = forbidden
+            if pet_words:
+                preset["pet_words"] = pet_words
+            if notes:
+                preset["notes"] = notes
+
+            cfg_path = _app_path("config.yaml")
+            with open(cfg_path, "r", encoding="utf-8") as f:
+                text = f.read()
+
+            # 构造 reply_style_preset 段（2 空格缩进，与文件其他段一致）
+            lines = ["reply_style_preset:"]
+            if "tone" in preset:
+                lines.append(f"  tone: \"{preset['tone']}\"")
+            if "max_sentences" in preset:
+                lines.append(f"  max_sentences: {preset['max_sentences']}")
+            lines.append(f"  emoji: {'true' if preset['emoji'] else 'false'}")
+            if "forbidden" in preset:
+                lines.append(f"  forbidden: {preset['forbidden']}")
+            if "pet_words" in preset:
+                lines.append(f"  pet_words: {preset['pet_words']}")
+            if "notes" in preset:
+                lines.append(f"  notes: \"{preset['notes']}\"")
+            new_block = "\n".join(lines)
+
+            # 仅替换 reply_style_preset 段（保留其他段和注释）
+            re_block = re.compile(
+                r"(?m)^reply_style_preset:.*?(?=\n[a-zA-Z_][a-zA-Z0-9_]*:|\Z)", re.DOTALL)
+            m = re_block.search(text)
+            if m:
+                text = text[:m.start()] + new_block + text[m.end():]
+            else:
+                # 段缺失：追加到文件末尾
+                text = text.rstrip("\n") + "\n\n" + new_block + "\n"
+
+            with open(cfg_path, "w", encoding="utf-8") as f:
+                f.write(text)
+
+            # 内存更新 + 实时生效（通知 engine 的 llm_client）
+            self.config_data["reply_style_preset"] = preset
+            eng = getattr(self, "engine", None)
+            if eng is not None and hasattr(eng, "llm_client") and eng.llm_client is not None:
+                eng.llm_client._style_preset = preset
+                self._on_log("info", "[回复风格] 已保存并实时生效")
+            else:
+                self._on_log("info", "[回复风格] 已保存（重启监控后生效）")
+            messagebox.showinfo("回复风格", "已保存并生效")
+        except Exception as e:
+            self._on_log("error", f"[回复风格] 保存失败: {e}")
+            messagebox.showerror("保存失败", str(e))
+
     def _import_classification_rules(self):
         filepath = filedialog.askopenfilename(
             title="导入分类规则", filetypes=[("JSON", "*.json"), ("ALL", "*.*")])
@@ -2352,6 +2452,7 @@ class WeChatAIApp(ctk.CTk):
         _nav_group("AI", [
             ("AI抽取", "ai_frame"),
             ("LLM", "llm_frame"),
+            ("回复风格", "style_frame"),
             ("分类", "cls_frame"),
             ("报告", "report_frame"),
         ])
@@ -2564,6 +2665,67 @@ class WeChatAIApp(ctk.CTk):
         self.entry_model = ctk.CTkEntry(llm_frame, font=ctk.CTkFont(size=12))
         self.entry_model.insert(0, llm_cfg.get("model", ""))
         self.entry_model.grid(row=4, column=1, padx=15, pady=5, sticky="ew")
+
+        # ===== 回复风格设定（V3.3：UI 直接编辑，写入 config.yaml 的 reply_style_preset）=====
+        style_frame = ctk.CTkFrame(scroll, fg_color=WC_COLORS["card"], corner_radius=12)
+        style_frame.pack(fill="x", padx=20, pady=20)
+        style_frame.grid_columnconfigure(1, weight=1)
+        self.style_frame = style_frame
+
+        ctk.CTkLabel(style_frame, text="💬 回复风格设定",
+                     font=ctk.CTkFont(size=14, weight="bold"),
+                     text_color=WC_COLORS["text"]).grid(row=0, column=0, columnspan=2, padx=15, pady=(15, 4), sticky="w")
+        ctk.CTkLabel(style_frame, text="全局生效（叠加在角色模板之上，优先级更高）",
+                     font=ctk.CTkFont(size=11),
+                     text_color=WC_COLORS["text_muted"]).grid(row=1, column=0, columnspan=2, padx=15, pady=(0, 10), sticky="w")
+
+        sp = self.config_data.get("reply_style_preset") or {}
+
+        def _slabel(r, t):
+            ctk.CTkLabel(style_frame, text=t, font=ctk.CTkFont(size=12),
+                         text_color=WC_COLORS["text_muted"]).grid(
+                row=r, column=0, padx=15, pady=5, sticky="w")
+
+        _slabel(2, "语气/人设")
+        self.style_tone = ctk.CTkEntry(style_frame, font=ctk.CTkFont(size=12))
+        self.style_tone.insert(0, sp.get("tone", ""))
+        self.style_tone.grid(row=2, column=1, padx=15, pady=5, sticky="ew")
+
+        _slabel(3, "每条最多句数")
+        self.style_max_sent = ctk.CTkEntry(style_frame, font=ctk.CTkFont(size=12), width=80)
+        self.style_max_sent.insert(0, str(sp.get("max_sentences", "")))
+        self.style_max_sent.grid(row=3, column=1, padx=15, pady=5, sticky="w")
+
+        _slabel(4, "允许 emoji")
+        self.style_emoji = ctk.CTkSwitch(style_frame, text="",
+                                         font=ctk.CTkFont(size=12))
+        if sp.get("emoji", True):
+            self.style_emoji.select()
+        else:
+            self.style_emoji.deselect()
+        self.style_emoji.grid(row=4, column=1, padx=15, pady=5, sticky="w")
+
+        _slabel(5, "禁忌词(逗号分隔)")
+        self.style_forbidden = ctk.CTkEntry(style_frame, font=ctk.CTkFont(size=12))
+        self.style_forbidden.insert(0, ", ".join(sp.get("forbidden", []) or []))
+        self.style_forbidden.grid(row=5, column=1, padx=15, pady=5, sticky="ew")
+
+        _slabel(6, "口头禅(逗号分隔)")
+        self.style_pet = ctk.CTkEntry(style_frame, font=ctk.CTkFont(size=12))
+        self.style_pet.insert(0, ", ".join(sp.get("pet_words", []) or []))
+        self.style_pet.grid(row=6, column=1, padx=15, pady=5, sticky="ew")
+
+        _slabel(7, "补充备注")
+        self.style_notes = ctk.CTkEntry(style_frame, font=ctk.CTkFont(size=12))
+        self.style_notes.insert(0, sp.get("notes", ""))
+        self.style_notes.grid(row=7, column=1, padx=15, pady=5, sticky="ew")
+
+        ctk.CTkButton(style_frame, text="💾 保存并生效",
+                      font=ctk.CTkFont(size=12, weight="bold"),
+                      fg_color=WC_COLORS["accent"], hover_color=WC_COLORS["accent_hover"],
+                      text_color="#FFFFFF",
+                      command=self._save_reply_style).grid(
+            row=8, column=0, columnspan=2, padx=15, pady=(12, 15), sticky="ew")
 
         # 高级设置（默认隐藏）
         self.advanced_frame = ctk.CTkFrame(scroll, fg_color="transparent")
