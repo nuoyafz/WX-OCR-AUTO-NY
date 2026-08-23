@@ -580,7 +580,21 @@ class ObsidianSync:
                 f.write(content)
                 f.flush()
                 os.fsync(f.fileno())
-            os.replace(tmp_path, filepath)   # 原子替换
+            # Obsidian 同步/文件锁可能短暂占用目标文件 → WinError 5 拒绝访问。
+            # 加退避重试，避免异常上抛刷屏；仍失败才上抛由调用方限频处理。
+            _last_err = None
+            for _attempt in range(4):  # 0,1,2,3 → 共 4 次尝试
+                try:
+                    os.replace(tmp_path, filepath)   # 原子替换
+                    return
+                except PermissionError as _pe:
+                    _last_err = _pe
+                    if _attempt < 3:
+                        time.sleep(0.3 * (_attempt + 1))  # 0.3/0.6/0.9s 退避
+                        continue
+                    raise
+                except Exception:
+                    raise
         except Exception:
             try:
                 os.remove(tmp_path)

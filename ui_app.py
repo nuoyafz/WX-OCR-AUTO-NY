@@ -3243,7 +3243,10 @@ class WeChatAIApp(ctk.CTk):
         self._async_gen_suggestion(contact, last_other.get("content", ""))
 
     def _async_gen_suggestion(self, contact, content):
-        if not getattr(self, "engine", None) or not getattr(self.engine, "llm_client", None):
+        _eng = getattr(self, "engine", None)
+        if not _eng or not _eng.is_running():
+            self._on_log("warning", "[建议回复] 监控已停止，请先启动监控再生成"); return
+        if not getattr(_eng, "llm_client", None):
             self._on_log("warning", "[建议回复] LLM 未初始化，请先启动监控"); return
         import threading
         def _worker():

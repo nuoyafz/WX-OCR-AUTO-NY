@@ -215,7 +215,14 @@ class WeChatEngine:
                 logger.warning("[UI回调] on_new_message失败: %s", e)
 
     def _on_obsidian_error(self, msg):
-        """V4: Obsidian 写入失败回调 —— 转发给 UI 弹窗告警（不静默吞掉）。"""
+        """V4: Obsidian 写入失败回调 —— 转发给 UI 弹窗告警（不静默吞掉）。
+        同一错误 60s 内只报一次，避免 WinError 5 等反复刷屏。"""
+        import time as _t
+        _now = _t.time()
+        _last = getattr(self, "_obs_err_last", {})
+        if _last.get(msg, 0) + 60.0 > _now:
+            return
+        _last[msg] = _now
         self._log("error", f"[Obsidian] {msg}")
         cb = getattr(self, "_on_obsidian_error_cb", None)
         if cb:
@@ -2915,18 +2922,24 @@ class WeChatEngine:
                 self._log("info", f"[红点] 切回原窗口: {original_contact}")
                 sidebar_img = self.red_dot_monitor.capture_sidebar(self.window)
                 if sidebar_img is not None:
-                    ocr_results = recognize(
-                        sidebar_img,
-                        scale=1.0,
-                        min_confidence=0.40,
-                        merge_bubble=False,
-                        denoise=False,
-                    )
+                    # 归一化匹配：去空格、转小写，兼容 OCR 把"亚磊"识成"亚磊 "等
+                    _norm = lambda s: "".join(str(s).lower().split())
+                    _orig_n = _norm(original_contact)
                     target_y = None
-                    for r in ocr_results:
-                        text = str(r.get("text", "")).strip()
-                        if original_contact in text or text in original_contact:
-                            target_y = r.get("y_center", 0)
+                    for _sc in (1.0, 2.0):  # 先 1.0，匹配不到再放大 2.0 重试
+                        ocr_results = recognize(
+                            sidebar_img,
+                            scale=_sc,
+                            min_confidence=0.40,
+                            merge_bubble=False,
+                            denoise=False,
+                        )
+                        for r in ocr_results:
+                            text = _norm(r.get("text", ""))
+                            if _orig_n and (_orig_n in text or text in _orig_n):
+                                target_y = r.get("y_center", 0)
+                                break
+                        if target_y:
                             break
                     if target_y:
                         _hwnd3 = getattr(self.window, "_hWnd", None)
@@ -2950,7 +2963,8 @@ class WeChatEngine:
                         time.sleep(1.0)
                         self._log("info", f"[红点] 已切回: {original_contact}")
                     else:
-                        self._log("warning", f"[红点] 未找到原联系人 {original_contact}，保持当前窗口")
+                        # 侧栏未命中：不刷屏，静默保持当前窗口（已处理完，不影响已发出的回复）
+                        self._log("debug", f"[红点] 侧栏未匹配到 {original_contact}，保持当前窗口")
         except Exception as e:
             self._log("warning", f"[红点] 切回原窗口失败: {e}")
 
