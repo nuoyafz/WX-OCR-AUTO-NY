@@ -4364,7 +4364,8 @@ class WeChatAIApp(ctk.CTk):
                     "系统诊断发现一些问题，可能影响使用体验。"
                 ))
         except Exception as e:
-            self.after(0, lambda: self._on_log("error", f"诊断异常: {e}"))
+            err_msg = f"诊断异常: {e}"
+            self.after(0, lambda msg=err_msg: self._on_log("error", msg))
     def _diagnose_system(self):
         """系统诊断（修复启动问题的辅助工具）"""
         self._on_log("info", "🔍 开始系统诊断...")
@@ -4408,7 +4409,7 @@ class WeChatAIApp(ctk.CTk):
             try:
                 __import__(import_name)
                 self._on_log("info", f"✅ {module_name} 模块正常")
-            except ImportError:
+            except (ImportError, OSError, RuntimeError):
                 issues.append(f"{module_name} 模块缺失")
                 self._on_log("error", f"❌ {module_name} 模块缺失")
 

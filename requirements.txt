@@ -37,8 +37,8 @@ comtypes>=1.2.0              # uiautomation / pywin32 COM 操作底层依赖
 onnxruntime>=1.14.0          # 红点 CNN 模型推理（不装会降级到纯 numpy 模板匹配=慢）
 # --- RAG / 语义去重（storage + ai_trainer + main.py 都有使用） ---
 scikit-learn>=1.0.0          # import sklearn（TfidfVectorizer 等）
-sentence-transformers>=2.2.0 # import sentence_transformers（RAG 向量化）
-chromadb>=0.4.0              # 向量数据库
+# sentence-transformers>=2.2.0 # import sentence_transformers（RAG 向量化）  # 依赖 torch ~1.8GB, 默认禁用, 需要时手动取消注释
+# chromadb>=0.4.0              # 向量数据库  # 依赖 k8s/grpcio ~300MB, 默认禁用, 需要时手动取消注释
 
 # ================ 可选增强（未安装时自动降级，不影响核心功能） ================
 # 微信内置 OCR 引擎（精度高/速度快，但需要正确安装WeChatOCR第三方包）

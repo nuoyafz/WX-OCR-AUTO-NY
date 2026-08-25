@@ -25,14 +25,7 @@ from datetime import datetime
 
 logger = logging.getLogger(__name__)
 
-_RAG_AVAILABLE = False
-try:
-    import chromadb
-    from chromadb.config import Settings
-    _RAG_AVAILABLE = True
-except ImportError:
-    logger.info("[RAG] chromadb 未安装，向量检索不可用。"
-                "安装: pip install chromadb")
+_RAG_AVAILABLE = False  # 顶层不 import chromadb，避免 kubernetes/grpcio 依赖链加载
 
 
 class RAGRetriever:
@@ -40,7 +33,7 @@ class RAGRetriever:
 
     def __init__(self, config=None):
         self.config = config or {}
-        self.enabled = self.config.get("enabled", True) and _RAG_AVAILABLE
+        self.enabled = bool(self.config.get("enabled", False))
         self.top_k = self.config.get("top_k", 5)
         self.similarity_threshold = self.config.get("similarity_threshold", 0.65)
         self.max_context_chars = self.config.get("max_context_chars", 800)

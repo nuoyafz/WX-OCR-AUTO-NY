@@ -96,7 +96,7 @@ REM    sentence_transformers    RAG 向量化
 REM    chromadb                 RAG 向量库
 REM    uiautomation             另一种后台点击注入方案
 REM  ----------------------------------------------------------------
-python -c "import customtkinter,cv2,paddleocr,paddle,numpy,PIL,pyautogui,pygetwindow,pyperclip,yaml,requests,mss,win32con,psutil,matplotlib,comtypes,onnxruntime,sklearn,sentence_transformers,chromadb,uiautomation" >nul 2>&1
+python -c "import customtkinter,cv2,paddleocr,paddle,numpy,PIL,pyautogui,pygetwindow,pyperclip,yaml,requests,mss,win32con,psutil,matplotlib,comtypes,onnxruntime,sklearn,uiautomation" >nul 2>&1
 if not errorlevel 1 goto DEPS_OK
 
 echo [!] Missing dependencies, installing via Aliyun CDN (China fastest)...
@@ -123,11 +123,11 @@ if not errorlevel 1 goto LAUNCH
 
 echo.
 echo [X] All 3 mirrors failed, trying fallback install list (Aliyun)...
-python -m pip install pywin32 psutil numpy opencv-python Pillow pyautogui pygetwindow pyperclip PyYAML requests mss customtkinter paddleocr paddlepaddle matplotlib comtypes onnxruntime scikit-learn sentence-transformers chromadb uiautomation %PIP_MIRROR%
+python -m pip install pywin32 psutil numpy opencv-python Pillow pyautogui pygetwindow pyperclip PyYAML requests mss customtkinter paddleocr paddlepaddle matplotlib comtypes onnxruntime scikit-learn uiautomation %PIP_MIRROR%
 if not errorlevel 1 goto LAUNCH
 echo.
 echo [X] Fallback/Aliyun failed, trying Fallback/Tencent...
-python -m pip install pywin32 psutil numpy opencv-python Pillow pyautogui pygetwindow pyperclip PyYAML requests mss customtkinter paddleocr paddlepaddle matplotlib comtypes onnxruntime scikit-learn sentence-transformers chromadb uiautomation %PIP_MIRROR2%
+python -m pip install pywin32 psutil numpy opencv-python Pillow pyautogui pygetwindow pyperclip PyYAML requests mss customtkinter paddleocr paddlepaddle matplotlib comtypes onnxruntime scikit-learn uiautomation %PIP_MIRROR2%
 echo.
 echo [OK] Dependencies installed (tiered mirror)
 goto LAUNCH

@@ -23,12 +23,8 @@ _SEMANTIC_AVAILABLE = False
 _EMBED_MODEL = None
 _EMBED_LOCK = threading.Lock()
 
-try:
-    from sentence_transformers import SentenceTransformer
-    _SEMANTIC_AVAILABLE = True
-except ImportError:
-    logger.info("[语义去重] sentence-transformers 未安装，使用 pHash 降级方案。"
-                "安装: pip install sentence-transformers")
+# 默认关闭语义向量（避免模块级触发 torch C++ DLL access violation 崩溃）
+# 开启：config.yaml -> smart_monitor.semantic_dedup.enabled: true + pip install sentence-transformers
 
 
 class SemanticDeduplicator:
@@ -49,20 +45,33 @@ class SemanticDeduplicator:
         self.stats = {"semantic_hits": 0, "semantic_misses": 0, "exact_hits": 0}
 
         self._model = None
-        if _SEMANTIC_AVAILABLE:
+        self.enabled = bool(self.config.get("enabled", False))
+        if self.enabled:
             self._init_model()
+            if self._model is None:
+                self.enabled = False
+                logger.info("[语义去重] 模型不可用，自动降级到精确/编辑距离方案。")
+        else:
+            logger.info("[语义去重] 默认关闭。走精确/编辑距离降级方案。")
 
     def _init_model(self):
+        """只有显式 enabled=true 才进。局部 import，失败绝对不崩。"""
         global _EMBED_MODEL
         with _EMBED_LOCK:
             if _EMBED_MODEL is None:
+                try:
+                    from sentence_transformers import SentenceTransformer
+                except Exception as e:
+                    logger.warning("[语义去重] import sentence_transformers 失败: %s", e)
+                    return
                 try:
                     model_name = self.config.get(
                         "embedding_model", "all-MiniLM-L6-v2")
                     _EMBED_MODEL = SentenceTransformer(model_name)
                     logger.info("[语义去重] 模型加载完成: %s", model_name)
                 except Exception as e:
-                    logger.warning("[语义去重] 模型加载失败: %s，降级为 pHash", e)
+                    logger.warning("[语义去重] 模型加载失败: %s", e)
+                    return
         self._model = _EMBED_MODEL
 
     def _encode(self, text):
