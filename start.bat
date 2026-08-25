@@ -40,26 +40,28 @@ REM        Some Python launchers (workbuddy/uv etc.) have a broken pip.exe
 REM        shim where the hardcoded python path loses backslashes, causing
 REM        "Fatal error in launcher: Unable to create process".
 REM        python -m pip bypasses the shim and always uses the same interpreter.
+REM  NOTE2: Tsinghua mirror for CN users (10~50x faster than default pypi.org).
 REM ================================================================
 :CHECK_DEPS
 echo [..] Checking dependencies...
 echo.
+set "PIP_MIRROR=-i https://pypi.tuna.tsinghua.edu.cn/simple --trusted-host pypi.tuna.tsinghua.edu.cn"
 python -c "import customtkinter, cv2, paddleocr, numpy, PIL, pyautogui, pygetwindow, pyperclip, yaml, requests, mss, win32con, psutil" >nul 2>&1
 if not errorlevel 1 goto DEPS_OK
 
-echo [!] Missing dependencies, installing...
+echo [!] Missing dependencies, installing via Tsinghua mirror...
 echo.
 echo ========================================================================
 echo   Installing dependencies (first run may take several minutes)...
 echo ========================================================================
 echo.
-python -m pip install --upgrade pip
-python -m pip install -r "%~dp0requirements.txt"
+python -m pip install --upgrade pip %PIP_MIRROR%
+python -m pip install -r "%~dp0requirements.txt" %PIP_MIRROR%
 if not errorlevel 1 goto LAUNCH
 
 echo.
 echo [X] requirements.txt failed, trying fallback install...
-python -m pip install pywin32 psutil numpy opencv-python Pillow pyautogui pygetwindow pyperclip PyYAML requests mss customtkinter paddleocr paddlepaddle
+python -m pip install pywin32 psutil numpy opencv-python Pillow pyautogui pygetwindow pyperclip PyYAML requests mss customtkinter paddleocr paddlepaddle %PIP_MIRROR%
 echo.
 echo [OK] Dependencies installed
 goto LAUNCH
