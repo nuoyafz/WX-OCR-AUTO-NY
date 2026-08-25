@@ -45,7 +45,34 @@ REM ================================================================
 :CHECK_DEPS
 echo [..] Checking dependencies...
 echo.
-set "PIP_MIRROR=-i https://pypi.tuna.tsinghua.edu.cn/simple --trusted-host pypi.tuna.tsinghua.edu.cn"
+REM  ----------------------------------------------------------------
+REM  ★ 国内镜像优先级：
+REM     1) 阿里云  https://mirrors.aliyun.com/pypi/simple/   ← 企业级CDN，目前最快最稳
+REM     2) 腾讯云  https://mirrors.cloud.tencent.com/pypi/simple/
+REM     3) 清华    https://pypi.tuna.tsinghua.edu.cn/simple  ← 校园网，高峰期限流
+REM  老写法 "-i URL --trusted-host host" 把 trusted-host 放在 -i 同一引号里，
+REM  老版本 pip 解析错误就回落到 pypi.org 下载 → 用户以为走源其实在走国外(几KB/s)。
+REM  正确做法：先 pip config set global.xxx 写到用户 pip.ini，所有 pip install 命令
+REM  （包括 --upgrade pip、-r、fallback）全局自动继承，不需要每条命令拼参数。
+REM  ----------------------------------------------------------------
+set "IDX_URL=https://mirrors.aliyun.com/pypi/simple/"
+set "TRUST=mirrors.aliyun.com"
+set "IDX_URL2=https://mirrors.cloud.tencent.com/pypi/simple/"
+set "TRUST2=mirrors.cloud.tencent.com"
+set "IDX_URL3=https://pypi.tuna.tsinghua.edu.cn/simple/"
+set "TRUST3=pypi.tuna.tsinghua.edu.cn"
+
+REM  1) 写全局镜像配置（优先阿里云）。失败不致命，fallback 到 -i 方式
+echo [..] Configuring China PyPI mirror (Aliyun CDN)...
+python -m pip config set global.index-url "%IDX_URL%" >nul 2>&1
+python -m pip config set global.trusted-host "%TRUST%" >nul 2>&1
+python -m pip config set global.timeout 120 >nul 2>&1
+echo [OK] Global mirror = Aliyun CDN  (if slow, user can pip config unset global.index-url)
+echo.
+set "PIP_MIRROR=-i %IDX_URL% --trusted-host %TRUST%"
+set "PIP_MIRROR2=-i %IDX_URL2% --trusted-host %TRUST2%"
+set "PIP_MIRROR3=-i %IDX_URL3% --trusted-host %TRUST3%"
+
 REM  ----------------------------------------------------------------
 REM  ★ 依赖完整性检查（AST 扫描所有 .py import 后生成的完整列表）
 REM     缺任何一个就会跳清华源自动装，不再发生"换电脑缺一堆"
@@ -72,10 +99,12 @@ REM  ----------------------------------------------------------------
 python -c "import customtkinter,cv2,paddleocr,paddle,numpy,PIL,pyautogui,pygetwindow,pyperclip,yaml,requests,mss,win32con,psutil,matplotlib,comtypes,onnxruntime,sklearn,sentence_transformers,chromadb,uiautomation" >nul 2>&1
 if not errorlevel 1 goto DEPS_OK
 
-echo [!] Missing dependencies, installing via Tsinghua mirror...
+echo [!] Missing dependencies, installing via Aliyun CDN (China fastest)...
 echo.
 echo ========================================================================
 echo   Installing dependencies (first run may take several minutes)...
+echo   If download speed is slow (less than 1MB/s) , press Ctrl+C once
+echo   and re-run start.bat to retry (script will fall back to Tencent mirror).
 echo ========================================================================
 echo.
 python -m pip install --upgrade pip %PIP_MIRROR%
@@ -83,10 +112,24 @@ python -m pip install -r "%~dp0requirements.txt" %PIP_MIRROR%
 if not errorlevel 1 goto LAUNCH
 
 echo.
-echo [X] requirements.txt failed, trying fallback install...
-python -m pip install pywin32 psutil numpy opencv-python Pillow pyautogui pygetwindow pyperclip PyYAML requests mss customtkinter paddleocr paddlepaddle matplotlib comtypes onnxruntime scikit-learn sentence-transformers chromadb uiautomation %PIP_MIRROR%
+echo [X] Aliyun failed, trying Tencent Cloud mirror...
+python -m pip install -r "%~dp0requirements.txt" %PIP_MIRROR2%
+if not errorlevel 1 goto LAUNCH
+
 echo.
-echo [OK] Dependencies installed
+echo [X] Tencent failed, trying Tsinghua mirror...
+python -m pip install -r "%~dp0requirements.txt" %PIP_MIRROR3%
+if not errorlevel 1 goto LAUNCH
+
+echo.
+echo [X] All 3 mirrors failed, trying fallback install list (Aliyun)...
+python -m pip install pywin32 psutil numpy opencv-python Pillow pyautogui pygetwindow pyperclip PyYAML requests mss customtkinter paddleocr paddlepaddle matplotlib comtypes onnxruntime scikit-learn sentence-transformers chromadb uiautomation %PIP_MIRROR%
+if not errorlevel 1 goto LAUNCH
+echo.
+echo [X] Fallback/Aliyun failed, trying Fallback/Tencent...
+python -m pip install pywin32 psutil numpy opencv-python Pillow pyautogui pygetwindow pyperclip PyYAML requests mss customtkinter paddleocr paddlepaddle matplotlib comtypes onnxruntime scikit-learn sentence-transformers chromadb uiautomation %PIP_MIRROR2%
+echo.
+echo [OK] Dependencies installed (tiered mirror)
 goto LAUNCH
 
 :DEPS_OK
