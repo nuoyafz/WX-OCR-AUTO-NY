@@ -106,8 +106,6 @@ class WeChatEngine:
         #   对方连发多条消息时，取消旧定时器，重置 1s 倒计时，到期后合并一次回复
         self._debounce_timers: dict[str, threading.Timer] = {}
         self._debounce_lock = threading.Lock()
-        if self._reply_agg_enabled:
-            self._start_reply_aggregator()
 
         self.parser = None
         self.llm_client = None
@@ -177,10 +175,15 @@ class WeChatEngine:
         # 回复效果反馈闭环
         self._reply_feedback_tracker = {}  # {contact: {"reply": str, "ts": float, "role": str}}
 
+        if self._reply_agg_enabled:
+            self._start_reply_aggregator()
+
     def _log(self, level, message):
         """发送日志到回调（受 log_level 过滤）"""
-        _lvl = self._log_levels.get(level.lower(), 20)
-        if _lvl < self._log_level:
+        _levels = getattr(self, "_log_levels", {"debug": 10, "info": 20, "warning": 30, "error": 40})
+        _lvl = _levels.get(level.lower(), 20)
+        _min = getattr(self, "_log_level", 20)
+        if _lvl < _min:
             return
         getattr(logger, level.lower(), logger.info)(message)
         if self.callbacks.get("on_log"):
