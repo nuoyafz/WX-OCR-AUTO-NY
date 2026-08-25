@@ -1,4 +1,4 @@
-﻿@echo off
+@echo off
 chcp 65001 >nul
 title 微信AI助手 - 一键启动
 cd /d "%~dp0"
