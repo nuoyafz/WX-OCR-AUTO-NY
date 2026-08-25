@@ -1856,16 +1856,29 @@ class WeChatEngine:
         # ② 顶部标题栏 OCR
         if hwnd:
             try:
-                from screenshot import capture_via_printwindow, crop_title_bar_img
-                _img = capture_via_printwindow(hwnd)
-                if _img is not None and float(_img.mean()) >= 3:
-                    _bar = crop_title_bar_img(_img)
-                    if _bar is not None:
-                        from ocr_engine import recognize
-                        _res = recognize(_bar, scale=3.0, min_confidence=0.35)
-                        _name = self._pick_title_name(_res)
-                        if _name:
-                            return _name
+                # ★ P0回归修复(2026-08-25)：屏幕外(offscreen)窗口跳过标题栏OCR。
+                #   78a1274 加入"白底壳子"检测后，屏幕外微信4.x窗口 PrintWindow
+                #   截白壳 → 触发 temporary-restore(移窗+0.5s等渲染+mss抓屏) → 拿到真实图，
+                #   随后本分支的 recognize() 触发首次 PaddleOCR 模型加载(10~60s无超时)，
+                #   直接卡死 _main_loop 的 while 前初始化 → "启动成功但零日志、没动静"。
+                #   屏幕外 GPU 不渲染，标题栏 OCR 本就拿不到可靠文字（旧版本黑图即跳过），
+                #   这里恢复该行为：屏幕外直接走下方 ③④ 兜底。
+                try:
+                    from window_manager import is_window_offscreen
+                    _skip_title_ocr = is_window_offscreen(self.window)
+                except Exception:
+                    _skip_title_ocr = False
+                if not _skip_title_ocr:
+                    from screenshot import capture_via_printwindow, crop_title_bar_img
+                    _img = capture_via_printwindow(hwnd)
+                    if _img is not None and float(_img.mean()) >= 3:
+                        _bar = crop_title_bar_img(_img)
+                        if _bar is not None:
+                            from ocr_engine import recognize
+                            _res = recognize(_bar, scale=3.0, min_confidence=0.35)
+                            _name = self._pick_title_name(_res)
+                            if _name:
+                                return _name
             except Exception:
                 pass
         # ③ 红点匹配名兜底
