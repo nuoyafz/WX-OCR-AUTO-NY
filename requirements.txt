@@ -12,8 +12,11 @@
 
 # ================ 核心必需（启动/OCR/操作微信缺一不可） ================
 # --- OCR ---
-paddlepaddle>=2.6.0          # 推理后端 (~70MB); 99% OCR=0条的根因就是缺这个
-paddleocr>=2.9.0             # OCR 前端包；依赖上面的 paddlepaddle
+# 注意：必须锁 <3.0！paddleocr 3.x 移除了 2.x 的 ocr()/use_angle_cls/ocr_version API，
+#       本项目 ocr_engine.py 按 2.x 编写，装到 3.x 会"识别静默返回0条"（截图有字但OCR=0）。
+#       同理 paddlepaddle 需 2.x 配套（paddleocr 2.9 配 paddle 3.x 也会异常）。
+paddlepaddle>=2.6.0,<3.0     # 推理后端 (~70MB); 99% OCR=0条的根因就是缺这个
+paddleocr>=2.9.0,<3.0        # OCR 前端包；依赖上面的 paddlepaddle
 # --- GUI / 基础工具 ---
 customtkinter>=5.2.0         # UI
 opencv-python>=4.9.0         # import cv2，截图/图像预处理

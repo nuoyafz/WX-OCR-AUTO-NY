@@ -156,6 +156,15 @@ def get_ocr():
             from paddleocr import PaddleOCR
             import inspect
 
+            # 打印实际安装版本，便于诊断"截图有内容但OCR=0条"（通常是装到了3.x）
+            try:
+                import paddleocr as _po
+                logger.info(f"[OCR] paddleocr版本: {getattr(_po, '__version__', '未知')}")
+                import paddle as _pd
+                logger.info(f"[OCR] paddle版本: {getattr(_pd, '__version__', '未知')}")
+            except Exception:
+                pass
+
             # 用 inspect.signature 只传入当前安装的 PaddleOCR 版本支持的参数，
             # 避免新版参数 show_log / ocr_version 在老版本上报错 "Unknown argument: show_log"
             _sig = inspect.signature(PaddleOCR.__init__)
