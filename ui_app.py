@@ -4446,6 +4446,22 @@ class WeChatAIApp(ctk.CTk):
         else:
             self._on_log("info", "✅ 系统诊断通过，所有检查项正常")
 
+        # 6. 首次使用引导：API Key 仍为模板占位符时弹窗提示
+        try:
+            _llm_cfg = self.config_data.get("llm", {}) or {}
+            _ak = (_llm_cfg.get("api_key", "") or "").strip().lower()
+            if not _ak or _ak in ("your-api-key-here", "your-api-key"):
+                self.after(0, lambda: messagebox.showwarning(
+                    "请先配置 API Key",
+                    "检测到 config.yaml 中的 LLM API Key 仍是模板占位符（未填写）。\n\n"
+                    "自动回复功能目前无法使用。\n\n"
+                    "请打开项目目录下的 config.yaml，在 llm.api_key 处填入你的 API Key，\n"
+                    "保存后重启本程序即可生效。\n\n"
+                    "（仅截图 / OCR / 监控功能不受影响）"
+                ))
+        except Exception:
+            pass
+
         return len(issues) == 0
 
     def _auto_refresh_stats(self):

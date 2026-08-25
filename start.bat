@@ -1,161 +1,105 @@
-@echo off
-title WX AI Assistant - Launcher
+﻿@echo off
+chcp 65001 >nul
+title 微信AI助手 - 一键启动
 cd /d "%~dp0"
 
-REM ================================================================
-REM  WX AI Assistant - One-Click Launcher
-REM ================================================================
-type "%~dp0banner.txt" 2>nul
 echo.
-echo ========================================================================
-echo.
-echo              WX AI Assistant - One-Click Launcher
-echo.
-echo ========================================================================
+echo ============================================================
+echo            微信AI助手 - 一键启动 (One-Click Launcher)
+echo ============================================================
 echo.
 
-REM ================================================================
-REM  1. Check Python
-REM ================================================================
+REM ============================================================
+REM  1. 检查 Python
+REM ============================================================
 python --version >nul 2>&1
 if errorlevel 1 goto NO_PYTHON
 for /f "tokens=2" %%i in ('python --version 2^>^&1') do set PYVER=%%i
 echo [OK] Python: %PYVER%
 echo.
-goto CHECK_DEPS
+goto CHECK_CONFIG
 
 :NO_PYTHON
-echo [X] Python not found! Please install Python 3.10+ and add to PATH
-echo.
-echo     Download: https://www.python.org/downloads/
-echo     Check "Add Python to PATH" during installation
+echo [X] 未检测到 Python！请安装 Python 3.10+ 并务必勾选「Add Python to PATH」
+echo     下载地址: https://www.python.org/downloads/
 echo.
 pause
 exit /b 1
 
-REM ================================================================
-REM  2. Check / Install Dependencies
-REM  NOTE: Use "python -m pip" instead of "pip.exe" directly.
-REM        Some Python launchers (workbuddy/uv etc.) have a broken pip.exe
-REM        shim where the hardcoded python path loses backslashes, causing
-REM        "Fatal error in launcher: Unable to create process".
-REM        python -m pip bypasses the shim and always uses the same interpreter.
-REM  NOTE2: Tsinghua mirror for CN users (10~50x faster than default pypi.org).
-REM ================================================================
+REM ============================================================
+REM  2. 首次运行自动生成 config.yaml（从模板复制，已存在则跳过）
+REM     config.yaml 因含 API Key 被 gitignore，不会进 GitHub，
+REM     所以别人 clone/下载后首次运行必须由本步或程序自动生成。
+REM ============================================================
+:CHECK_CONFIG
+if exist config.yaml (
+    echo [OK] 配置文件已存在: config.yaml
+) else (
+    if exist config.example.yaml (
+        copy /Y config.example.yaml config.yaml >nul
+        echo [OK] 已根据模板自动生成 config.yaml
+        echo [提示] 自动回复功能需在 config.yaml 中填入你的 LLM API Key 后才能使用
+    ) else (
+        echo [X] 未找到 config.example.yaml，无法自动生成配置，请重新下载完整仓库
+    )
+)
+echo.
+
+REM ============================================================
+REM  3. 配置国内最佳镜像源 + 检查/安装依赖
+REM     镜像优先级（paddle/paddleocr 体积大，必须走国内镜像）:
+REM       1) 阿里云  https://mirrors.aliyun.com/pypi/simple/   企业级CDN，最快最稳
+REM       2) 腾讯云  https://mirrors.cloud.tencent.com/pypi/simple/
+REM       3) 清华    https://pypi.tuna.tsinghua.edu.cn/simple
+REM     先把阿里云写进用户 pip.ini，后续所有 pip install 全局继承，
+REM     不必每条命令拼 -i 参数（老写法易回落到国外 pypi.org）。
+REM ============================================================
 :CHECK_DEPS
-echo [..] Checking dependencies...
-echo.
-REM  ----------------------------------------------------------------
-REM  ★ 国内镜像优先级：
-REM     1) 阿里云  https://mirrors.aliyun.com/pypi/simple/   ← 企业级CDN，目前最快最稳
-REM     2) 腾讯云  https://mirrors.cloud.tencent.com/pypi/simple/
-REM     3) 清华    https://pypi.tuna.tsinghua.edu.cn/simple  ← 校园网，高峰期限流
-REM  老写法 "-i URL --trusted-host host" 把 trusted-host 放在 -i 同一引号里，
-REM  老版本 pip 解析错误就回落到 pypi.org 下载 → 用户以为走源其实在走国外(几KB/s)。
-REM  正确做法：先 pip config set global.xxx 写到用户 pip.ini，所有 pip install 命令
-REM  （包括 --upgrade pip、-r、fallback）全局自动继承，不需要每条命令拼参数。
-REM  ----------------------------------------------------------------
-set "IDX_URL=https://mirrors.aliyun.com/pypi/simple/"
-set "TRUST=mirrors.aliyun.com"
-set "IDX_URL2=https://mirrors.cloud.tencent.com/pypi/simple/"
-set "TRUST2=mirrors.cloud.tencent.com"
-set "IDX_URL3=https://pypi.tuna.tsinghua.edu.cn/simple/"
-set "TRUST3=pypi.tuna.tsinghua.edu.cn"
+echo [..] 正在检查依赖...
+set "PIP_MIRROR=-i https://mirrors.aliyun.com/pypi/simple/ --trusted-host mirrors.aliyun.com"
+set "PIP_MIRROR2=-i https://mirrors.cloud.tencent.com/pypi/simple/ --trusted-host mirrors.cloud.tencent.com"
+set "PIP_MIRROR3=-i https://pypi.tuna.tsinghua.edu.cn/simple --trusted-host pypi.tuna.tsinghua.edu.cn"
 
-REM  1) 写全局镜像配置（优先阿里云）。失败不致命，fallback 到 -i 方式
-echo [..] Configuring China PyPI mirror (Aliyun CDN)...
-python -m pip config set global.index-url "%IDX_URL%" >nul 2>&1
-python -m pip config set global.trusted-host "%TRUST%" >nul 2>&1
+python -m pip config set global.index-url https://mirrors.aliyun.com/pypi/simple/ >nul 2>&1
+python -m pip config set global.trusted-host mirrors.aliyun.com >nul 2>&1
 python -m pip config set global.timeout 120 >nul 2>&1
-echo [OK] Global mirror = Aliyun CDN  (if slow, user can pip config unset global.index-url)
-echo.
-set "PIP_MIRROR=-i %IDX_URL% --trusted-host %TRUST%"
-set "PIP_MIRROR2=-i %IDX_URL2% --trusted-host %TRUST2%"
-set "PIP_MIRROR3=-i %IDX_URL3% --trusted-host %TRUST3%"
+echo [OK] 已配置国内镜像源 (阿里云优先)
 
-REM  ----------------------------------------------------------------
-REM  ★ 依赖完整性检查（AST 扫描所有 .py import 后生成的完整列表）
-REM     缺任何一个就会跳清华源自动装，不再发生"换电脑缺一堆"
-REM  ----------------------------------------------------------------
-REM  核心必需:
-REM    paddleocr + paddle       OCR 壳 + paddlepaddle 推理后端（缺一就 0 条）
-REM    customtkinter            UI
-REM    cv2, PIL                 图像处理/裁剪
-REM    numpy, mss               数值 / 截图
-REM    pyautogui, pygetwindow,  窗口/鼠标/剪贴板操作(Windows)
-REM    pyperclip, win32con,
-REM    psutil
-REM    yaml (PyYAML)            配置
-REM    requests                 LLM API 调用
-REM    matplotlib               面板统计图表（不装每10秒报错）
-REM  次必需:
-REM    comtypes                 pywin32/uiautomation 的 COM 底层
-REM    onnxruntime              红点 CNN 模型推理
-REM    sklearn (scikit-learn)   TfidfVectorizer 语义去重
-REM    sentence_transformers    RAG 向量化
-REM    chromadb                 RAG 向量库
-REM    uiautomation             另一种后台点击注入方案
-REM  ----------------------------------------------------------------
 python -c "import customtkinter,cv2,paddleocr,paddle,numpy,PIL,pyautogui,pygetwindow,pyperclip,yaml,requests,mss,win32con,psutil,matplotlib,comtypes,onnxruntime,sklearn,uiautomation" >nul 2>&1
 if not errorlevel 1 goto DEPS_OK
 
-echo [!] Missing dependencies, installing via Aliyun CDN (China fastest)...
-echo.
-echo ========================================================================
-echo   Installing dependencies (first run may take several minutes)...
-echo   If download speed is slow (less than 1MB/s) , press Ctrl+C once
-echo   and re-run start.bat to retry (script will fall back to Tencent mirror).
-echo ========================================================================
-echo.
-python -m pip install --upgrade pip %PIP_MIRROR%
+echo [!] 缺少依赖，正在通过阿里云镜像安装（国内最快，首次可能需几分钟）...
 python -m pip install -r "%~dp0requirements.txt" %PIP_MIRROR%
 if not errorlevel 1 goto LAUNCH
-
-echo.
-echo [X] Aliyun failed, trying Tencent Cloud mirror...
+echo [X] 阿里云失败，尝试腾讯云镜像...
 python -m pip install -r "%~dp0requirements.txt" %PIP_MIRROR2%
 if not errorlevel 1 goto LAUNCH
-
-echo.
-echo [X] Tencent failed, trying Tsinghua mirror...
+echo [X] 腾讯云失败，尝试清华镜像...
 python -m pip install -r "%~dp0requirements.txt" %PIP_MIRROR3%
 if not errorlevel 1 goto LAUNCH
-
+echo [X] 三个镜像均失败，请检查网络后重新运行 start.bat
 echo.
-echo [X] All 3 mirrors failed, trying fallback install list (Aliyun)...
-python -m pip install pywin32 psutil numpy opencv-python Pillow pyautogui pygetwindow pyperclip PyYAML requests mss customtkinter paddleocr paddlepaddle matplotlib comtypes onnxruntime scikit-learn uiautomation %PIP_MIRROR%
-if not errorlevel 1 goto LAUNCH
-echo.
-echo [X] Fallback/Aliyun failed, trying Fallback/Tencent...
-python -m pip install pywin32 psutil numpy opencv-python Pillow pyautogui pygetwindow pyperclip PyYAML requests mss customtkinter paddleocr paddlepaddle matplotlib comtypes onnxruntime scikit-learn uiautomation %PIP_MIRROR2%
-echo.
-echo [OK] Dependencies installed (tiered mirror)
-goto LAUNCH
+pause
+exit /b 1
 
 :DEPS_OK
-echo [OK] All dependencies ready
+echo [OK] 依赖已就绪
 echo.
 
-REM ================================================================
-REM  3. Launch App
-REM ================================================================
+REM ============================================================
+REM  4. 启动程序
+REM ============================================================
 :LAUNCH
-echo ========================================================================
-echo.
-echo   Launching WX AI Assistant...
-echo   Logs will appear below. Do NOT close this window.
-echo.
-echo ========================================================================
+echo ============================================================
+echo   正在启动微信AI助手...（日志见下方，请勿关闭此窗口）
+echo ============================================================
 echo.
 
 python "%~dp0ui_app.py" 2>&1
 
-REM ================================================================
-REM  Exit
-REM ================================================================
 echo.
-echo ========================================================================
-echo   App exited. Check logs above for errors.
-echo ========================================================================
+echo ============================================================
+echo   程序已退出，详见上方日志。
+echo ============================================================
 echo.
 pause
