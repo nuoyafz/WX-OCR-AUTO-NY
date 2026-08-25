@@ -127,91 +127,14 @@ def _init_engine():
         except Exception as e:
             logger.debug(f"[OCR] 微信OCR探测异常: {e}")
 
-        # ========= PaddleOCR 健康度自检 =========
-        _paddle_diag = []
-        _paddle_ok = True
-
-        # 2. import paddleocr
-        try:
-            import paddleocr  # noqa: F401
-            _paddle_diag.append("paddleocr包=OK")
-        except Exception as e:
-            _paddle_ok = False
-            _paddle_diag.append(f"❌ paddleocr未安装: {e}")
-
-        # 3. import paddle (paddlepaddle 推理后端，这是90%的"装了但跑不出字"的根因)
-        _paddle_import_ok = False
-        try:
-            import paddle  # noqa: F401
-            _paddle_import_ok = True
-            _paddle_diag.append("paddle推理库(paddlepaddle)=OK")
-        except Exception as e:
-            _paddle_ok = False
-            _paddle_diag.append(
-                f"❌ 缺少paddlepaddle推理后端: {e}. "
-                f"→ 请运行: python -m pip install paddlepaddle -i https://pypi.tuna.tsinghua.edu.cn/simple"
-            )
-
-        # 4. get_ocr() + 自测一张合成图：确保模型权重能正常加载
-        if _paddle_import_ok:
-            try:
-                _ocr = get_ocr()
-                if _ocr is None:
-                    _paddle_ok = False
-                    _paddle_diag.append("❌ get_ocr() 返回None，模型加载失败")
-                else:
-                    import numpy as np
-                    _img = np.zeros((120, 400, 3), dtype=np.uint8)
-                    _img[:] = (245, 245, 245)
-                    import cv2
-                    cv2.putText(_img, "Test 123 OK", (20, 80),
-                                cv2.FONT_HERSHEY_SIMPLEX, 1.2, (10, 10, 10), 3)
-                    try:
-                        import inspect
-                        _sig = set(inspect.signature(_ocr.ocr).parameters.keys())
-                        _kws = {"cls": True}
-                        if "show_log" in _sig:
-                            _kws["show_log"] = False
-                        _r = _ocr.ocr(_img, **_kws)
-                    except Exception as _e:
-                        # 老版本 PaddleOCR 不接受 show_log 参数，但如果是
-                        # "Unknown argument" 之外的错（比如缺dll）就是真失败
-                        if "Unknown argument" in str(_e):
-                            _r = _ocr.ocr(_img)
-                        else:
-                            raise
-                    # Paddle 返回 [ [box,(text,conf)], ... ] 外层包裹一层list
-                    _cnt = 0
-                    if _r:
-                        for _batch in _r:
-                            if _batch:
-                                _cnt += len(_batch)
-                    _paddle_diag.append(f"paddle自测调用=OK (返回{_cnt}条)")
-            except Exception as e:
-                _paddle_ok = False
-                _paddle_diag.append(
-                    f"❌ PaddleOCR加载/自测失败: {type(e).__name__}: {e}"
-                )
-
-        for _d in _paddle_diag:
-            if _d.startswith("❌"):
-                logger.error("[OCR-Paddle自检] %s", _d)
-            else:
-                logger.info("[OCR-Paddle自检] %s", _d)
-
-        if not _paddle_ok:
-            logger.warning(
-                "============================================================\n"
-                "⚠  PaddleOCR 依赖不完整，识别只会返回 0 条！\n"
-                "   最常见原因：只装了 paddleocr 包，没装 paddlepaddle 推理后端。\n"
-                "   解决：在项目目录下命令行执行\n"
-                "   python -m pip install --upgrade paddleocr paddlepaddle\n"
-                "              -i https://pypi.tuna.tsinghua.edu.cn/simple\n"
-                "============================================================"
-            )
-
+        # ========= 回退PaddleOCR（V3回归修复：秒回，不在此同步加载） =========
+        # 2026-08-25：a390279 曾把 "import paddleocr(实测~22s) + get_ocr()加载
+        # + 自测推理" 塞进 _init_engine，导致首次识别/启动预热被卡 20~60 秒，
+        # 表现"启动后卡死、零日志"。v3.4(c120a27) 的 _init_engine 秒回，模型
+        # 加载延迟到 get_ocr()（由 main.initialize 的后台预热线程提前完成）。
+        # 依赖健康诊断保留在 ui 诊断线程的 import 检查中。
         _ocr_engine = "paddle"
-        logger.info("[OCR] 使用PaddleOCR引擎" + ("（健康度检查PASS）" if _paddle_ok else "（⚠ 依赖不完整，识别可能失败）"))
+        logger.info("[OCR] 使用PaddleOCR引擎")
         return _ocr_engine
 
 
