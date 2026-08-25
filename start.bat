@@ -1,16 +1,15 @@
 @echo off
-chcp 65001 >nul
-title å¾®ä¿¡AIåŠ©æ‰‹ - ä¸€é”®å¯åŠ¨
+title Î¢ÐÅAIÖúÊÖ - Ò»¼üÆô¶¯
 cd /d "%~dp0"
 
 echo.
 echo ============================================================
-echo            å¾®ä¿¡AIåŠ©æ‰‹ - ä¸€é”®å¯åŠ¨ (One-Click Launcher)
+echo            Î¢ÐÅAIÖúÊÖ - Ò»¼üÆô¶¯ (One-Click Launcher)
 echo ============================================================
 echo.
 
 REM ============================================================
-REM  1. æ£€æŸ¥ Python
+REM  1. ¼ì²é Python
 REM ============================================================
 python --version >nul 2>&1
 if errorlevel 1 goto NO_PYTHON
@@ -20,42 +19,42 @@ echo.
 goto CHECK_CONFIG
 
 :NO_PYTHON
-echo [X] æœªæ£€æµ‹åˆ° Pythonï¼è¯·å®‰è£… Python 3.10+ å¹¶åŠ¡å¿…å‹¾é€‰ã€ŒAdd Python to PATHã€
-echo     ä¸‹è½½åœ°å€: https://www.python.org/downloads/
+echo [X] Î´¼ì²âµ½ Python£¡Çë°²×° Python 3.10+ ²¢Îñ±Ø¹´Ñ¡¡¸Add Python to PATH¡¹
+echo     ÏÂÔØµØÖ·: https://www.python.org/downloads/
 echo.
 pause
 exit /b 1
 
 REM ============================================================
-REM  2. é¦–æ¬¡è¿è¡Œè‡ªåŠ¨ç”Ÿæˆ config.yamlï¼ˆä»Žæ¨¡æ¿å¤åˆ¶ï¼Œå·²å­˜åœ¨åˆ™è·³è¿‡ï¼‰
-REM     config.yaml å› å« API Key è¢« gitignoreï¼Œä¸ä¼šè¿› GitHubï¼Œ
-REM     æ‰€ä»¥åˆ«äºº clone/ä¸‹è½½åŽé¦–æ¬¡è¿è¡Œå¿…é¡»ç”±æœ¬æ­¥æˆ–ç¨‹åºè‡ªåŠ¨ç”Ÿæˆã€‚
+REM  2. Ê×´ÎÔËÐÐ×Ô¶¯Éú³É config.yaml£¨´ÓÄ£°å¸´ÖÆ£¬ÒÑ´æÔÚÔòÌø¹ý£©
+REM     config.yaml Òòº¬ API Key ±» gitignore£¬²»»á½ø GitHub£¬
+REM     ËùÒÔ±ðÈË clone/ÏÂÔØºóÊ×´ÎÔËÐÐ±ØÐëÓÉ±¾²½»ò³ÌÐò×Ô¶¯Éú³É¡£
 REM ============================================================
 :CHECK_CONFIG
 if exist config.yaml (
-    echo [OK] é…ç½®æ–‡ä»¶å·²å­˜åœ¨: config.yaml
+    echo [OK] ÅäÖÃÎÄ¼þÒÑ´æÔÚ: config.yaml
 ) else (
     if exist config.example.yaml (
         copy /Y config.example.yaml config.yaml >nul
-        echo [OK] å·²æ ¹æ®æ¨¡æ¿è‡ªåŠ¨ç”Ÿæˆ config.yaml
-        echo [æç¤º] è‡ªåŠ¨å›žå¤åŠŸèƒ½éœ€åœ¨ config.yaml ä¸­å¡«å…¥ä½ çš„ LLM API Key åŽæ‰èƒ½ä½¿ç”¨
+        echo [OK] ÒÑ¸ù¾ÝÄ£°å×Ô¶¯Éú³É config.yaml
+        echo [ÌáÊ¾] ×Ô¶¯»Ø¸´¹¦ÄÜÐèÔÚ config.yaml ÖÐÌîÈëÄãµÄ LLM API Key ºó²ÅÄÜÊ¹ÓÃ
     ) else (
-        echo [X] æœªæ‰¾åˆ° config.example.yamlï¼Œæ— æ³•è‡ªåŠ¨ç”Ÿæˆé…ç½®ï¼Œè¯·é‡æ–°ä¸‹è½½å®Œæ•´ä»“åº“
+        echo [X] Î´ÕÒµ½ config.example.yaml£¬ÎÞ·¨×Ô¶¯Éú³ÉÅäÖÃ£¬ÇëÖØÐÂÏÂÔØÍêÕû²Ö¿â
     )
 )
 echo.
 
 REM ============================================================
-REM  3. é…ç½®å›½å†…æœ€ä½³é•œåƒæº + æ£€æŸ¥/å®‰è£…ä¾èµ–
-REM     é•œåƒä¼˜å…ˆçº§ï¼ˆpaddle/paddleocr ä½“ç§¯å¤§ï¼Œå¿…é¡»èµ°å›½å†…é•œåƒï¼‰:
-REM       1) é˜¿é‡Œäº‘  https://mirrors.aliyun.com/pypi/simple/   ä¼ä¸šçº§CDNï¼Œæœ€å¿«æœ€ç¨³
-REM       2) è…¾è®¯äº‘  https://mirrors.cloud.tencent.com/pypi/simple/
-REM       3) æ¸…åŽ    https://pypi.tuna.tsinghua.edu.cn/simple
-REM     å…ˆæŠŠé˜¿é‡Œäº‘å†™è¿›ç”¨æˆ· pip.iniï¼ŒåŽç»­æ‰€æœ‰ pip install å…¨å±€ç»§æ‰¿ï¼Œ
-REM     ä¸å¿…æ¯æ¡å‘½ä»¤æ‹¼ -i å‚æ•°ï¼ˆè€å†™æ³•æ˜“å›žè½åˆ°å›½å¤– pypi.orgï¼‰ã€‚
+REM  3. ÅäÖÃ¹úÄÚ×î¼Ñ¾µÏñÔ´ + ¼ì²é/°²×°ÒÀÀµ
+REM     ¾µÏñÓÅÏÈ¼¶£¨paddle/paddleocr Ìå»ý´ó£¬±ØÐë×ß¹úÄÚ¾µÏñ£©:
+REM       1) °¢ÀïÔÆ  https://mirrors.aliyun.com/pypi/simple/   ÆóÒµ¼¶CDN£¬×î¿ì×îÎÈ
+REM       2) ÌÚÑ¶ÔÆ  https://mirrors.cloud.tencent.com/pypi/simple/
+REM       3) Çå»ª    https://pypi.tuna.tsinghua.edu.cn/simple
+REM     ÏÈ°Ñ°¢ÀïÔÆÐ´½øÓÃ»§ pip.ini£¬ºóÐøËùÓÐ pip install È«¾Ö¼Ì³Ð£¬
+REM     ²»±ØÃ¿ÌõÃüÁîÆ´ -i ²ÎÊý£¨ÀÏÐ´·¨Ò×»ØÂäµ½¹úÍâ pypi.org£©¡£
 REM ============================================================
 :CHECK_DEPS
-echo [..] æ­£åœ¨æ£€æŸ¥ä¾èµ–...
+echo [..] ÕýÔÚ¼ì²éÒÀÀµ...
 set "PIP_MIRROR=-i https://mirrors.aliyun.com/pypi/simple/ --trusted-host mirrors.aliyun.com"
 set "PIP_MIRROR2=-i https://mirrors.cloud.tencent.com/pypi/simple/ --trusted-host mirrors.cloud.tencent.com"
 set "PIP_MIRROR3=-i https://pypi.tuna.tsinghua.edu.cn/simple --trusted-host pypi.tuna.tsinghua.edu.cn"
@@ -63,35 +62,35 @@ set "PIP_MIRROR3=-i https://pypi.tuna.tsinghua.edu.cn/simple --trusted-host pypi
 python -m pip config set global.index-url https://mirrors.aliyun.com/pypi/simple/ >nul 2>&1
 python -m pip config set global.trusted-host mirrors.aliyun.com >nul 2>&1
 python -m pip config set global.timeout 120 >nul 2>&1
-echo [OK] å·²é…ç½®å›½å†…é•œåƒæº (é˜¿é‡Œäº‘ä¼˜å…ˆ)
+echo [OK] ÒÑÅäÖÃ¹úÄÚ¾µÏñÔ´ (°¢ÀïÔÆÓÅÏÈ)
 
 python -c "import customtkinter,cv2,paddleocr,paddle,numpy,PIL,pyautogui,pygetwindow,pyperclip,yaml,requests,mss,win32con,psutil,matplotlib,comtypes,onnxruntime,sklearn,uiautomation" >nul 2>&1
 if not errorlevel 1 goto DEPS_OK
 
-echo [!] ç¼ºå°‘ä¾èµ–ï¼Œæ­£åœ¨é€šè¿‡é˜¿é‡Œäº‘é•œåƒå®‰è£…ï¼ˆå›½å†…æœ€å¿«ï¼Œé¦–æ¬¡å¯èƒ½éœ€å‡ åˆ†é’Ÿï¼‰...
+echo [!] È±ÉÙÒÀÀµ£¬ÕýÔÚÍ¨¹ý°¢ÀïÔÆ¾µÏñ°²×°£¨¹úÄÚ×î¿ì£¬Ê×´Î¿ÉÄÜÐè¼¸·ÖÖÓ£©...
 python -m pip install -r "%~dp0requirements.txt" %PIP_MIRROR%
 if not errorlevel 1 goto LAUNCH
-echo [X] é˜¿é‡Œäº‘å¤±è´¥ï¼Œå°è¯•è…¾è®¯äº‘é•œåƒ...
+echo [X] °¢ÀïÔÆÊ§°Ü£¬³¢ÊÔÌÚÑ¶ÔÆ¾µÏñ...
 python -m pip install -r "%~dp0requirements.txt" %PIP_MIRROR2%
 if not errorlevel 1 goto LAUNCH
-echo [X] è…¾è®¯äº‘å¤±è´¥ï¼Œå°è¯•æ¸…åŽé•œåƒ...
+echo [X] ÌÚÑ¶ÔÆÊ§°Ü£¬³¢ÊÔÇå»ª¾µÏñ...
 python -m pip install -r "%~dp0requirements.txt" %PIP_MIRROR3%
 if not errorlevel 1 goto LAUNCH
-echo [X] ä¸‰ä¸ªé•œåƒå‡å¤±è´¥ï¼Œè¯·æ£€æŸ¥ç½‘ç»œåŽé‡æ–°è¿è¡Œ start.bat
+echo [X] Èý¸ö¾µÏñ¾ùÊ§°Ü£¬Çë¼ì²éÍøÂçºóÖØÐÂÔËÐÐ start.bat
 echo.
 pause
 exit /b 1
 
 :DEPS_OK
-echo [OK] ä¾èµ–å·²å°±ç»ª
+echo [OK] ÒÀÀµÒÑ¾ÍÐ÷
 echo.
 
 REM ============================================================
-REM  4. å¯åŠ¨ç¨‹åº
+REM  4. Æô¶¯³ÌÐò
 REM ============================================================
 :LAUNCH
 echo ============================================================
-echo   æ­£åœ¨å¯åŠ¨å¾®ä¿¡AIåŠ©æ‰‹...ï¼ˆæ—¥å¿—è§ä¸‹æ–¹ï¼Œè¯·å‹¿å…³é—­æ­¤çª—å£ï¼‰
+echo   ÕýÔÚÆô¶¯Î¢ÐÅAIÖúÊÖ...£¨ÈÕÖ¾¼ûÏÂ·½£¬ÇëÎð¹Ø±Õ´Ë´°¿Ú£©
 echo ============================================================
 echo.
 
@@ -99,7 +98,7 @@ python "%~dp0ui_app.py" 2>&1
 
 echo.
 echo ============================================================
-echo   ç¨‹åºå·²é€€å‡ºï¼Œè¯¦è§ä¸Šæ–¹æ—¥å¿—ã€‚
+echo   ³ÌÐòÒÑÍË³ö£¬Ïê¼ûÉÏ·½ÈÕÖ¾¡£
 echo ============================================================
 echo.
 pause
