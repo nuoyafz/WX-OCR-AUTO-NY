@@ -1,75 +1,75 @@
 """
-NOYA Chat 微信助手 - UI主题常量 (macOS 风格)
+NOYA Chat 微信助手 - UI主题常量 (暖调编辑风)
 ============================================
-Apple 官网 / 系统消息 同款配色。
-干净·精致·留白·大圆角·柔和阴影。
+Linear / Notion 同款配色体系。
+精致·克制·留白·微阴影·暖调中性色。
 """
 WC_COLORS = {
     # === 背景层 ===
-    "bg": "#F5F5F7",
-    "bg_dark": "#EDEDF1",
-    "sidebar": "#FBFBFD",
-    "sidebar_hover": "#EBECF0",
-    "sidebar_active": "#007AFF",
-    "card": "#FFFFFF",
-    "card_hover": "#F5F5F7",
-    "card_active": "#EBECF0",
-    "header": "#FFFFFF",
+    "bg": "#F9F8F6",
+    "bg_dark": "#F0EEE9",
+    "sidebar": "#F4F2EE",
+    "sidebar_hover": "#E8E5DF",
+    "sidebar_active": "#E67E5A",
+    "card": "#FFFDFA",
+    "card_hover": "#F9F6F1",
+    "card_active": "#F2EFE9",
+    "header": "#FFFDFA",
 
-    # === 强调色 ===
-    "accent": "#007AFF",
-    "accent_hover": "#0066D6",
-    "accent_light": "#D7E9FF",
-    "danger": "#FF3B30",
-    "danger_light": "#FFE5E5",
-    "warning": "#FFF4D6",
-    "info": "#007AFF",
-    "info_light": "#E8F3FF",
-    "summary": "#86868B",
-    "keyword": "#FF9500",
+    # === 强调色（暖琥珀+珊瑚） ===
+    "accent": "#E67E5A",
+    "accent_hover": "#D06947",
+    "accent_light": "#FDF0E9",
+    "danger": "#E0554A",
+    "danger_light": "#FDECEA",
+    "warning": "#FFF8E7",
+    "info": "#5B8CAB",
+    "info_light": "#EDF4F8",
+    "summary": "#9B9790",
+    "keyword": "#D4952A",
 
     # === 文字 ===
-    "text": "#1D1D1F",
-    "text_muted": "#86868B",
-    "text_muted2": "#AEAEB2",
+    "text": "#2C2824",
+    "text_muted": "#8F8A82",
+    "text_muted2": "#B5B0A8",
     "text_dark": "#FFFFFF",
 
-    # === 边框/分割 (macOS 极细) ===
-    "border": "#E5E5EA",
-    "border_light": "#F2F2F7",
-    "shadow": "#00000010",
+    # === 边框/分割 ===
+    "border": "#E8E4DD",
+    "border_light": "#F2EFE8",
+    "shadow": "#2C282408",
 
     # === 聊天气泡 (iMessage 风格) ===
-    "bubble_self": "#007AFF",
-    "bubble_self_border": "#007AFF",
-    "bubble_other": "#E9E9EB",
-    "bubble_other_border": "#E9E9EB",
-    "bubble_important": "#FFF4D6",
-    "bubble_important_border": "#FFD60A",
+    "bubble_self": "#E67E5A",
+    "bubble_self_border": "#E67E5A",
+    "bubble_other": "#EDEAE4",
+    "bubble_other_border": "#EDEAE4",
+    "bubble_important": "#FFF8E7",
+    "bubble_important_border": "#F0D060",
 
     # === 头像 ===
-    "avatar_me": "#007AFF",
-    "avatar_other": "#E5E5EA",
+    "avatar_me": "#E67E5A",
+    "avatar_other": "#E4E0D8",
 
     # === 群聊成员名 ===
-    "member_name": "#007AFF",
+    "member_name": "#E67E5A",
 
     # === 状态 ===
-    "online_dot": "#34C759",
-    "offline_dot": "#AEAEB2",
+    "online_dot": "#5BAF6B",
+    "offline_dot": "#C4BFB6",
 
     # === 扩展 ===
-    "avatar_colors": ["#007AFF", "#34C759", "#FF3B30", "#FF9500", "#AF52DE",
-                      "#5AC8FA", "#FF2D55", "#5856D6", "#FF375F", "#8E8E93"],
-    "time_badge": "#AEAEB2",
-    "input_bar_bg": "#FBFBFD",
-    "input_bar_border": "#E5E5EA",
-    "contact_hover": "#F0F0F3",
-    "contact_active": "#E5E5EA",
-    "unread_badge": "#FF3B30",
-    "divider": "#E5E5EA",
-    "bubble_self_new": "#007AFF",
-    "bubble_other_new": "#E9E9EB",
+    "avatar_colors": ["#E67E5A", "#5BAF6B", "#E0554A", "#D4952A", "#9B7EC4",
+                      "#5B8CAB", "#E88070", "#6B8E6B", "#D47A6A", "#A0988C"],
+    "time_badge": "#B5B0A8",
+    "input_bar_bg": "#F4F2EE",
+    "input_bar_border": "#E8E4DD",
+    "contact_hover": "#F0EDE7",
+    "contact_active": "#E8E5DF",
+    "unread_badge": "#E0554A",
+    "divider": "#E8E4DD",
+    "bubble_self_new": "#E67E5A",
+    "bubble_other_new": "#EDEAE4",
 }
 
 _CTK_APPEARANCE = "light"

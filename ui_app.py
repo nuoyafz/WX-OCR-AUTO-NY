@@ -128,33 +128,36 @@ class WeChatAIApp(ctk.CTk):
     def _build_ui(self):
         print("[DBG-BUILD] start")
         # 2列布局：侧栏(52) | 主内容(满宽)
-        self.grid_columnconfigure(0, weight=0, minsize=52)
+        self.grid_columnconfigure(0, weight=0, minsize=56)
         self.grid_columnconfigure(1, weight=1)
         self.grid_rowconfigure(0, weight=1)
 
-        # ====== 左侧导航栏（微信PC深灰窄侧栏） ======
-        self.sidebar = ctk.CTkFrame(self, fg_color=WC_COLORS["sidebar"], width=52,
+        # ====== 左侧导航栏（暖调编辑风侧栏） ======
+        self.sidebar = ctk.CTkFrame(self, fg_color=WC_COLORS["sidebar"], width=56,
                                corner_radius=0, border_width=0)
         self.sidebar.grid(row=0, column=0, sticky="ns")
         self.sidebar.grid_propagate(False)
 
-        # 用户头像区（微信PC侧边栏顶部：圆形头像 + 在线绿点）
-        avatar_frame = ctk.CTkFrame(self.sidebar, fg_color="transparent", width=40, height=40)
-        avatar_frame.grid(row=0, column=0, pady=(20, 6))
+        # 品牌标记（圆形头像 + 在线绿点）
+        avatar_frame = ctk.CTkFrame(self.sidebar, fg_color="transparent", width=44, height=44)
+        avatar_frame.grid(row=0, column=0, pady=(22, 8))
         self.sidebar_avatar = ctk.CTkLabel(
-            avatar_frame, text="N", width=36, height=36, corner_radius=18,
+            avatar_frame, text="N", width=40, height=40, corner_radius=20,
             fg_color=WC_COLORS["avatar_me"], text_color="#FFFFFF",
-            font=ctk.CTkFont(family=FONT_FAMILY, size=16, weight="bold"),
+            font=ctk.CTkFont(family=FONT_FAMILY, size=18, weight="bold"),
         )
         self.sidebar_avatar.pack()
-        # 在线绿点（右下角）
         self.sidebar_online_dot = ctk.CTkLabel(
-            avatar_frame, text="", width=8, height=8, corner_radius=4,
+            avatar_frame, text="", width=9, height=9, corner_radius=5,
             fg_color=WC_COLORS["online_dot"],
         )
-        self.sidebar_online_dot.place(relx=0.75, rely=0.75, anchor="center")
+        self.sidebar_online_dot.place(relx=0.76, rely=0.76, anchor="center")
 
-        # 导航按钮（加未读角标支持）
+        # 分隔线
+        sep = ctk.CTkFrame(self.sidebar, fg_color=WC_COLORS["border"], height=1, width=32)
+        sep.grid(row=1, column=0, pady=(0, 6))
+
+        # 导航按钮
         nav_items = [
             ("📡", "monitor", "监控", True),
             ("💬", "reply", "回复", False),
@@ -164,13 +167,12 @@ class WeChatAIApp(ctk.CTk):
         self._nav_buttons = {}
         self._nav_badges = {}
         for i, (icon, key, label, active) in enumerate(nav_items):
-            # 每个按钮用 frame 包裹，支持角标 overlay
             btn_wrap = ctk.CTkFrame(self.sidebar, fg_color="transparent")
-            btn_wrap.grid(row=i + 1, column=0, pady=5, padx=10)
+            btn_wrap.grid(row=i + 2, column=0, pady=3, padx=6)
             btn = ctk.CTkButton(
                 btn_wrap, text=icon, width=44, height=44,
                 fg_color="transparent", hover_color=WC_COLORS["sidebar_hover"],
-                corner_radius=8, font=ctk.CTkFont(size=18),
+                corner_radius=10, font=ctk.CTkFont(size=19),
                 command=lambda k=key: self._switch_nav(k),
             )
             btn.pack()
@@ -178,30 +180,29 @@ class WeChatAIApp(ctk.CTk):
                 btn.configure(fg_color=WC_COLORS["sidebar_active"])
             self._nav_buttons[key] = btn
 
-            # 未读角标（默认隐藏）
             badge = ctk.CTkLabel(
-                btn_wrap, text="", width=16, height=16, corner_radius=8,
+                btn_wrap, text="", width=17, height=17, corner_radius=9,
                 fg_color=WC_COLORS["danger"], text_color="#FFFFFF",
                 font=ctk.CTkFont(family=FONT_FAMILY, size=9, weight="bold"),
             )
             self._nav_badges[key] = badge
 
-        # 底部状态（带呼吸动画样式）
+        # 底部状态
         self.sidebar_status = ctk.CTkLabel(
             self.sidebar, text="● 待机",
             font=ctk.CTkFont(size=11), text_color=WC_COLORS["text_muted"],
         )
-        self.sidebar_status.grid(row=10, column=0, pady=(30, 6))
+        self.sidebar_status.grid(row=10, column=0, pady=(40, 6))
 
-        # V3.1: 关于入口（侧栏底部）
+        # 关于按钮
         about_btn = ctk.CTkButton(
             self.sidebar, text="ⓘ", width=40, height=34,
             fg_color="transparent", hover_color=WC_COLORS["sidebar_hover"],
-            corner_radius=8, font=ctk.CTkFont(size=16, weight="bold"),
+            corner_radius=10, font=ctk.CTkFont(size=15, weight="bold"),
             text_color=WC_COLORS["text_muted"],
             command=self._show_about_dialog,
         )
-        about_btn.grid(row=11, column=0, pady=(0, 14))
+        about_btn.grid(row=11, column=0, pady=(0, 16))
 
         # ====== 主内容区 ======
         self.main_content = ctk.CTkFrame(self, fg_color=WC_COLORS["bg"], corner_radius=0)
@@ -257,50 +258,52 @@ class WeChatAIApp(ctk.CTk):
         tab.grid_columnconfigure(0, weight=1)
         tab.grid_rowconfigure(2, weight=1)
 
-        # ====== 顶部控制条（微信 PC 风格圆角 8px） ======
-        ctrl = ctk.CTkFrame(tab, fg_color=WC_COLORS["card"], corner_radius=12, height=54)
-        ctrl.grid(row=0, column=0, sticky="ew", padx=10, pady=(10, 4))
+        # ====== 顶部控制条 ======
+        ctrl = ctk.CTkFrame(tab, fg_color=WC_COLORS["card"], corner_radius=14, height=54)
+        ctrl.grid(row=0, column=0, sticky="ew", padx=12, pady=(12, 4))
         ctrl.grid_columnconfigure(8, weight=1)
 
         self.btn_start = ctk.CTkButton(
-            ctrl, text="▶ 开始监控", width=110, height=32,
+            ctrl, text="▶ 开始监控", width=110, height=34,
             font=ctk.CTkFont(size=12, weight="bold"),
             fg_color=WC_COLORS["accent"], hover_color=WC_COLORS["accent_hover"],
-            corner_radius=8, command=self.start_monitoring,
+            corner_radius=10, command=self.start_monitoring,
         )
-        self.btn_start.grid(row=0, column=0, padx=(12, 4), pady=11)
+        self.btn_start.grid(row=0, column=0, padx=(14, 4), pady=10)
 
         self.btn_stop = ctk.CTkButton(
-            ctrl, text="■ 停止", width=80, height=32, corner_radius=8,
+            ctrl, text="■ 停止", width=80, height=34, corner_radius=10,
             font=ctk.CTkFont(size=12),
-            fg_color=WC_COLORS["danger"], hover_color="#E53935",
+            fg_color=WC_COLORS["danger"], hover_color="#D0443E",
             command=self.stop_monitoring, state="disabled",
         )
-        self.btn_stop.grid(row=0, column=1, padx=4, pady=11)
+        self.btn_stop.grid(row=0, column=1, padx=4, pady=10)
 
         self.btn_test = ctk.CTkButton(
-            ctrl, text="🔍 识别", width=72, height=32, corner_radius=8,
+            ctrl, text="🔍 识别", width=72, height=34, corner_radius=10,
             font=ctk.CTkFont(size=12),
-            fg_color=WC_COLORS["text_muted2"], hover_color=WC_COLORS["text_muted"],
+            fg_color=WC_COLORS["border"], hover_color=WC_COLORS["text_muted2"],
+            text_color=WC_COLORS["text"],
             command=self.test_ocr,
         )
-        self.btn_test.grid(row=0, column=2, padx=4, pady=11)
+        self.btn_test.grid(row=0, column=2, padx=4, pady=10)
 
         self.btn_preview = ctk.CTkButton(
-            ctrl, text="🖼 预览", width=72, height=32, corner_radius=8,
-            fg_color=WC_COLORS["accent"], hover_color=WC_COLORS["accent_hover"],
+            ctrl, text="🖼 预览", width=72, height=34, corner_radius=10,
+            fg_color=WC_COLORS["accent_light"], hover_color="#F5E0D5",
+            text_color=WC_COLORS["accent"],
             font=ctk.CTkFont(size=12), command=self._open_preview_window)
-        self.btn_preview.grid(row=0, column=3, padx=4, pady=11)
+        self.btn_preview.grid(row=0, column=3, padx=4, pady=10)
 
         self.btn_show_wechat = ctk.CTkButton(
-            ctrl, text="👁 显示微信", width=96, height=32, corner_radius=8,
+            ctrl, text="👁 显示微信", width=96, height=34, corner_radius=10,
             font=ctk.CTkFont(size=12),
-            fg_color=WC_COLORS["accent"], hover_color=WC_COLORS["accent_hover"],
+            fg_color=WC_COLORS["accent_light"], hover_color="#F5E0D5",
+            text_color=WC_COLORS["accent"],
             command=self._show_wechat_window,
         )
-        self.btn_show_wechat.grid(row=0, column=4, padx=4, pady=11)
+        self.btn_show_wechat.grid(row=0, column=4, padx=4, pady=10)
 
-        # 顶栏右侧：当前会话显示
         self.top_current_label = ctk.CTkLabel(
             ctrl, text="当前会话：未连接",
             font=ctk.CTkFont(family=FONT_FAMILY, size=12, weight="bold"),
@@ -308,21 +311,21 @@ class WeChatAIApp(ctk.CTk):
         )
         self.top_current_label.grid(row=0, column=8, padx=(10, 16), sticky="e")
 
-        # ====== V3 统计信息（微信绿/红/灰 官方色，扁平圆角） ======
-        stats_frame = ctk.CTkFrame(tab, fg_color=WC_COLORS["card"], corner_radius=12,
+        # ====== 统计卡片 ======
+        stats_frame = ctk.CTkFrame(tab, fg_color=WC_COLORS["card"], corner_radius=14,
                                    border_width=0)
-        stats_frame.grid(row=1, column=0, sticky="ew", padx=10, pady=(4, 6))
+        stats_frame.grid(row=1, column=0, sticky="ew", padx=12, pady=(4, 8))
         for i in range(6):
             stats_frame.grid_columnconfigure(i, weight=1)
 
         self.stat_labels = {}
         stat_items = [
             ("frames",    "📷 截图",   WC_COLORS["info"]),
-            ("ocr",       "🔤 OCR",   "#AF52DE"),
+            ("ocr",       "🔤 OCR",   "#9B7EC4"),
             ("messages",  "💬 消息",   WC_COLORS["accent"]),
             ("extracted", "📋 提取",   WC_COLORS["keyword"]),
             ("important", "⭐ 重要",   WC_COLORS["danger"]),
-            ("replies",   "✉️ 回复",   "#5856D6"),
+            ("replies",   "✉️ 回复",   "#6B8E6B"),
         ]
         for i, (key, label, val_color) in enumerate(stat_items):
             col = ctk.CTkFrame(stats_frame, fg_color="transparent")
@@ -340,20 +343,20 @@ class WeChatAIApp(ctk.CTk):
 
         # ====== V3: 两栏主体（砍掉右侧空白详情面板） ======
         two_col = ctk.CTkFrame(tab, fg_color="transparent")
-        two_col.grid(row=2, column=0, sticky="nsew", padx=10, pady=(4, 10))
+        two_col.grid(row=2, column=0, sticky="nsew", padx=12, pady=(4, 12))
         two_col.grid_columnconfigure(0, weight=0, minsize=200)
         two_col.grid_columnconfigure(1, weight=1)
         two_col.grid_rowconfigure(0, weight=1)
 
         # 左：会话列表（200px，紧凑）
-        contacts_col = ctk.CTkFrame(two_col, fg_color=WC_COLORS["card"], corner_radius=12,
+        contacts_col = ctk.CTkFrame(two_col, fg_color=WC_COLORS["card"], corner_radius=14,
                                      width=200, border_width=0)
         contacts_col.grid(row=0, column=0, sticky="nsew", padx=(0, 4))
         contacts_col.grid_propagate(True)
         self._create_contact_list_panel(contacts_col)
 
         # 中：聊天消息 + 日志 Tabview（满宽）
-        center_col = ctk.CTkFrame(two_col, fg_color=WC_COLORS["card"], corner_radius=12,
+        center_col = ctk.CTkFrame(two_col, fg_color=WC_COLORS["card"], corner_radius=14,
                                  border_width=0)
         center_col.grid(row=0, column=1, sticky="nsew", padx=(0, 0))
         center_col.grid_rowconfigure(1, weight=1)
@@ -421,12 +424,12 @@ class WeChatAIApp(ctk.CTk):
             log_frame, font=ctk.CTkFont(family=FONT_FAMILY, size=12),
             fg_color=WC_COLORS["card"], text_color=WC_COLORS["text"],
             wrap="word", state="disabled",
-            border_width=0, corner_radius=12,
+            border_width=0, corner_radius=14,
         )
         self.log_text.grid(row=0, column=0, sticky="nsew", pady=(0, 4))
 
         # 日志底部内置"最新提取结果"
-        result_frame = ctk.CTkFrame(log_frame, fg_color=WC_COLORS["card"], corner_radius=12,
+        result_frame = ctk.CTkFrame(log_frame, fg_color=WC_COLORS["card"], corner_radius=14,
                                      border_width=0)
         result_frame.grid(row=1, column=0, sticky="nsew")
         result_frame.grid_columnconfigure(0, weight=1)
@@ -457,10 +460,10 @@ class WeChatAIApp(ctk.CTk):
         search_wrap = ctk.CTkFrame(parent, fg_color="transparent")
         search_wrap.grid(row=0, column=0, sticky="ew", padx=8, pady=(8, 4))
         self.contact_search_entry = ctk.CTkEntry(
-            search_wrap, placeholder_text="🔍 搜索", height=28, corner_radius=8,
-            fg_color=WC_COLORS["sidebar"], placeholder_text_color=WC_COLORS["text_muted"],
+            search_wrap, placeholder_text="🔍 搜索联系人", height=32, corner_radius=10,
+            fg_color=WC_COLORS["bg"], placeholder_text_color=WC_COLORS["text_muted"],
             text_color=WC_COLORS["text"], border_width=0,
-            font=ctk.CTkFont(size=11),
+            font=ctk.CTkFont(size=12),
         )
         self.contact_search_entry.pack(fill="x", side="top")
 
@@ -492,18 +495,20 @@ class WeChatAIApp(ctk.CTk):
 
         # 批量模式切换按钮（放在搜索框右侧的小按钮，通过右键菜单也可进入）
         self._batch_toggle_btn = ctk.CTkButton(
-            search_wrap, text="📋 批量", width=50, height=26,
+            search_wrap, text="📋 批量", width=52, height=28,
             font=ctk.CTkFont(size=10),
-            fg_color=WC_COLORS["text_muted2"], hover_color=WC_COLORS["text_muted"],
+            fg_color=WC_COLORS["bg"], hover_color=WC_COLORS["sidebar_hover"],
+            text_color=WC_COLORS["text_muted"], corner_radius=8,
             command=self._toggle_batch_mode)
         self._batch_toggle_btn.place(relx=1.0, rely=0.5, anchor="e", x=-4)
 
         self._refresh_contacts_btn = ctk.CTkButton(
-            search_wrap, text="🔄", width=26, height=26,
+            search_wrap, text="🔄", width=28, height=28,
             font=ctk.CTkFont(size=10),
-            fg_color=WC_COLORS["text_muted2"], hover_color=WC_COLORS["text_muted"],
+            fg_color=WC_COLORS["bg"], hover_color=WC_COLORS["sidebar_hover"],
+            text_color=WC_COLORS["text_muted"], corner_radius=8,
             command=self._refresh_contacts_btn_click)
-        self._refresh_contacts_btn.place(relx=1.0, rely=0.5, anchor="e", x=-58)
+        self._refresh_contacts_btn.place(relx=1.0, rely=0.5, anchor="e", x=-60)
 
         # 会话列表滚动
         self.contact_list_frame = ctk.CTkScrollableFrame(
@@ -1542,6 +1547,21 @@ class WeChatAIApp(ctk.CTk):
             except Exception as e:
                 self._on_log("warning", f"[删除] 清空去重缓存失败: {e}")
 
+        # ★ 同步清UI去重索引和自动回复指纹，否则删了聊天记录后重新识别
+        #   仍会被判为"已处理/已回复"而跳过
+        for contact in contacts:
+            self._msg_index.pop(contact, None)
+            # 清理 _recent_ui_keys 中属于该联系人的条目（key格式: contact|sender|content）
+            _keys_to_del = [k for k in getattr(self, "_recent_ui_keys", {}) or {}
+                           if k.startswith(contact + "|")]
+            for k in _keys_to_del:
+                self._recent_ui_keys.pop(k, None)
+        if eng is not None:
+            try:
+                eng.clear_reply_fingerprints(contacts)
+            except Exception as e:
+                self._on_log("warning", f"[删除] 清空回复指纹失败: {e}")
+
         self._on_log("info", f"[删除] 已删除 {len(contacts)} 个会话共 {total_removed} 条消息")
 
     def _delete_all_contacts(self):
@@ -1937,27 +1957,22 @@ class WeChatAIApp(ctk.CTk):
         import webbrowser
         dlg = ctk.CTkToplevel(self)
         dlg.title("关于 NOYA Chat")
-        dlg.geometry("480x680")
+        dlg.geometry("480x700")
+        dlg.configure(fg_color=WC_COLORS["bg"])
         dlg.transient(self)
         dlg.grab_set()
         dlg.focus_force()
 
-        # 顶部炫彩条
-        try:
-            self._pixel_stripe(dlg, ["#2D9CDB", "#27AE60", "#9B51E0", "#FF5B5B", "#F2C94C"], height=6, side="top")
-        except Exception:
-            pass
+        main = ctk.CTkFrame(dlg, fg_color="transparent")
+        main.pack(fill="both", expand=True, padx=24, pady=20)
 
-        main = ctk.CTkFrame(dlg, fg_color=WC_COLORS["bg"])
-        main.pack(fill="both", expand=True, padx=20, pady=16)
-
-        ctk.CTkLabel(main, text="🤖", font=ctk.CTkFont(size=54)).pack(pady=(6, 0))
+        ctk.CTkLabel(main, text="🤖", font=ctk.CTkFont(size=56)).pack(pady=(8, 0))
         ctk.CTkLabel(main, text="NOYA Chat 微信助手",
-                     font=ctk.CTkFont(family=FONT_FAMILY, size=22, weight="bold"),
-                     text_color=WC_COLORS["text"]).pack(pady=(4, 2))
+                     font=ctk.CTkFont(family=FONT_FAMILY, size=24, weight="bold"),
+                     text_color=WC_COLORS["text"]).pack(pady=(8, 4))
         ctk.CTkLabel(main, text="v3.4 · 本地微信消息智能中枢",
-                     font=ctk.CTkFont(family=FONT_FAMILY, size=12),
-                     text_color=WC_COLORS["accent"]).pack(pady=(0, 10))
+                     font=ctk.CTkFont(family=FONT_FAMILY, size=13),
+                     text_color=WC_COLORS["accent"]).pack(pady=(0, 14))
 
         intro = (
             "NOYA Chat 是一款面向 Windows 的本地微信消息智能管理工具。\n"
@@ -2180,7 +2195,7 @@ class WeChatAIApp(ctk.CTk):
         tab.grid_columnconfigure(0, weight=1)
 
         # 自动回复开关
-        switch_frame = ctk.CTkFrame(tab, fg_color=WC_COLORS["card"], corner_radius=10)
+        switch_frame = ctk.CTkFrame(tab, fg_color=WC_COLORS["card"], corner_radius=14)
         switch_frame.grid(row=0, column=0, sticky="ew", padx=20, pady=20)
         switch_frame.grid_columnconfigure(0, weight=1)
 
@@ -2196,7 +2211,8 @@ class WeChatAIApp(ctk.CTk):
             switch_frame, text="启用自动回复",
             font=ctk.CTkFont(family=FONT_FAMILY, size=14),
             command=self.on_reply_switch,
-            fg_color=WC_COLORS["accent"],
+            fg_color=WC_COLORS["text_muted2"], progress_color=WC_COLORS["accent"],
+            button_color=WC_COLORS["card"], button_hover_color=WC_COLORS["accent_light"],
         )
         auto_reply_cfg = self.config_data.get("auto_reply", {})
         self.reply_switch.select() if auto_reply_cfg.get("enabled") else self.reply_switch.deselect()
@@ -2207,13 +2223,14 @@ class WeChatAIApp(ctk.CTk):
             switch_frame, text="预览确认模式（生成回复后需手动确认才发送）",
             font=ctk.CTkFont(family=FONT_FAMILY, size=12),
             command=self.on_preview_mode_switch,
-            fg_color=WC_COLORS["accent"],
+            fg_color=WC_COLORS["text_muted2"], progress_color=WC_COLORS["accent"],
+            button_color=WC_COLORS["card"], button_hover_color=WC_COLORS["accent_light"],
         )
         self.preview_mode_switch.select() if auto_reply_cfg.get("preview_mode") else self.preview_mode_switch.deselect()
         self.preview_mode_switch.grid(row=3, column=0, padx=15, pady=(0, 15), sticky="w")
 
         # 角色说明
-        roles_frame = ctk.CTkFrame(tab, fg_color=WC_COLORS["card"], corner_radius=10)
+        roles_frame = ctk.CTkFrame(tab, fg_color=WC_COLORS["card"], corner_radius=14)
         roles_frame.grid(row=1, column=0, sticky="nsew", padx=20, pady=(0, 20))
         roles_frame.grid_columnconfigure(0, weight=1)
         tab.grid_rowconfigure(1, weight=1)
@@ -2224,7 +2241,7 @@ class WeChatAIApp(ctk.CTk):
 
         roles = self.config_data.get("roles", {})
         for i, (role_key, role) in enumerate(roles.items()):
-            role_card = ctk.CTkFrame(roles_frame, fg_color=WC_COLORS["card_hover"], corner_radius=12)
+            role_card = ctk.CTkFrame(roles_frame, fg_color=WC_COLORS["card_hover"], corner_radius=14)
             role_card.grid(row=i + 1, column=0, sticky="ew", padx=15, pady=3)
             role_card.grid_columnconfigure(1, weight=1)
 
@@ -2265,7 +2282,7 @@ class WeChatAIApp(ctk.CTk):
         self.data_stats_label.grid(row=0, column=3, padx=10, sticky="e")
 
         # 搜索区域
-        search_frame = ctk.CTkFrame(tab, fg_color=WC_COLORS["card"], corner_radius=12)
+        search_frame = ctk.CTkFrame(tab, fg_color=WC_COLORS["card"], corner_radius=14)
         search_frame.grid(row=1, column=0, sticky="ew", padx=10, pady=5)
 
         ctk.CTkLabel(search_frame, text="消息搜索",
@@ -2275,16 +2292,32 @@ class WeChatAIApp(ctk.CTk):
         search_input_frame = ctk.CTkFrame(search_frame, fg_color="transparent")
         search_input_frame.pack(fill="x", padx=10, pady=5)
 
-        self.search_entry_msg = ctk.CTkEntry(search_input_frame, placeholder_text="输入关键词搜索消息内容...")
-        self.search_entry_msg.pack(side="left", fill="x", expand=True, padx=(0, 5))
+        self.search_entry_msg = ctk.CTkEntry(
+            search_input_frame, placeholder_text="输入关键词搜索消息内容...",
+            height=34, corner_radius=10, border_width=0,
+            fg_color=WC_COLORS["bg"], text_color=WC_COLORS["text"],
+            font=ctk.CTkFont(size=12),
+        )
+        self.search_entry_msg.pack(side="left", fill="x", expand=True, padx=(0, 6))
 
-        ctk.CTkButton(search_input_frame, text="搜索", width=80,
+        ctk.CTkButton(search_input_frame, text="🔍 搜索", width=80, height=34,
+                      corner_radius=10, fg_color=WC_COLORS["accent"],
+                      hover_color=WC_COLORS["accent_hover"],
+                      font=ctk.CTkFont(size=12, weight="bold"),
                       command=self._search_messages).pack(side="left")
 
-        ctk.CTkButton(search_input_frame, text="重要消息", width=80,
+        ctk.CTkButton(search_input_frame, text="⭐ 重要", width=80, height=34,
+                      corner_radius=10, fg_color=WC_COLORS["bg_dark"],
+                      hover_color=WC_COLORS["sidebar_hover"],
+                      text_color=WC_COLORS["text"],
+                      font=ctk.CTkFont(size=12),
                       command=self._show_important_messages).pack(side="left", padx=5)
 
-        ctk.CTkButton(search_input_frame, text="今日报告", width=80,
+        ctk.CTkButton(search_input_frame, text="📊 报告", width=80, height=34,
+                      corner_radius=10, fg_color=WC_COLORS["bg_dark"],
+                      hover_color=WC_COLORS["sidebar_hover"],
+                      text_color=WC_COLORS["text"],
+                      font=ctk.CTkFont(size=12),
                       command=self._generate_today_report).pack(side="left")
 
         # 统计面板（可滚动，撑满整行）
@@ -2300,7 +2333,7 @@ class WeChatAIApp(ctk.CTk):
         self._create_search_panel(search_container)
 
         # 数据表格
-        table_frame = ctk.CTkFrame(tab, fg_color=WC_COLORS["card"], corner_radius=12)
+        table_frame = ctk.CTkFrame(tab, fg_color=WC_COLORS["card"], corner_radius=14)
         table_frame.grid(row=4, column=0, sticky="nsew", padx=10, pady=(0, 10))
         table_frame.grid_rowconfigure(0, weight=1)
         table_frame.grid_columnconfigure(0, weight=1)
@@ -2525,6 +2558,54 @@ class WeChatAIApp(ctk.CTk):
             self._on_log("error", f"[回复风格] 保存失败: {e}")
             messagebox.showerror("保存失败", str(e))
 
+    def _test_reply_style(self):
+        """测试回复风格：用当前设置发一条测试消息给 LLM，预览效果"""
+        try:
+            # 先保存当前风格设置
+            self._save_reply_style()
+
+            llm_cfg = self.config_data.get("llm", {})
+            api_key = llm_cfg.get("api_key", "")
+            base_url = llm_cfg.get("base_url", "")
+            model = llm_cfg.get("model", "")
+
+            if not api_key or not base_url:
+                messagebox.showwarning("测试失败", "请先在 LLM 配置中填写 API Key 和 API 地址")
+                return
+
+            preset = self.config_data.get("reply_style_preset") or {}
+            from llm_client import LLMClient
+            client = LLMClient({
+                "api_key": api_key,
+                "base_url": base_url,
+                "model": model,
+                "max_tokens": 200,
+                "temperature": 0.3,
+                "thinking": False,
+            }, style_preset=preset if preset else None)
+
+            _role = {"name": "测试助手", "reply_style": "自然", "system_prompt": "你是一个友好的聊天助手。"}
+            _test_msgs = [
+                "你在干嘛呢？",
+                "今天天气真好，要不要出去玩？",
+                "哈哈，那个视频太搞笑了你看了吗？",
+            ]
+            _test_msg = _test_msgs[int(time.time()) % 3]
+
+            self._on_log("info", f"[风格测试] 发送测试消息: {_test_msg}")
+            reply = client.generate_reply("测试用户", _test_msg, _role, [])
+            if reply:
+                self._on_log("info", f"[风格测试] LLM回复: {reply}")
+                messagebox.showinfo("风格测试结果",
+                    f"测试消息：{_test_msg}\n\nAI回复：{reply}\n\n"
+                    f"语气/人设：{preset.get('tone', '未设置')}\n"
+                    f"emoji：{'允许' if preset.get('emoji', True) else '禁止'}")
+            else:
+                messagebox.showerror("测试失败", "LLM 未返回回复，请检查 API 配置")
+        except Exception as e:
+            self._on_log("error", f"[风格测试] 异常: {e}")
+            messagebox.showerror("测试失败", str(e))
+
     def _import_classification_rules(self):
         filepath = filedialog.askopenfilename(
             title="导入分类规则", filetypes=[("JSON", "*.json"), ("ALL", "*.*")])
@@ -2574,9 +2655,9 @@ class WeChatAIApp(ctk.CTk):
         tab.grid_rowconfigure(1, weight=1)
 
         # V3.1: 顶部导航表（固定，点击直达各设置区块）—— 高对比、分组、选中高亮
-        nav_bar = ctk.CTkFrame(tab, fg_color=WC_COLORS["card"], corner_radius=10,
-                              border_width=1, border_color=WC_COLORS["border"])
-        nav_bar.grid(row=0, column=0, sticky="ew", padx=10, pady=(10, 4))
+        nav_bar = ctk.CTkFrame(tab, fg_color=WC_COLORS["card"], corner_radius=14,
+                              border_width=0)
+        nav_bar.grid(row=0, column=0, sticky="ew", padx=12, pady=(12, 4))
         nav_bar.grid_columnconfigure(0, weight=1)
 
         self._settings_nav_btns = {}   # attr -> button
@@ -2595,7 +2676,7 @@ class WeChatAIApp(ctk.CTk):
                                    fg_color=WC_COLORS["bg"],
                                    text_color=WC_COLORS["text"],
                                    hover_color=WC_COLORS["accent_light"],
-                                   border_width=1, border_color=WC_COLORS["border"],
+                                   border_width=0,
                                    corner_radius=8,
                                    command=lambda a=attr: self._jump_to_setting(a))
                 btn.pack(side="left", padx=3, pady=2)
@@ -2623,7 +2704,7 @@ class WeChatAIApp(ctk.CTk):
         scroll.grid(row=1, column=0, sticky="nsew")
 
         # 消息监控模式
-        monitor_frame = ctk.CTkFrame(scroll, fg_color=WC_COLORS["card"], corner_radius=12)
+        monitor_frame = ctk.CTkFrame(scroll, fg_color=WC_COLORS["card"], corner_radius=14)
         monitor_frame.pack(fill="x", padx=20, pady=20)
         monitor_frame.grid_columnconfigure(1, weight=1)
         self.monitor_frame = monitor_frame
@@ -2696,11 +2777,11 @@ class WeChatAIApp(ctk.CTk):
         advanced_switch.pack(pady=5, anchor="w", padx=20)
 
         # 校准向导
-        calib_frame = ctk.CTkFrame(scroll, fg_color=WC_COLORS["card"], corner_radius=12)
+        calib_frame = ctk.CTkFrame(scroll, fg_color=WC_COLORS["card"], corner_radius=14)
         calib_frame.pack(fill="x", padx=20, pady=10)
         self.calib_frame = calib_frame
 
-        ctk.CTkLabel(calib_frame, text="窗口校准",
+        ctk.CTkLabel(calib_frame, text="🎯 窗口校准",
                      font=ctk.CTkFont(family=FONT_FAMILY, size=14, weight="bold"),
                      text_color=WC_COLORS["text"]).pack(anchor="w", padx=15, pady=5)
         ctk.CTkLabel(calib_frame, text="手动框选微信聊天区域，解决DPI缩放导致的坐标偏移",
@@ -2710,7 +2791,7 @@ class WeChatAIApp(ctk.CTk):
                       command=self._run_calibration).pack(padx=15, pady=10, anchor="w")
 
         # 模式开关
-        mode_frame = ctk.CTkFrame(scroll, fg_color=WC_COLORS["card"], corner_radius=12)
+        mode_frame = ctk.CTkFrame(scroll, fg_color=WC_COLORS["card"], corner_radius=14)
         mode_frame.pack(fill="x", padx=20, pady=10)
 
         ctk.CTkLabel(mode_frame, text="智能模式",
@@ -2726,7 +2807,7 @@ class WeChatAIApp(ctk.CTk):
         self.dnd_switch.pack(anchor="w", padx=15, pady=3)
 
         # 报告设置
-        report_frame = ctk.CTkFrame(scroll, fg_color=WC_COLORS["card"], corner_radius=12)
+        report_frame = ctk.CTkFrame(scroll, fg_color=WC_COLORS["card"], corner_radius=14)
         report_frame.pack(fill="x", padx=20, pady=10)
         self.report_frame = report_frame
 
@@ -2747,7 +2828,7 @@ class WeChatAIApp(ctk.CTk):
                       command=self._open_report_dir).pack(side="left", padx=5)
 
         # 分类优先级规则
-        cls_frame = ctk.CTkFrame(scroll, fg_color=WC_COLORS["card"], corner_radius=12)
+        cls_frame = ctk.CTkFrame(scroll, fg_color=WC_COLORS["card"], corner_radius=14)
         cls_frame.pack(fill="x", padx=20, pady=10)
         self.cls_frame = cls_frame
         ctk.CTkLabel(cls_frame, text="📑 分类优先级规则",
@@ -2773,7 +2854,7 @@ class WeChatAIApp(ctk.CTk):
                       command=self._export_classification_rules).pack(side="left", padx=5)
 
         # LLM设置
-        llm_frame = ctk.CTkFrame(scroll, fg_color=WC_COLORS["card"], corner_radius=12)
+        llm_frame = ctk.CTkFrame(scroll, fg_color=WC_COLORS["card"], corner_radius=14)
         llm_frame.pack(fill="x", padx=20, pady=20)
         llm_frame.grid_columnconfigure(1, weight=1)
         self.llm_frame = llm_frame
@@ -2783,17 +2864,49 @@ class WeChatAIApp(ctk.CTk):
                      text_color=WC_COLORS["text"]).grid(row=0, column=0, columnspan=2, padx=15, pady=(15, 10), sticky="w")
 
         llm_cfg = self.config_data.get("llm", {})
-        ctk.CTkLabel(llm_frame, text="API地址", font=ctk.CTkFont(family=FONT_FAMILY, size=12),
+
+        # ===== 厂商预设（一键切换国内大模型厂商） =====
+        self._llm_providers = {
+            "自定义":        {"url": "", "model": ""},
+            "阿里云百炼":     {"url": "https://dashscope.aliyuncs.com/compatible-mode", "model": "qwen3.7-flash"},
+            "DeepSeek 官方": {"url": "https://api.deepseek.com", "model": "deepseek-chat"},
+            "智谱AI GLM":    {"url": "https://open.bigmodel.cn/api/paas/v4", "model": "glm-4-flash"},
+            "硅基流动":       {"url": "https://api.siliconflow.cn/v1/", "model": "Qwen/Qwen2.5-7B-Instruct"},
+            "火山引擎豆包":    {"url": "https://ark.cn-beijing.volces.com/api/v3/", "model": "doubao-lite-32k"},
+        }
+        _current_provider = llm_cfg.get("provider", "自定义")
+        if _current_provider not in self._llm_providers:
+            _current_provider = "自定义"
+
+        ctk.CTkLabel(llm_frame, text="厂商", font=ctk.CTkFont(family=FONT_FAMILY, size=12),
                      text_color=WC_COLORS["text_muted"]).grid(row=1, column=0, padx=15, pady=5, sticky="w")
+        self.provider_var = ctk.StringVar(value=_current_provider)
+        self.provider_menu = ctk.CTkOptionMenu(
+            llm_frame,
+            values=list(self._llm_providers.keys()),
+            variable=self.provider_var,
+            font=ctk.CTkFont(family=FONT_FAMILY, size=12),
+            fg_color=WC_COLORS["card"],
+            button_color=WC_COLORS["accent"],
+            button_hover_color=WC_COLORS["accent_hover"],
+            dropdown_fg_color=WC_COLORS["card"],
+            dropdown_text_color=WC_COLORS["text"],
+            dropdown_font=ctk.CTkFont(family=FONT_FAMILY, size=12),
+            command=self._on_provider_changed,
+        )
+        self.provider_menu.grid(row=1, column=1, padx=15, pady=5, sticky="ew")
+
+        ctk.CTkLabel(llm_frame, text="API地址", font=ctk.CTkFont(family=FONT_FAMILY, size=12),
+                     text_color=WC_COLORS["text_muted"]).grid(row=2, column=0, padx=15, pady=5, sticky="w")
         self.entry_url = ctk.CTkEntry(llm_frame, font=ctk.CTkFont(family=FONT_FAMILY, size=12))
         self.entry_url.insert(0, llm_cfg.get("base_url", ""))
-        self.entry_url.grid(row=1, column=1, padx=15, pady=5, sticky="ew")
+        self.entry_url.grid(row=2, column=1, padx=15, pady=5, sticky="ew")
 
         ctk.CTkLabel(llm_frame, text="API Key", font=ctk.CTkFont(family=FONT_FAMILY, size=12),
-                     text_color=WC_COLORS["text_muted"]).grid(row=2, column=0, padx=15, pady=5, sticky="w")
+                     text_color=WC_COLORS["text_muted"]).grid(row=3, column=0, padx=15, pady=5, sticky="w")
         self.entry_key = ctk.CTkEntry(llm_frame, font=ctk.CTkFont(family=FONT_FAMILY, size=12), show="*")
         self.entry_key.insert(0, llm_cfg.get("api_key", ""))
-        self.entry_key.grid(row=2, column=1, padx=15, pady=5, sticky="ew")
+        self.entry_key.grid(row=3, column=1, padx=15, pady=5, sticky="ew")
 
         # 测试连接按钮
         self.btn_test_llm = ctk.CTkButton(
@@ -2806,7 +2919,7 @@ class WeChatAIApp(ctk.CTk):
             width=100,
             height=28
         )
-        self.btn_test_llm.grid(row=2, column=2, padx=(5, 15), pady=5, sticky="e")
+        self.btn_test_llm.grid(row=3, column=2, padx=(5, 15), pady=5, sticky="e")
 
         # 连接状态标签
         self.llm_status_label = ctk.CTkLabel(
@@ -2815,16 +2928,16 @@ class WeChatAIApp(ctk.CTk):
             font=ctk.CTkFont(family=FONT_FAMILY, size=10),
             text_color=WC_COLORS["text_muted"]
         )
-        self.llm_status_label.grid(row=3, column=0, columnspan=3, padx=15, pady=(0, 5), sticky="w")
+        self.llm_status_label.grid(row=4, column=0, columnspan=3, padx=15, pady=(0, 5), sticky="w")
 
         ctk.CTkLabel(llm_frame, text="模型", font=ctk.CTkFont(family=FONT_FAMILY, size=12),
-                     text_color=WC_COLORS["text_muted"]).grid(row=4, column=0, padx=15, pady=5, sticky="w")
+                     text_color=WC_COLORS["text_muted"]).grid(row=5, column=0, padx=15, pady=5, sticky="w")
         self.entry_model = ctk.CTkEntry(llm_frame, font=ctk.CTkFont(family=FONT_FAMILY, size=12))
         self.entry_model.insert(0, llm_cfg.get("model", ""))
-        self.entry_model.grid(row=4, column=1, padx=15, pady=5, sticky="ew")
+        self.entry_model.grid(row=5, column=1, padx=15, pady=5, sticky="ew")
 
         # ===== 回复风格设定（V3.3：UI 直接编辑，写入 config.yaml 的 reply_style_preset）=====
-        style_frame = ctk.CTkFrame(scroll, fg_color=WC_COLORS["card"], corner_radius=12)
+        style_frame = ctk.CTkFrame(scroll, fg_color=WC_COLORS["card"], corner_radius=14)
         style_frame.pack(fill="x", padx=20, pady=20)
         style_frame.grid_columnconfigure(1, weight=1)
         self.style_frame = style_frame
@@ -2877,18 +2990,25 @@ class WeChatAIApp(ctk.CTk):
         self.style_notes.insert(0, sp.get("notes", ""))
         self.style_notes.grid(row=7, column=1, padx=15, pady=5, sticky="ew")
 
-        ctk.CTkButton(style_frame, text="💾 保存并生效",
+        style_btn_frame = ctk.CTkFrame(style_frame, fg_color="transparent")
+        style_btn_frame.grid(row=8, column=0, columnspan=2, padx=15, pady=(12, 15), sticky="ew")
+
+        ctk.CTkButton(style_btn_frame, text="💾 保存并生效",
                       font=ctk.CTkFont(size=12, weight="bold"),
                       fg_color=WC_COLORS["accent"], hover_color=WC_COLORS["accent_hover"],
                       text_color="#FFFFFF",
-                      command=self._save_reply_style).grid(
-            row=8, column=0, columnspan=2, padx=15, pady=(12, 15), sticky="ew")
+                      command=self._save_reply_style).pack(side="left", padx=(0, 8), fill="x", expand=True)
+
+        ctk.CTkButton(style_btn_frame, text="🧪 测试风格",
+                      font=ctk.CTkFont(size=12),
+                      fg_color=WC_COLORS["info"], hover_color=WC_COLORS["accent_hover"],
+                      command=self._test_reply_style).pack(side="left", fill="x", expand=True)
 
         # 高级设置（默认隐藏）
         self.advanced_frame = ctk.CTkFrame(scroll, fg_color="transparent")
 
         # OCR设置
-        ocr_frame = ctk.CTkFrame(self.advanced_frame, fg_color=WC_COLORS["card"], corner_radius=12)
+        ocr_frame = ctk.CTkFrame(self.advanced_frame, fg_color=WC_COLORS["card"], corner_radius=14)
         ocr_frame.pack(fill="x", padx=20, pady=(0, 20))
         ocr_frame.grid_columnconfigure(1, weight=1)
 
@@ -2922,7 +3042,7 @@ class WeChatAIApp(ctk.CTk):
         self.switch_denoise.grid(row=4, column=0, columnspan=2, padx=15, pady=5, sticky="w")
 
         # AI训练设置
-        ai_frame = ctk.CTkFrame(scroll, fg_color=WC_COLORS["card"], corner_radius=12)
+        ai_frame = ctk.CTkFrame(scroll, fg_color=WC_COLORS["card"], corner_radius=14)
         ai_frame.pack(fill="x", padx=20, pady=10)
         ai_frame.grid_columnconfigure(1, weight=1)
         self.ai_frame = ai_frame
@@ -2941,6 +3061,9 @@ class WeChatAIApp(ctk.CTk):
                       command=self._open_rules_file).pack(side="left", padx=5)
         ctk.CTkButton(ai_btn_frame, text="重置训练",
                       command=self._reset_ai_training).pack(side="left", padx=5)
+        ctk.CTkButton(ai_btn_frame, text="清除去重",
+                      fg_color=WC_COLORS["warning"],
+                      command=self._clear_dedup_cache).pack(side="left", padx=5)
 
         # ==================== Obsidian 同步设置 ====================
         obsidian_frame = ctk.CTkFrame(scroll)
@@ -3133,7 +3256,7 @@ class WeChatAIApp(ctk.CTk):
 
         # 底部消息详情卡片（点击消息弹出，再次点击或点×收起）
         self.detail_bar = ctk.CTkFrame(
-            parent, fg_color=WC_COLORS["bg_dark"], corner_radius=12,
+            parent, fg_color=WC_COLORS["bg_dark"], corner_radius=14,
             border_width=1, border_color=WC_COLORS["border"], height=120)
         self.detail_bar.pack_forget()
         self._detail_bar_visible = False
@@ -3142,7 +3265,7 @@ class WeChatAIApp(ctk.CTk):
 
         # ===== P0: AI 建议回复气泡卡 (输入栏上方, 默认隐藏) =====
         self.suggest_bar = ctk.CTkFrame(
-            parent, fg_color=WC_COLORS["accent_light"], corner_radius=12,
+            parent, fg_color=WC_COLORS["accent_light"], corner_radius=14,
             border_width=1, border_color=WC_COLORS["accent"], height=72)
         self.suggest_bar.pack_forget()
         self._suggest_bar_visible = False
@@ -3665,8 +3788,8 @@ class WeChatAIApp(ctk.CTk):
         _ckey = f"{contact}|{sender}|{content}"
         _last = self._recent_ui_keys.get(_ckey)
         if _last is not None and (_now - _last) < 10.0:
-            # 内容级兜底去重：同一消息在10s内重复上报，用内容键更新而非新建
-            mk = _ckey
+            # 内容级兜底去重：同一消息在10s内重复上报，优先用 msg_key（哈希）保证与首次存储的索引键一致
+            mk = msg_data.get("msg_key") or _ckey
         else:
             self._recent_ui_keys[_ckey] = _now
             mk = msg_data.get("msg_key") or _ckey
@@ -3947,7 +4070,7 @@ class WeChatAIApp(ctk.CTk):
         grid.grid_columnconfigure(0, weight=1)
         grid.grid_columnconfigure(1, weight=1)
         for i, (label, icon, color) in enumerate(stat_items):
-            card = ctk.CTkFrame(grid, fg_color=WC_COLORS["card"], corner_radius=12,
+            card = ctk.CTkFrame(grid, fg_color=WC_COLORS["card"], corner_radius=14,
                                 border_width=1, border_color=WC_COLORS["border"])
             r, c = divmod(i, 2)
             card.grid(row=r, column=c, padx=5, pady=5, sticky="nsew")
@@ -3960,7 +4083,7 @@ class WeChatAIApp(ctk.CTk):
             self.stats_labels[label] = val_label
 
         # 发送者分布
-        row2 = ctk.CTkFrame(scroll, fg_color=WC_COLORS["card"], corner_radius=10,
+        row2 = ctk.CTkFrame(scroll, fg_color=WC_COLORS["card"], corner_radius=14,
                            border_width=1, border_color=WC_COLORS["border"])
         row2.pack(fill="x", padx=2, pady=6)
         ctk.CTkLabel(row2, text="👥 发送者分布", font=ctk.CTkFont(size=11),
@@ -3985,7 +4108,7 @@ class WeChatAIApp(ctk.CTk):
                      font=ctk.CTkFont(size=13, weight="bold"),
                      text_color=WC_COLORS["text"]).pack(anchor="w", padx=6, pady=(8, 4))
         self.stats_chart = ctk.CTkLabel(scroll, text="（点击「刷新统计」生成图表）",
-                                        fg_color=WC_COLORS["card"], corner_radius=10,
+                                        fg_color=WC_COLORS["card"], corner_radius=14,
                                         height=240)
         self.stats_chart.pack(fill="x", padx=2, pady=(0, 10))
 
@@ -4284,7 +4407,7 @@ class WeChatAIApp(ctk.CTk):
         # 5. 检查API Key配置
         try:
             api_key = self.config_data.get("llm", {}).get("api_key", "")
-            if api_key and api_key.startswith("sk-"):
+            if api_key:
                 self._on_log("info", f"✅ API Key配置正常: {api_key[:10]}...")
             else:
                 issues.append("API Key配置无效或缺失")
@@ -4806,6 +4929,21 @@ class WeChatAIApp(ctk.CTk):
         except Exception as e:
             self._on_log("warning", f"预览模式状态保存失败: {e}")
 
+    def _on_provider_changed(self, choice):
+        """厂商切换：自动填充 API 地址和默认模型"""
+        p = self._llm_providers.get(choice)
+        if not p:
+            return
+        # 自定义：保持当前值不变
+        if choice == "自定义" and p["url"] == "":
+            return
+        # 切换厂商时自动填充 URL 和模型
+        self.entry_url.delete(0, "end")
+        self.entry_url.insert(0, p["url"])
+        self.entry_model.delete(0, "end")
+        self.entry_model.insert(0, p["model"])
+        self.llm_status_label.configure(text=f"已切换至 {choice}", text_color=WC_COLORS["text_muted"])
+
     def _test_llm_connection(self):
         base_url = self.entry_url.get().strip()
         api_key = self.entry_key.get().strip()
@@ -4958,6 +5096,26 @@ class WeChatAIApp(ctk.CTk):
         except Exception as e:
             self._on_log("error", f"重置失败: {e}")
 
+    def _clear_dedup_cache(self):
+        """清除红点跨轮去重缓存和自动回复指纹"""
+        try:
+            eng = getattr(self, "_engine", None)
+            if eng:
+                eng.clear_reddot_seen()
+                eng.clear_reply_fingerprints()
+                self._on_log("info", "✅ 去重缓存已清除，下次检测将重新识别所有消息")
+            else:
+                # 引擎未启动时直接清文件
+                import os, json
+                rp = _app_path("data", "reddot_seen.json")
+                if os.path.exists(rp):
+                    os.remove(rp)
+                    self._on_log("info", "✅ 去重缓存文件已删除")
+                else:
+                    self._on_log("info", "去重缓存为空，无需清除")
+        except Exception as e:
+            self._on_log("error", f"清除去重失败: {e}")
+
     def _test_obsidian_api(self):
         """测试Obsidian REST API连接"""
         from obsidian_sync import ObsidianSync
@@ -5039,6 +5197,7 @@ class WeChatAIApp(ctk.CTk):
             self.config_data.setdefault("llm", {})["base_url"] = self.entry_url.get()
             self.config_data["llm"]["api_key"] = self.entry_key.get()
             self.config_data["llm"]["model"] = self.entry_model.get()
+            self.config_data["llm"]["provider"] = self.provider_var.get()
             self.config_data.setdefault("wechat", {})["ocr_scale"] = round(self.slider_scale.get(), 2)
             self.config_data["wechat"]["ocr_min_confidence"] = round(self.slider_conf.get(), 2)
             self.config_data["wechat"]["ocr_merge_bubble"] = self.switch_merge.get() == 1
@@ -5697,6 +5856,8 @@ class WeChatAIApp(ctk.CTk):
             "running": ("● 运行中", WC_COLORS["online_dot"]),
             "stopped": ("● 已停止", WC_COLORS["text_muted"]),
             "error": ("● 错误", WC_COLORS["danger"]),
+            "processing_reply": ("⏳ 生成回复中...", WC_COLORS["info"]),
+            "processing_ocr": ("⏳ OCR 识别中...", WC_COLORS["info"]),
         }
         text, color = status_map.get(status, ("● 未知", WC_COLORS["text_muted"]))
         if hasattr(self, 'sidebar_status'):
@@ -5708,6 +5869,10 @@ class WeChatAIApp(ctk.CTk):
         elif status == "stopped":
             self.btn_start.configure(state="normal")
             self.btn_stop.configure(state="disabled")
+        # 处理中状态：按钮保持但禁用
+        elif status.startswith("processing"):
+            self.btn_start.configure(state="disabled")
+            self.btn_stop.configure(state="normal")
 
     def _ensure_result_tags(self):
         """确保结果文本框的标签样式已配置"""

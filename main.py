@@ -101,6 +101,11 @@ class WeChatEngine:
         self._reply_buffer_lock = threading.Lock()
         self._reply_agg_stop = threading.Event()
         self._reply_agg_thread = None
+
+        # ★ 智能防抖：轻量级 inline debounce，无需独立线程
+        #   对方连发多条消息时，取消旧定时器，重置 1s 倒计时，到期后合并一次回复
+        self._debounce_timers: dict[str, threading.Timer] = {}
+        self._debounce_lock = threading.Lock()
         if self._reply_agg_enabled:
             self._start_reply_aggregator()
 
@@ -146,9 +151,9 @@ class WeChatEngine:
         self._last_mouse_pos = (0, 0)
         self._mouse_still_count = 0
         # 红点路径跨轮去重：{contact: set(md5(sender|content))}，防止冷却后重扫重复上报历史消息
-        # 持久化到 data/reddot_seen.json，重启不丢失
+        # ★ 仅本会话内有效，重启后清空（避免旧指纹阻塞新消息）
         self._reddot_seen_path = app_path("data", "reddot_seen.json")
-        self._reddot_msg_seen = self._load_reddot_seen()
+        self._reddot_msg_seen: dict[str, set] = {}
 
         self.stats = {
             "frames_captured": 0,
@@ -160,8 +165,23 @@ class WeChatEngine:
             "start_time": datetime.now(),
         }
 
+        # 日志级别：debug=10, info=20, warning=30, error=40
+        self._log_levels = {"debug": 10, "info": 20, "warning": 30, "error": 40}
+        _log_cfg = self.wechat_config.get("log_level", "info")
+        self._log_level = self._log_levels.get(str(_log_cfg).lower(), 20)
+
+        # 清理计数器
+        self._last_cleanup_ts = time.time()
+        self._cleanup_interval = 3600  # 每小时清理一次
+
+        # 回复效果反馈闭环
+        self._reply_feedback_tracker = {}  # {contact: {"reply": str, "ts": float, "role": str}}
+
     def _log(self, level, message):
-        """发送日志到回调"""
+        """发送日志到回调（受 log_level 过滤）"""
+        _lvl = self._log_levels.get(level.lower(), 20)
+        if _lvl < self._log_level:
+            return
         getattr(logger, level.lower(), logger.info)(message)
         if self.callbacks.get("on_log"):
             try:
@@ -338,6 +358,7 @@ class WeChatEngine:
                 self.llm_config,
                 style_preset=self.role_manager.config.get("reply_style_preset") or {},
             )
+            self.llm_client.set_log_callback(self._log)  # 将 LLM 内部日志转发到 UI 面板
             self._log("info", f"  ✔ LLM客户端就绪: {self.llm_config.get('model', '?')}")
             # 把 LLM 客户端注入 Obsidian（初始化阶段它还没建，这里补注入以启用 AI 赋能）
             if getattr(self, "obsidian", None) is not None:
@@ -628,24 +649,46 @@ class WeChatEngine:
             if _fp in _fp_set:
                 self._log("debug", f"[自动回复] 指纹去重跳过(已回复过): {contact}: {_norm[:30]}")
                 return
-            # 先占位（防止同条消息并发双路径都通过校验），发送成功后保留，失败则移除
-            _fp_set.add(_fp)
-            if len(_fp_set) > 200:
-                self._reply_fingerprints[contact] = set(list(_fp_set)[-100:])
 
         if not self._auto_reply_lock.acquire(blocking=False):
             self._log("debug", "[自动回复] 上一条回复仍在生成/发送中，跳过本条")
             return
 
-        # ★ 聚合回复模式：把消息塞进 buffer，由聚合线程统一 flush（避免识别一条回一条）
+        # ★ 指纹写入移到锁获取之后，防止锁获取失败时指纹已污染导致消息永久屏蔽
+        if contact and _norm:
+            _fp_set = self._reply_fingerprints.setdefault(contact, set())
+            _fp_set.add(_fp)
+            if len(_fp_set) > 200:
+                self._reply_fingerprints[contact] = set(list(_fp_set)[-100:])
+
+        # ★ 回复效果反馈：对方在我们回复后 90s 内又发消息 → 评估回复质量
+        _fb = self._reply_feedback_tracker.pop(contact, None)
+        if _fb and _norm:
+            _elapsed = time.time() - _fb["ts"]
+            if _elapsed < 90:
+                _score = self._evaluate_reply_feedback(_fb["reply"], _norm)
+                self._log("info", f"[反馈] {contact} 在 {_elapsed:.0f}s 后回复，效果评分: {_score}/5")
+
+        # ★ 智能防抖聚合：对方连发多条消息时，等 1 秒再一起回复（避免识别一条回一条）
         if self._reply_agg_enabled:
-            with self._reply_buffer_lock:
-                buf = self._reply_buffer.setdefault(contact, [])
-                buf.append({"content": content, "sender": sender,
-                            "ts": time.time(), "is_group": is_group})
-                _cnt = len(buf)
-            self._log("info", f"[聚合回复] {contact} 缓冲第 {_cnt} 条 (max_msgs={self._reply_agg_max_msgs}, "
-                               f"max_wait={self._reply_agg_max_wait}s)")
+            with self._debounce_lock:
+                # 取消旧定时器
+                _old = self._debounce_timers.pop(contact, None)
+                if _old:
+                    _old.cancel()
+                # 追加到缓冲
+                _buf = self._reply_buffer.setdefault(contact, [])
+                _buf.append({"content": content, "sender": sender,
+                             "ts": time.time(), "is_group": is_group})
+                _cnt = len(_buf)
+                # 启动新定时器：1s 后 flush
+                _t = threading.Timer(
+                    self._reply_agg_max_wait,
+                    self._flush_debounce_buffer, args=(contact,))
+                _t.daemon = True
+                _t.start()
+                self._debounce_timers[contact] = _t
+            self._log("info", f"[防抖聚合] {contact} 缓冲第 {_cnt} 条 (max_wait={self._reply_agg_max_wait}s)")
             self._auto_reply_lock.release()
             return
 
@@ -703,6 +746,11 @@ class WeChatEngine:
 
     def _stop_reply_aggregator(self):
         self._reply_agg_stop.set()
+        # 取消所有防抖定时器
+        with self._debounce_lock:
+            for t in self._debounce_timers.values():
+                t.cancel()
+            self._debounce_timers.clear()
 
     def _reply_agg_loop(self):
         while not self._reply_agg_stop.is_set():
@@ -722,7 +770,13 @@ class WeChatEngine:
             self._reply_agg_stop.wait(timeout=1.0)
 
     def _flush_reply_buffer(self, contact):
-        """把某联系人缓冲的多条消息合并成一次综合回复（而非逐条回复）。"""
+        """把某联系人缓冲的多条消息合并成一次综合回复（而非逐条回复）。
+
+        双引擎设计：
+        - 主引擎：防抖定时器(_debounce_timers) → _flush_debounce_buffer，1.5s 内新消息取消旧定时器
+        - 安全网：聚合循环(_reply_agg_loop) → _flush_reply_buffer，每 1s 检查超时/满条数
+        两者互斥：通过 _reply_buffer_lock 和 buffer 清空防止重复 flush。
+        """
         with self._reply_buffer_lock:
             buf = self._reply_buffer.get(contact)
             if not buf:
@@ -733,15 +787,13 @@ class WeChatEngine:
                 self._reply_buffer[contact] = []
                 return
             _is_group = any(m.get("is_group") for m in buf)
-            # 合并上下文：按顺序拼成"对方1: ... 对方2: ..."供 LLM 综合理解
             _ctx_msgs = []
             for m in buf:
                 _side = "我" if m.get("sender") in ("me", "self", "mine") else "对方"
                 _c = str(m.get("content", "")).strip()
                 if _c:
                     _ctx_msgs.append(f"{_side}：{_c}")
-            # 清空 buffer（已取走），指纹由 _auto_reply_impl 内部按单条去重保证不重复
-            self._reply_buffer[contact] = []
+            self._reply_buffer[contact] = []  # ★ 清空 buffer，防止双引擎重复 flush
         # 用最后一条对方消息作为"触发消息"，整段上下文作为综合素材
         _last = _others[-1]
         _combined_context = _ctx_msgs
@@ -754,6 +806,36 @@ class WeChatEngine:
             self._maybe_auto_reply(
                 contact, _last["content"], _last["sender"],
                 context=_combined_context, is_group=_is_group)
+        finally:
+            self._reply_agg_enabled = _prev_agg
+
+    def _flush_debounce_buffer(self, contact):
+        """防抖定时器到期：把缓冲的多条消息合并成一次综合回复"""
+        with self._debounce_lock:
+            self._debounce_timers.pop(contact, None)
+            buf = self._reply_buffer.get(contact)
+            if not buf:
+                return
+            _others = [m for m in buf if m.get("sender") != "me"]
+            if not _others:
+                self._reply_buffer[contact] = []
+                return
+            _is_group = any(m.get("is_group") for m in buf)
+            _ctx_msgs = []
+            for m in buf:
+                _side = "我" if m.get("sender") in ("me", "self", "mine") else "对方"
+                _c = str(m.get("content", "")).strip()
+                if _c:
+                    _ctx_msgs.append(f"{_side}：{_c}")
+            self._reply_buffer[contact] = []
+        _last = _others[-1]
+        self._log("info", f"[防抖聚合] {contact} flush {len(_others)} 条 → 生成综合回复")
+        _prev_agg = self._reply_agg_enabled
+        self._reply_agg_enabled = False
+        try:
+            self._maybe_auto_reply(
+                contact, _last["content"], _last["sender"],
+                context=_ctx_msgs, is_group=_is_group)
         finally:
             self._reply_agg_enabled = _prev_agg
 
@@ -805,9 +887,10 @@ class WeChatEngine:
             try:
                 self._log("warning", "[自动回复] LLM客户端未初始化，尝试重新初始化...")
                 self.llm_client = LLMClient(
-                self.llm_config,
-                style_preset=self.role_manager.config.get("reply_style_preset") or {},
-            )
+                    self.llm_config,
+                    style_preset=self.role_manager.config.get("reply_style_preset") or {},
+                )
+                self.llm_client.set_log_callback(self._log)  # 转发日志到 UI
 
                 # 测试调用
                 test_role = {"name": "测试", "system_prompt": "测试", "reply_style": "简洁"}
@@ -853,15 +936,14 @@ class WeChatEngine:
                     if rich_ctx:
                         context_dicts = []
                         for m in rich_ctx[-self._context_turns*2:]:
-                            # rich_ctx 可能是 dict（含 sender/content）或纯字符串
                             if isinstance(m, dict):
-                                role = "assistant" if m.get("sender") in ("me", "self", "mine") else "user"
+                                _msg_role = "assistant" if m.get("sender") in ("me", "self", "mine") else "user"
                                 c = str(m.get("content", "")).strip()
                             else:
                                 c = str(m).strip()
-                                role = "user"
+                                _msg_role = "user"
                             if c:
-                                context_dicts.append({"role": role, "content": c})
+                                context_dicts.append({"role": _msg_role, "content": c})
                         if context_dicts:
                             context = context_dicts
                             self._log("debug", f"[上下文] 使用UI上下文 {len(context_dicts)} 条")
@@ -874,14 +956,38 @@ class WeChatEngine:
             if self._stop_flag.is_set():
                 return
 
-            # 生成回复
-            self._log("info", f"[自动回复] 正在生成回复...")
-            reply = self.llm_client.generate_reply(contact, content, role, context)
+            # 生成回复（带超时保护，防止 LLM API 挂起导致自动回复线程永久卡死）
+            # 提前记录回复目标，确保即使红点已切回原窗口，发送时也能校验切回目标联系人
+            self._last_reply_contact = contact
+            # ★ 意图分级：简单消息走快速模板路径，跳过昂贵的 LLM 调用
+            _fast = self._try_fast_reply(contact, content, role)
+            if _fast:
+                self._log("info", f"[快速回复] {contact}: {_fast[:30]}...")
+                reply = _fast
+            else:
+                self._log("info", f"[自动回复] 正在生成回复...")
+                self._on_status("processing_reply")
+                reply = None
+                try:
+                    import concurrent.futures
+                    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as _exec:
+                        _future = _exec.submit(
+                            self.llm_client.generate_reply,
+                            contact, content, role, context)
+                        reply = _future.result(timeout=30)
+                except concurrent.futures.TimeoutError:
+                    self._log("error", "[自动回复] LLM 调用超时(30s)，使用降级模板")
+                    reply = self.llm_client._pick_fallback(content, role)
+                except Exception as _e:
+                    self._log("error", f"[自动回复] LLM 调用异常: {_e}")
+                    reply = self.llm_client._pick_fallback(content, role)
             if not reply:
+                self._on_status("running")
                 self._log("warning", "[自动回复] LLM未生成回复")
                 return
 
             self._log("info", f"[生成回复] {reply[:80]}...")
+            self._on_status("running")
 
             # 停止检查：LLM生成完后如果已停止，不再发送
             if self._stop_flag.is_set():
@@ -929,9 +1035,6 @@ class WeChatEngine:
             self._log("info", f"[自动回复] 等待 {send_delay} 秒后发送...")
             time.sleep(send_delay)
 
-            # 记录本次回复目标联系人（供发送前归属校验使用）
-            self._last_reply_contact = contact
-
             # 智能发送：尝试多种发送模式
             self._log("info", f"[自动回复] 开始智能发送...")
             success = self._smart_send_reply(reply)
@@ -943,6 +1046,10 @@ class WeChatEngine:
                 self._log("info", f"[已回复] {reply[:50]}")
                 # 已读闭环：发送后重截聊天区底部，确认我方气泡真的出现
                 self._verify_reply_sent(contact, reply, last_method)
+                # ★ 反馈闭环：记录回复时间，后续对方回复时评估效果
+                self._reply_feedback_tracker[contact] = {
+                    "reply": reply, "ts": time.time(), "role": role.get("name", ""),
+                }
                 if self._on_reply:
                     # V3 P0-5: 发送成功回执（UI气泡+Obsidian同步）
                     try:
@@ -979,6 +1086,153 @@ class WeChatEngine:
             self._remove_reply_fingerprint(contact, content)
             import traceback
             self._log("error", traceback.format_exc()[-200:])
+
+    @staticmethod
+    def _evaluate_reply_feedback(my_reply: str, their_response: str) -> int:
+        """轻量回复效果评估：根据对方回复判断回复质量 (1-5分)"""
+        score = 3
+        _resp = their_response.strip()
+        if not _resp:
+            return score
+        _neg = ["无语", "。。。", "随便", "算了", "你谁", "滚", "烦", "机器人", "别回了", "神经",
+                "别说了", "不管了", "哦", "呵呵", "好的吧", "行吧", "（", "……", "呵呵呵"]
+        _pos = ["哈哈", "谢谢", "好的", "收到", "嗯嗯", "好嘞", "牛逼", "厉害", "不错", "了解了",
+                "懂了", "👌", "👍", "对的", "没错", "确实", "正解", "可以", "OK", "明白了",
+                "有意思", "好玩", "真的吗", "笑死", "哈哈哈", "太好了", "感谢", "? ?", "？？"]
+        for w in _neg:
+            if w in _resp:
+                score -= 1
+                if score < 1:
+                    break
+        for w in _pos:
+            if w in _resp:
+                score += 1
+                if score > 5:
+                    break
+        return max(1, min(5, score))
+
+    @staticmethod
+    def _try_fast_reply(contact, content, role):
+        """意图分级：简单消息走快速模板路径，跳过 LLM 调用（省钱+秒回）"""
+        _m = content.strip()
+        _ml = _m.lower()  # ★ 大小写归一化，避免 "Hi"/"HI" 漏判
+        _rn = role.get("name", "助手")
+
+        # 纯粹问候
+        _greetings = {"在吗", "在？", "在么", "早", "早安", "早上好", "晚安", "晚上好", "hi", "hello",
+                      "嗨", "哈喽", "你好", "你好啊", "嘿", "hey", "早啊", "晚安咯", "拜拜", "bye", "88"}
+        if _ml in _greetings or (len(_m) <= 3 and _ml in {"在", "早", "嗨", "hi", "嘿"}):
+            import random
+            return random.choice([
+                f"在的~",
+                f"来了来了",
+                f"嗯嗯在呢",
+                f"早呀~",
+                f"hi~",
+                f"哈喽",
+                f"晚安~",
+                f"拜拜~",
+            ])
+
+        # 纯粹致谢
+        if len(_m) <= 6 and any(kw in _ml for kw in ["谢谢", "感谢", "多谢", "3q", "thx", "thanks"]):
+            return "不客气~"
+
+        # 纯粹确认
+        if _ml in {"ok", "好的", "好", "行", "可以", "没问题", "收到", "嗯嗯", "嗯", "哦"}:
+            return "嗯嗯"
+
+        return None  # 不是简单消息，走 LLM
+
+    def _capture_frame(self, capture_ratio=0.35):
+        """截图主逻辑：offscreen/最小化/正常三种模式统一处理"""
+        try:
+            from screenshot import capture_via_printwindow_stable, capture_chat_bottom, capture_minimized_window
+            from window_manager import is_window_minimized
+            hwnd = getattr(self.window, '_hWnd', None)
+            image = None
+
+            if self.minimize_mode == "offscreen":
+                if not hwnd:
+                    hwnd = self._get_valid_hwnd()
+                if hwnd:
+                    from screenshot import ensure_window_rendering
+                    win_rect = ensure_window_rendering(hwnd, self.window)
+                    if win_rect is None:
+                        self._log("error", "[截图] 自愈失败：窗口无法恢复渲染")
+                        return None
+                    rl, rt, rw, rh = win_rect
+                    _now_cr = time.time()
+                    if _now_cr - getattr(self, "_last_coord_log", 0) > 5:
+                        self._last_coord_log = _now_cr
+                        self._log("info", f"[截图] 窗口坐标=({rl},{rt}) {rw}x{rh}, 屏幕外={rl<=-1000}")
+                    if self.minimize_mode == "offscreen":
+                        full_img = capture_via_printwindow_stable(hwnd)
+                        if full_img is None or (hasattr(full_img, 'mean') and full_img.mean() < 5):
+                            self._log("info", "[截图] PrintWindow无效，尝试BitBlt...")
+                            from screenshot import capture_via_bitblt
+                            full_img = capture_via_bitblt(hwnd)
+                    elif rl > -1000:
+                        from screenshot import capture_region
+                        full_img = capture_region(win_rect)
+                    else:
+                        full_img = capture_via_printwindow_stable(hwnd)
+                    if full_img is None or (hasattr(full_img, 'mean') and full_img.mean() < 5) or (full_img is not None and full_img.shape[1] < 300):
+                        if rl <= -1000:
+                            self._log("warning", "[截图] 屏幕外PrintWindow/BitBlt均失败，窗口保持在屏幕外不闪现")
+                    if full_img is not None and full_img.mean() >= 5 and full_img.shape[1] >= 300:
+                        from screenshot import crop_chat_region_img
+                        image = crop_chat_region_img(full_img, bottom_ratio=capture_ratio)
+                        self._last_full_capture = full_img
+                        now_ts = time.time()
+                        if now_ts - getattr(self, "_last_diag_save", 0) > 15:
+                            self._last_diag_save = now_ts
+                            from screenshot import save_debug_image
+                            save_debug_image(full_img, prefix="capture")
+                    else:
+                        shape_info = f"{full_img.shape[1]}x{full_img.shape[0]}, mean={full_img.mean():.1f}" if full_img is not None else "None"
+                        self._log("warning", f"[截图] 截图无效({shape_info})，存fail图")
+                        if full_img is not None:
+                            from screenshot import save_debug_image
+                            save_debug_image(full_img, prefix="fail")
+                else:
+                    self._log("error", "[截图] 无法获取有效窗口句柄")
+
+            elif self.minimize_mode == "minimized":
+                if not hwnd:
+                    self._log("warning", "[截图] 无窗口句柄，尝试重新获取")
+                    hwnd = self._get_valid_hwnd()
+                if hwnd:
+                    flash_pos = self.wechat_config.get("flash_position", "corner")
+                    image = capture_minimized_window(
+                        self.window, hwnd=hwnd, skip_printwindow=True, flash_position=flash_pos)
+                    if image is not None:
+                        from screenshot import crop_chat_region_img
+                        image = crop_chat_region_img(image, bottom_ratio=capture_ratio)
+                else:
+                    self._log("error", "[截图] 无法获取有效窗口句柄")
+            else:
+                if hwnd:
+                    full_img = capture_via_printwindow(hwnd)
+                    if full_img is not None and full_img.mean() > 5:
+                        from screenshot import crop_chat_region_img
+                        image = crop_chat_region_img(full_img, bottom_ratio=capture_ratio)
+                        self._log("info", f"[截图] PrintWindow成功: {full_img.shape[1]}x{full_img.shape[0]} → 聊天区底部{capture_ratio}")
+                if image is None:
+                    if is_window_minimized(self.window):
+                        self._log("info", "[截图] 窗口已最小化，尝试屏幕外恢复")
+                        image = capture_minimized_window(self.window, skip_printwindow=True)
+                        if image is not None:
+                            from screenshot import crop_chat_region_img
+                            image = crop_chat_region_img(image, bottom_ratio=capture_ratio)
+                    else:
+                        image = capture_chat_bottom(self.window, ratio=capture_ratio)
+            return image
+        except Exception as e:
+            self._log("error", f"截图异常: {e}")
+            import traceback
+            self._log("error", traceback.format_exc())
+            return None
 
     def _smart_send_reply(self, reply: str) -> bool:
         """智能发送回复 - 自动切换发送模式"""
@@ -1097,24 +1351,29 @@ class WeChatEngine:
         try:
             _hwnd = getattr(self.window, "_hWnd", None)
             if not _hwnd:
+                self._log("debug", "[验证] 无窗口句柄，跳过标题栏OCR验证")
                 return True  # 无句柄，不拦
             from screenshot import capture_via_printwindow, crop_title_bar_img, is_image_blank
             if self.minimize_mode == "offscreen":
                 _full = capture_via_printwindow(_hwnd)
                 if _full is None or _full.mean() < 5 or _full.shape[1] < 300:
+                    self._log("debug", "[验证] PrintWindow截图无效，跳过标题栏OCR验证")
                     return True
                 _bar = crop_title_bar_img(_full)
             else:
                 from screenshot import capture_chat_area
                 _full = capture_chat_area(self.window)
                 if _full is None or is_image_blank(_full):
+                    self._log("debug", "[验证] 聊天区截图为空，跳过标题栏OCR验证")
                     return True
                 _bar = crop_title_bar_img(_full)
             if _bar is None or is_image_blank(_bar):
+                self._log("debug", "[验证] 标题栏裁剪为空，跳过标题栏OCR验证")
                 return True
             from ocr_engine import recognize, _is_valid_contact_name
             _ocr = recognize(_bar, scale=1.0, min_confidence=0.35, merge_bubble=False, denoise=False)
             if not _ocr:
+                self._log("debug", "[验证] 标题栏OCR无结果，跳过验证")
                 return True
             _exp = (expected_contact or "").strip()
             if not _exp:
@@ -1259,9 +1518,9 @@ class WeChatEngine:
             if _found:
                 self._log("info", f"[已读校验] {contact} 我方气泡已出现 → 发送确认({method})")
             else:
-                self._log("warning", f"[已读校验] {contact} 底部未检测到我方最新气泡(可能延迟/OCR误差)，"
-                                     f"标记为可能未发出 → 允许重试")
-                self._remove_reply_fingerprint(contact, reply)
+                # ★ 仅记 warning，不移除指纹：OCR 常有延迟/漏检，移除指纹会导致重复发送
+                self._log("warning", f"[已读校验] {contact} 底部未检测到我方最新气泡"
+                                     f"(OCR延迟/渲染中/滚动偏移)，不重复发送")
         except Exception as e:
             self._log("debug", f"[已读校验] {contact} 异常(忽略): {e}")
 
@@ -1336,6 +1595,20 @@ class WeChatEngine:
                 self.red_dot_monitor.clear_suspect(contacts)
             except Exception:
                 pass
+
+    def clear_reply_fingerprints(self, contacts=None):
+        """删除记录时同步清自动回复指纹，让被删消息能重新触发自动回复。
+        contacts=None 清空全部；否则只清指定联系人。
+        """
+        if contacts is None:
+            self._reply_fingerprints = {}
+            self._log("info", "[回复指纹] 已清空全部")
+        else:
+            _fp = getattr(self, "_reply_fingerprints", None)
+            if _fp:
+                for c in contacts:
+                    _fp.pop(c, None)
+            self._log("info", f"[回复指纹] 已清空 {len(contacts)} 个联系人的指纹")
 
     def _get_valid_hwnd(self):
         """获取有效的微信窗口句柄（统一入口）"""
@@ -1691,6 +1964,7 @@ class WeChatEngine:
         while not self._stop_flag.is_set():
             try:
                 loop_start = time.time()
+                self._periodic_cleanup()
 
                 if not is_window_visible(self.window):
                     # 窗口不可见/丢失，尝试重新查找
@@ -1720,11 +1994,8 @@ class WeChatEngine:
                     except Exception as e:
                         self._log("warning", f"[保活] 异常: {e}")
 
-                # 勿扰模式：只暂停红点自动切换，不堵住当前窗口监控
+                # 勿扰模式：跳过红点扫描（不切窗口），但继续监控当前窗口
                 dnd_active = self._check_do_not_disturb()
-                if dnd_active:
-                    # 用户正在操作，跳过红点扫描但继续监控当前窗口
-                    pass
 
                 # 快速模式：只控制红点扫描频率，不堵住当前窗口监控
                 fast_triggered = False
@@ -1808,115 +2079,7 @@ class WeChatEngine:
                         pass
 
                 # 1. 截图
-                try:
-                    from screenshot import capture_via_printwindow_stable, capture_chat_bottom, capture_minimized_window
-                    from window_manager import is_window_minimized
-                    hwnd = getattr(self.window, '_hWnd', None)
-                    image = None
-
-                    if self.minimize_mode == "offscreen":
-                        # 屏幕外模式：先自愈（防最小化隐形窗口），再三级回退截图
-                        if not hwnd:
-                            hwnd = self._get_valid_hwnd()
-                        if hwnd:
-                            # 关键：截图前确保窗口"恢复态"，否则截到237x56隐形窗口
-                            from screenshot import ensure_window_rendering
-                            win_rect = ensure_window_rendering(hwnd, self.window)
-
-                            if win_rect is None:
-                                self._log("error", "[截图] 自愈失败：窗口无法恢复渲染")
-                                image = None
-                            else:
-                                rl, rt, rw, rh = win_rect
-                                # 诊断：截图前窗口坐标（限频5秒）
-                                _now_cr = time.time()
-                                if _now_cr - getattr(self, "_last_coord_log", 0) > 5:
-                                    self._last_coord_log = _now_cr
-                                    self._log("info", f"[截图] 窗口坐标=({rl},{rt}) {rw}x{rh}, "
-                                               f"屏幕外={rl<=-1000}")
-                                # offscreen模式：无论窗口在哪都用PrintWindow（避免mss截到程序UI）
-                                if self.minimize_mode == "offscreen":
-                                    full_img = capture_via_printwindow_stable(hwnd)
-                                    if full_img is None or (hasattr(full_img, 'mean') and full_img.mean() < 5):
-                                        self._log("info", "[截图] PrintWindow无效，尝试BitBlt...")
-                                        from screenshot import capture_via_bitblt
-                                        full_img = capture_via_bitblt(hwnd)
-                                elif rl > -1000:
-                                    # 非offscreen模式：窗口在可见区域 → mss直接截
-                                    from screenshot import capture_region
-                                    full_img = capture_region(win_rect)
-                                else:
-                                    # 非offscreen模式：屏幕外 → PrintWindow
-                                    full_img = capture_via_printwindow_stable(hwnd)
-
-                                # 回退1已合并到上面（offscreen模式自动尝试BitBlt）
-
-                                # 回退2已移除：不再闪现窗口（用户要求后台监控不闪窗）
-                                # PrintWindow/BitBlt都失败时，直接报告失败，保持窗口在屏幕外
-                                if full_img is None or (hasattr(full_img, 'mean') and full_img.mean() < 5) or (full_img is not None and full_img.shape[1] < 300):
-                                    if rl <= -1000:
-                                        self._log("warning", "[截图] 屏幕外PrintWindow/BitBlt均失败，"
-                                                   "窗口保持在屏幕外不闪现（后台模式不干扰用户）")
-
-                                if full_img is not None and full_img.mean() >= 5 and full_img.shape[1] >= 300:
-                                    from screenshot import crop_chat_region_img
-                                    image = crop_chat_region_img(full_img, bottom_ratio=capture_ratio)
-                                    self._last_full_capture = full_img  # 预览用全窗图
-
-                                    # 定期保存诊断图（每15秒最多1张）
-                                    now_ts = time.time()
-                                    if now_ts - getattr(self, "_last_diag_save", 0) > 15:
-                                        self._last_diag_save = now_ts
-                                        from screenshot import save_debug_image
-                                        save_debug_image(full_img, prefix="capture")
-                                else:
-                                    shape_info = f"{full_img.shape[1]}x{full_img.shape[0]}, mean={full_img.mean():.1f}" if full_img is not None else "None"
-                                    self._log("warning", f"[截图] 截图无效({shape_info})，存fail图")
-                                    if full_img is not None:
-                                        from screenshot import save_debug_image
-                                        save_debug_image(full_img, prefix="fail")
-                        else:
-                            self._log("error", "[截图] 无法获取有效窗口句柄")
-
-                    elif self.minimize_mode == "minimized":
-                        # 最小化模式：恢复窗口到可见位置截图（旧方案，闪窗）
-                        if not hwnd:
-                            self._log("warning", "[截图] 无窗口句柄，尝试重新获取")
-                            hwnd = self._get_valid_hwnd()
-                        if hwnd:
-                            flash_pos = self.wechat_config.get("flash_position", "corner")
-                            image = capture_minimized_window(
-                                self.window, hwnd=hwnd,
-                                skip_printwindow=True, flash_position=flash_pos)
-                            if image is not None:
-                                from screenshot import crop_chat_region_img
-                                image = crop_chat_region_img(image, bottom_ratio=capture_ratio)
-                        else:
-                            self._log("error", "[截图] 无法获取有效窗口句柄")
-                    else:
-                        # 正常模式：先试 PrintWindow（窗口被遮挡时有效），再用 mss
-                        if hwnd:
-                            full_img = capture_via_printwindow(hwnd)
-                            if full_img is not None and full_img.mean() > 5:
-                                from screenshot import crop_chat_region_img
-                                image = crop_chat_region_img(full_img, bottom_ratio=capture_ratio)
-                                self._log("info", f"[截图] PrintWindow成功: {full_img.shape[1]}x{full_img.shape[0]} → 聊天区底部{capture_ratio}")
-
-                        if image is None:
-                            if is_window_minimized(self.window):
-                                self._log("info", "[截图] 窗口已最小化，尝试屏幕外恢复")
-                                image = capture_minimized_window(self.window, skip_printwindow=True)
-                                if image is not None:
-                                    from screenshot import crop_chat_region_img
-                                    image = crop_chat_region_img(image, bottom_ratio=capture_ratio)
-                            else:
-                                image = capture_chat_bottom(self.window, ratio=capture_ratio)
-
-                except Exception as e:
-                    self._log("error", f"截图异常: {e}")
-                    import traceback
-                    self._log("error", traceback.format_exc())
-                    image = None
+                image = self._capture_frame(capture_ratio)
 
                 self.stats["frames_captured"] += 1
 
@@ -1959,10 +2122,10 @@ class WeChatEngine:
                     preview_img = getattr(self, "_last_full_capture", None)
                     if preview_img is None:
                         preview_img = image
-                    
-                    # 发送预览
+
                     self._on_capture(preview_img)
-                    self._last_full_capture = None  # 用完即清
+                    # ★ 只在发送成功后清空，避免预览失败时下次取到 None
+                    self._last_full_capture = None
                     
                     # 限频日志：确认预览链路在工作（每5秒最多1条）
                     _now = time.time()
@@ -2737,6 +2900,11 @@ class WeChatEngine:
             # 顶部OCR若返回空或单字噪声(如 ?/一)，回退红点匹配名
             if not new_contact or len(new_contact) < 2 or new_contact == "?":
                 new_contact = _reddot_name
+            # ★ 交叉校验：如果红点名非空且与OCR解析名不同，说明可能切错人了
+            #   （OCR把标题栏里的群成员名/图标误识别为会话名），强制用红点名
+            if _reddot_name and new_contact and new_contact != _reddot_name:
+                self._log("warning", f"[红点] 名称不一致: 红点={_reddot_name}, OCR={new_contact}，强制使用红点名")
+                new_contact = _reddot_name
             self._remember_contact_name(new_contact)
             if not new_contact:
                 new_contact = _reddot_name or "未命名会话"
@@ -3079,7 +3247,7 @@ class WeChatEngine:
             _pending = getattr(self, "_pending_reply_threads", []) or []
             for _t in _pending:
                 try:
-                    _t.join(timeout=30)
+                    _t.join(timeout=35)
                 except Exception:
                     pass
             self._pending_reply_threads = []
@@ -3177,6 +3345,56 @@ class WeChatEngine:
 
     def get_storage(self):
         return self.storage
+
+    # ========================================================================
+    # 自动清理
+    # ========================================================================
+
+    @staticmethod
+    def _cleanup_debug_images(max_keep=30):
+        """清理 debug/preview 目录，只保留最近 N 张截图"""
+        try:
+            import glob
+            debug_dir = app_path("debug", "preview")
+            if not os.path.isdir(debug_dir):
+                return
+            files = sorted(
+                glob.glob(os.path.join(debug_dir, "*.png")),
+                key=os.path.getmtime, reverse=True)
+            for f in files[max_keep:]:
+                try:
+                    os.remove(f)
+                except OSError:
+                    pass
+            if len(files) > max_keep:
+                logger.info(f"[清理] debug/preview 删除了 {len(files) - max_keep} 张旧截图 (保留 {max_keep})")
+        except Exception:
+            pass
+
+    def _cleanup_old_messages(self, keep_days=90):
+        """清理 storage 中超过 keep_days 天的旧消息，防止数据库无限增长"""
+        if not self.storage:
+            return
+        try:
+            cutoff = (datetime.now() - __import__("datetime").timedelta(days=keep_days)).strftime("%Y-%m-%d")
+            deleted = self.storage.delete_older_than(cutoff)
+            if deleted:
+                self._log("info", f"[清理] 删除了 {deleted} 条 {keep_days} 天前的旧消息")
+                try:
+                    self.storage.vacuum()
+                except Exception:
+                    pass
+        except Exception as e:
+            self._log("warning", f"[清理] 旧消息清理失败: {e}")
+
+    def _periodic_cleanup(self):
+        """定期清理：debug 截图 + 旧消息 + 数据库 vacuum"""
+        now = time.time()
+        if now - self._last_cleanup_ts < self._cleanup_interval:
+            return
+        self._last_cleanup_ts = now
+        self._cleanup_debug_images()
+        self._cleanup_old_messages()
 
 
 def setup_logging(config):

@@ -66,37 +66,51 @@ def send_message():
     time.sleep(0.1)
 
 
-def send_text(window, text):
+def send_text(window, text, retries=3, backoff=0.8):
     """
     完整的发送流程：点击输入框 → 清空 → 粘贴 → 发送。
+    支持自动重试+回退，防止剪贴板占用/焦点丢失导致永久漏回复。
 
     Args:
         window: 微信窗口对象
         text: 要发送的文本
+        retries: 最大重试次数（默认3次）
+        backoff: 重试间隔倍数（默认0.8s，实际等待 backoff * attempt）
 
     Returns:
         bool: 是否成功
     """
+    last_error = None
+    for attempt in range(1, retries + 1):
+        try:
+            click_input_box(window)
+            time.sleep(0.1)
+
+            clear_input_box()
+
+            paste_text(text)
+
+            send_message()
+
+            logger.info(f"已发送消息: {text[:50]}...")
+            return True
+
+        except Exception as e:
+            last_error = e
+            if attempt < retries:
+                wait = backoff * attempt
+                logger.warning(f"发送失败 (尝试 {attempt}/{retries}): {e}，{wait:.1f}s 后重试...")
+                time.sleep(wait)
+            else:
+                logger.error(f"发送消息失败 (已重试{retries}次): {e}")
+
+    # 全部失败：回滚——尝试清空输入框，避免残留半截消息
     try:
-        # 1. 点击输入框
-        click_input_box(window)
-        time.sleep(0.1)
-
-        # 2. 清空
         clear_input_box()
-
-        # 3. 粘贴
-        paste_text(text)
-
-        # 4. 发送
-        send_message()
-
-        logger.info(f"已发送消息: {text[:50]}...")
-        return True
-
-    except Exception as e:
-        logger.error(f"发送消息失败: {e}")
-        return False
+        logger.info("[回滚] 已清空输入框残留内容")
+    except Exception:
+        pass
+    return False
 
 
 def send_text_type_mode(window, text):

@@ -631,3 +631,33 @@ class MessageStorage:
         with open(filepath, "w", encoding="utf-8") as f:
             json.dump(export_data, f, ensure_ascii=False, indent=2)
         logger.info(f"已导出JSON（按联系人分组）: {filepath} ({len(all_data)} 条, {len(contacts)} 个联系人)")
+
+    def delete_older_than(self, date_str):
+        """删除指定日期之前的消息，返回删除条数"""
+        if self.storage_type != "sqlite":
+            return 0
+        try:
+            conn = sqlite3.connect(self.db_path)
+            cur = conn.execute(
+                "DELETE FROM messages WHERE timestamp < ?", (date_str,))
+            deleted = cur.rowcount
+            conn.commit()
+            conn.close()
+            if deleted:
+                logger.info(f"[清理] 删除了 {deleted} 条旧消息 (早于 {date_str})")
+            return deleted
+        except Exception as e:
+            logger.warning(f"[清理] 删除旧消息失败: {e}")
+            return 0
+
+    def vacuum(self):
+        """压缩数据库文件，回收已删除记录的空间"""
+        if self.storage_type != "sqlite":
+            return
+        try:
+            conn = sqlite3.connect(self.db_path)
+            conn.execute("VACUUM")
+            conn.close()
+            logger.info("[清理] 数据库 VACUUM 完成")
+        except Exception as e:
+            logger.warning(f"[清理] VACUUM 失败: {e}")
