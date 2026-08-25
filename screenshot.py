@@ -481,6 +481,27 @@ def _get_frame_rect_dwm(hwnd):
     return None
 
 
+def _mss_grab_rect(rect):
+    """mss 抓屏幕指定矩形区域（rect = (left, top, right, bottom)），返回 BGR numpy 数组。
+
+    当窗口在屏幕可见区域时，mss 对硬件加速(GPU)/DWM窗口非常可靠，
+    比 PrintWindow 更容易拿到真实像素（尤其是 Qt/QML/Chromium4.x 的微信）。
+    """
+    import mss
+    import numpy as np
+
+    left, top, right, bottom = rect
+    w = right - left
+    h = bottom - top
+    if w <= 0 or h <= 0:
+        return None
+    with mss.mss() as sct:
+        raw = sct.grab({"left": left, "top": top, "width": w, "height": h})
+        arr = np.array(raw, dtype=np.uint8)
+        # mss 返回 BGRA，转成 BGR
+        return arr[..., :3][..., ::-1].copy()
+
+
 def capture_via_printwindow(hwnd):
     """
     用 PrintWindow 对屏幕外窗口截图（Qt/QML/Chromium 适配版）。
@@ -573,6 +594,16 @@ def capture_via_printwindow(hwnd):
                 if std_val < 5:
                     logger.warning("[PrintWindow] %s 截到纯色(std=%.1f)，降级重试", method, std_val)
                     continue
+                # ★ 新版微信(4.x硬件加速)：窗口移出屏幕(-10000,0)后，GPU停止重绘，
+                #   PrintWindow 只能抓到"白底色壳子"（mean 230~255 且 std 很低）。
+                #   这种"几乎纯白 = 无效截图"，和黑图一样降级，必须走短暂恢复方案。
+                #   典型特征：mean>230（白色） 且 std<20（画面几乎没文字/头像/气泡）
+                if mean_val > 230.0 and std_val < 20.0:
+                    logger.warning(
+                        "[PrintWindow] %s 疑似白底壳子(mean=%.1f,std=%.1f)——"
+                        "屏幕外微信4.x GPU未渲染，降级到短暂恢复截图",
+                        method, mean_val, std_val)
+                    continue
 
                 # ★ 渲染健康度快筛：半渲染（大面积未绘制）骗过 mean/std，
                 #   用局部方差判定“是否真的画完了”，否则降级重试。
@@ -617,6 +648,10 @@ def _capture_via_temporary_restore(hwnd, w, h):
     import ctypes
     import time
     import win32ui
+
+    # ★ Python 语法要求：global 必须出现在函数作用域开头（赋值前），放分支里会报
+    #   "SyntaxError: name X is assigned to before global declaration"
+    global _last_pw_client_only
 
     logger.info("[兜底] PrintWindow黑屏，短暂移到屏幕边缘截图...")
 
@@ -688,11 +723,31 @@ def _capture_via_temporary_restore(hwnd, w, h):
         ctypes.windll.user32.RedrawWindow(
             hwnd, None, None, RDW_INVALIDATE | RDW_UPDATENOW | RDW_ALLCHILDREN)
         ctypes.windll.user32.UpdateWindow(hwnd)
-        time.sleep(0.15)
+        # ★ 微信4.x用硬件加速(GPU)/DWM合成，窗口ShowWindow后不是立即有像素，
+        #   必须等一帧多刷新时间（144Hz=7ms/帧，60Hz=16ms/帧，
+        #   但DWM+GPU提交有延迟，0.5秒可以确保至少30帧全部渲染完成）
+        time.sleep(0.5)
 
         frame = _get_frame_rect_dwm(hwnd) or win32gui.GetWindowRect(hwnd)
         cw = frame[2] - frame[0]
         ch = frame[3] - frame[1]
+
+        # ★ 屏幕可见位置下最可靠的是 mss：硬件加速窗口的真实 framebuffer
+        #   很多情况下 PrintWindow 拿不到加速内容但 mss 抓屏能拿到（窗口在可见区域就有效）
+        try:
+            img = _mss_grab_rect(frame)
+            if img is not None:
+                _m = float(img.mean())
+                _s = float(img.std())
+                if not (_m > 230 and _s < 20) and _s > 5 and _m > 1:
+                    logger.info("[兜底] ✔ mss屏幕截图成功: %dx%d, mean=%.1f, std=%.1f",
+                                img.shape[1], img.shape[0], _m, _s)
+                    # mss 抓的是屏幕像素=整窗口（含边框），所以把 _last_pw_client_only 设成 False
+                    _last_pw_client_only = False
+                    return img
+                logger.warning("[兜底] mss 截图疑似无效 (mean=%.1f,std=%.1f)，回退PrintWindow", _m, _s)
+        except Exception as e:
+            logger.info("[兜底] mss 抓屏失败: %s，回退PrintWindow", e)
 
         hdc_window = win32gui.GetWindowDC(hwnd)
         mfcDC = win32ui.CreateDCFromHandle(hdc_window)
@@ -719,12 +774,13 @@ def _capture_via_temporary_restore(hwnd, w, h):
                 continue
             
             img = _read_bitmap_to_bgr(saveBitMap)
-            if img.mean() > 1 and img.std() > 5:
-                # ★ 记录截图内容是否为客户区（决定坐标是否需减去标题栏高）
-                global _last_pw_client_only
+            _m = float(img.mean())
+            _s = float(img.std())
+            # ★ 同步 PrintWindow 主流程的严格过滤：黑图/纯白图都不能要
+            if _m > 1 and _s > 5 and not (_m > 230 and _s < 20):
                 _last_pw_client_only = bool(flags & PW_CLIENTONLY)
-                logger.info("[兜底] ✔ 截图成功(%s): %dx%d, mean=%.1f",
-                            method, img.shape[1], img.shape[0], img.mean())
+                logger.info("[兜底] ✔ 截图成功(%s): %dx%d, mean=%.1f, std=%.1f",
+                            method, img.shape[1], img.shape[0], _m, _s)
                 break
             img = None
 

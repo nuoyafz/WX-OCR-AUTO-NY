@@ -46,7 +46,7 @@ REM ================================================================
 echo [..] Checking dependencies...
 echo.
 set "PIP_MIRROR=-i https://pypi.tuna.tsinghua.edu.cn/simple --trusted-host pypi.tuna.tsinghua.edu.cn"
-python -c "import customtkinter, cv2, paddleocr, numpy, PIL, pyautogui, pygetwindow, pyperclip, yaml, requests, mss, win32con, psutil" >nul 2>&1
+python -c "import customtkinter, cv2, paddleocr, numpy, PIL, pyautogui, pygetwindow, pyperclip, yaml, requests, mss, win32con, psutil, matplotlib" >nul 2>&1
 if not errorlevel 1 goto DEPS_OK
 
 echo [!] Missing dependencies, installing via Tsinghua mirror...
