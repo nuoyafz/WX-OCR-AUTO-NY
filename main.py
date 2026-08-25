@@ -466,6 +466,17 @@ class WeChatEngine:
             except Exception as e:
                 self._log("info", f"  ✔ 点击优化器初始化跳过: {e}")
 
+        # 步骤11：预热 OCR 引擎（PaddleOCR 首次加载极慢且无超时）。
+        #   不预热的话，主循环第一轮红点扫描/截图 OCR 会触发首次模型加载，
+        #   表现为"初始化完成 → 卡死无声"（78a1274 屏幕外能截到图后必现）。
+        self._log("info", "[7/7] 正在预热 OCR 引擎（首次加载模型约 10~60 秒，仅一次）...")
+        try:
+            from ocr_engine import _init_engine
+            _ocr_eng = _init_engine()
+            self._log("info", f"  ✔ OCR 引擎就绪: {_ocr_eng}")
+        except Exception as e:
+            self._log("warning", f"  ⚠ OCR 引擎预热异常: {e}（后续识别可能变慢）")
+
         self._log("info", "===== 全部模块初始化完成，准备开始监控 =====")
 
         # 根据微信状态自适应
