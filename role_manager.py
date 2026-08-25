@@ -1,6 +1,7 @@
 """
 角色管理模块 — 读取配置，管理角色定义和联系人映射
 """
+import shutil
 import yaml
 import logging
 from pathlib import Path
@@ -17,7 +18,31 @@ class RoleManager:
         self.roles = {}
         self.contacts = {}
         self.default_role = "tech_expert"
+        self._ensure_config_exists()
         self._load_config()
+
+    def _ensure_config_exists(self):
+        """Git clone 下来 config.yaml 不在仓库里（被.gitignore忽略含API key）。
+        如果 config.yaml 不存在，就从 config.example.yaml 复制一份，
+        这样用户第一次启动就不会遇到「配置文件不存在 / 保存失败 / 红点监控器未启用」。
+        """
+        if self.config_path.exists():
+            return
+        _examples = [
+            self.config_path.with_name("config.example.yaml"),
+            Path(__file__).parent / "config.example.yaml",
+        ]
+        for ex in _examples:
+            if ex.exists():
+                try:
+                    shutil.copy2(ex, self.config_path)
+                    logger.info("[config] 首次启动：自动从 %s 生成 %s", ex.name, self.config_path.name)
+                    return
+                except Exception as e:
+                    logger.warning("[config] 复制 %s -> %s 失败: %s，将使用内置默认配置",
+                                   ex.name, self.config_path.name, e)
+                    return
+        logger.warning("[config] config.yaml 缺失且找不到 config.example.yaml，将使用内置默认配置")
 
     def _load_config(self):
         """加载配置文件"""

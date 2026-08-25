@@ -61,7 +61,7 @@ if not errorlevel 1 goto LAUNCH
 
 echo.
 echo [X] requirements.txt failed, trying fallback install...
-python -m pip install pywin32 psutil numpy opencv-python Pillow pyautogui pygetwindow pyperclip PyYAML requests mss customtkinter paddleocr paddlepaddle %PIP_MIRROR%
+python -m pip install pywin32 psutil numpy opencv-python Pillow pyautogui pygetwindow pyperclip PyYAML requests mss customtkinter paddleocr paddlepaddle matplotlib %PIP_MIRROR%
 echo.
 echo [OK] Dependencies installed
 goto LAUNCH

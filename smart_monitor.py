@@ -101,8 +101,15 @@ class SmartMonitor:
 
         # === 绝技1：帧间差异检测 ===
         if self._last_frame is None:
-            # 第一帧，全图OCR
             self._last_frame = current_frame.copy()
+            return True, []
+
+        # ★ 尺寸不匹配（窗口最小化/恢复/微信4.x DPI切换时常见）：不能做 absdiff，否则 OpenCV Sizes mismatch 崩溃
+        if self._last_frame.shape[:2] != current_frame.shape[:2]:
+            logger.debug("[增量检测] 帧尺寸变化 %s -> %s, 重置基线",
+                         self._last_frame.shape[:2], current_frame.shape[:2])
+            self._last_frame = current_frame.copy()
+            self._last_bottom_hash = None
             return True, []
 
         # 计算帧间差异

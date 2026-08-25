@@ -132,27 +132,35 @@ def get_ocr():
             if _ocr_instance is not None:
                 return _ocr_instance
             from paddleocr import PaddleOCR
+            import inspect
+
+            # 用 inspect.signature 只传入当前安装的 PaddleOCR 版本支持的参数，
+            # 避免新版参数 show_log / ocr_version 在老版本上报错 "Unknown argument: show_log"
+            _sig = inspect.signature(PaddleOCR.__init__)
+            _supported = set(_sig.parameters.keys())
+
+            def _filter_kwargs(kwargs):
+                return {k: v for k, v in kwargs.items() if k in _supported}
+
             logger.info("正在加载 PaddleOCR 模型（首次约3-5秒）V2优化版...")
             try:
-                _ocr_instance = PaddleOCR(
+                _kwargs = dict(
                     use_angle_cls=True,
                     lang="ch",
                     use_gpu=False,
                     show_log=False,
-                    # V2: 检测参数调优 —— 更灵敏地捕捉小字、浅色字
-                    det_db_thresh=0.25,          # 降低检测阈值（默认0.3），不漏掉弱文字
-                    det_db_box_thresh=0.35,      # 放宽候选框阈值（默认0.5）
-                    det_db_unclip_ratio=2.2,     # 扩展框的比例（默认1.6），防止文字被截断
-                    det_limit_side_len=1920,     # 最大边限制，提升大图识别
-                    # V2: 识别参数
-                    rec_batch_num=6,             # 批量识别数提升（默认6）
-                    # V2: 算法结构 — 新版本PP-OCRv4（若可用）
+                    det_db_thresh=0.25,
+                    det_db_box_thresh=0.35,
+                    det_db_unclip_ratio=2.2,
+                    det_limit_side_len=1920,
+                    rec_batch_num=6,
                     ocr_version="PP-OCRv4",
                 )
+                _ocr_instance = PaddleOCR(**_filter_kwargs(_kwargs))
                 logger.info("PaddleOCR PP-OCRv4 模型加载完成 (V2优化参数)")
             except Exception as e1:
                 logger.warning(f"PP-OCRv4加载失败，回退默认模型: {e1}")
-                _ocr_instance = PaddleOCR(
+                _fallback = dict(
                     use_angle_cls=True,
                     lang="ch",
                     use_gpu=False,
@@ -162,6 +170,7 @@ def get_ocr():
                     det_db_unclip_ratio=2.0,
                     rec_batch_num=6,
                 )
+                _ocr_instance = PaddleOCR(**_filter_kwargs(_fallback))
                 logger.info("PaddleOCR 默认模型加载完成 (带V2优化参数)")
     return _ocr_instance
 

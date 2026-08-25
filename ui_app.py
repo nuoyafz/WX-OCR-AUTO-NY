@@ -2434,12 +2434,32 @@ class WeChatAIApp(ctk.CTk):
             })
         return cats
 
+    def _ensure_config_file(self):
+        """UI 内所有写 config.yaml 前共用：确保 config.yaml 存在，不存在则从 example 复制生成。"""
+        cfg_path = _app_path("config.yaml")
+        if os.path.exists(cfg_path):
+            return cfg_path
+        ex_path = _app_path("config.example.yaml")
+        if os.path.exists(ex_path):
+            import shutil as _shutil
+            try:
+                _shutil.copy2(ex_path, cfg_path)
+                self._on_log("info", f"[config] 自动生成配置文件: {cfg_path}")
+            except Exception as e:
+                self._on_log("warning", f"[config] 复制 example 失败: {e}，新建空配置")
+                with open(cfg_path, "w", encoding="utf-8") as f:
+                    f.write("# Auto-generated config\n")
+        else:
+            with open(cfg_path, "w", encoding="utf-8") as f:
+                f.write("# Auto-generated config\n")
+        return cfg_path
+
     def _save_classification_rules(self):
         try:
             cats = self._collect_classification_cats()
-            cfg_path = _app_path("config.yaml")
+            cfg_path = self._ensure_config_file()
             with open(cfg_path, "r", encoding="utf-8") as f:
-                text = f.read()
+                text = f.read() or ""
             # 保留原有的 enabled 开关；若不存在则默认 true
             current_enabled = True
             cls_re = re.compile(
@@ -2513,9 +2533,9 @@ class WeChatAIApp(ctk.CTk):
             if notes:
                 preset["notes"] = notes
 
-            cfg_path = _app_path("config.yaml")
+            cfg_path = self._ensure_config_file()
             with open(cfg_path, "r", encoding="utf-8") as f:
-                text = f.read()
+                text = f.read() or ""
 
             # 构造 reply_style_preset 段（2 空格缩进，与文件其他段一致）
             lines = ["reply_style_preset:"]
@@ -5228,7 +5248,7 @@ class WeChatAIApp(ctk.CTk):
                 _filt[k] = v.get()
             self.config_data["obsidian"] = obsidian_cfg
 
-            config_path = _app_path(self.config_path)
+            config_path = self._ensure_config_file()
             with open(config_path, "w", encoding="utf-8") as f:
                 yaml.dump(self.config_data, f, allow_unicode=True, default_flow_style=False)
 
