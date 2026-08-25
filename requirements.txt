@@ -1,29 +1,51 @@
 # ================================================================
-#  NOYA Chat 微信助手 - 依赖清单
-#  安装: pip install -r requirements.txt
+#  NOYA Chat 微信助手 - 完整依赖清单
+#  安装：pip install -r requirements.txt
+#  清华源加速：
+#     pip install -r requirements.txt -i https://pypi.tuna.tsinghua.edu.cn/simple
 # ================================================================
+#
+#  说明：本文件是根据项目所有 .py import 扫描生成的完整列表。
+#        分 "核心必需"（不装会启动失败 / OCR=0条）和
+#        "可选增强"（未安装时代码会自动降级，不影响核心功能）。
+#
 
-# --- 核心依赖 ---
-paddlepaddle>=2.6.0
-paddleocr>=2.9.0
-mss>=9.0.0
-pyautogui>=0.9.54
-pygetwindow>=0.0.9
-pyperclip>=1.9.0
-numpy>=1.24.0
-opencv-python>=4.9.0
-Pillow>=10.0.0
-PyYAML>=6.0
-requests>=2.28.0
-customtkinter>=5.2.0
-pywin32>=306
-psutil>=5.9.0
-matplotlib>=3.7.0
+# ================ 核心必需（启动/OCR/操作微信缺一不可） ================
+# --- OCR ---
+paddlepaddle>=2.6.0          # 推理后端 (~70MB); 99% OCR=0条的根因就是缺这个
+paddleocr>=2.9.0             # OCR 前端包；依赖上面的 paddlepaddle
+# --- GUI / 基础工具 ---
+customtkinter>=5.2.0         # UI
+opencv-python>=4.9.0         # import cv2，截图/图像预处理
+Pillow>=10.0.0               # import PIL，图像格式转换
+PyYAML>=6.0                  # import yaml，配置读写
+requests>=2.28.0             # 调 LLM / 下载模型
+# --- 屏幕+键鼠操作（Windows） ---
+pywin32>=306                 # import win32gui / win32con / win32api / win32ui / win32process
+mss>=9.0.0                   # 屏幕截图（比 PIL ImageGrab 兼容 DPI 缩放）
+pyautogui>=0.9.54            # 点击/粘贴
+pygetwindow>=0.0.9           # import pygetwindow，枚举微信窗口
+pyperclip>=1.9.0             # 剪贴板，发送回复内容
+psutil>=5.9.0                # 进程/保活检查
+# --- 数值基础 ---
+numpy>=1.24.0                # OCR/红点/图像全链路底层数据结构
+# --- 统计图表 UI ---
+matplotlib>=3.7.0            # 面板里的消息数量图（不装会每10秒报错"无此模块"）
 
-# === 可选增强依赖（未安装时自动降级，不影响核心功能） ===
-# 语义去重 + RAG 检索 + 情感分析模型
-# sentence-transformers>=2.2.0
-# chromadb>=0.4.0
-# scikit-learn>=1.0.0
-# 红点 CNN 推理（可选，纯 NumPy 兜底）
-# onnxruntime>=1.14.0
+# ================ 次必需（深度使用，不装会导致对应模块"未启用"报错） ================
+comtypes>=1.2.0              # uiautomation / pywin32 COM 操作底层依赖
+onnxruntime>=1.14.0          # 红点 CNN 模型推理（不装会降级到纯 numpy 模板匹配=慢）
+# --- RAG / 语义去重（storage + ai_trainer + main.py 都有使用） ---
+scikit-learn>=1.0.0          # import sklearn（TfidfVectorizer 等）
+sentence-transformers>=2.2.0 # import sentence_transformers（RAG 向量化）
+chromadb>=0.4.0              # 向量数据库
+
+# ================ 可选增强（未安装时自动降级，不影响核心功能） ================
+# 微信内置 OCR 引擎（精度高/速度快，但需要正确安装WeChatOCR第三方包）
+#   安装失败时会自动回退到 PaddleOCR
+# WeChatOCR>=1.0.0
+
+# UIAutomation（替代 SendMessage 后台点击的另一种后台注入方案）
+#   未安装时日志里会显示 "UIA监控跳过（uiautomation 未安装）"，
+#   不装默认走 win32 SendMessage 后台点击，效果一样
+uiautomation>=2.0.16
