@@ -35,6 +35,11 @@ exit /b 1
 
 REM ================================================================
 REM  2. Check / Install Dependencies
+REM  NOTE: Use "python -m pip" instead of "pip.exe" directly.
+REM        Some Python launchers (workbuddy/uv etc.) have a broken pip.exe
+REM        shim where the hardcoded python path loses backslashes, causing
+REM        "Fatal error in launcher: Unable to create process".
+REM        python -m pip bypasses the shim and always uses the same interpreter.
 REM ================================================================
 :CHECK_DEPS
 echo [..] Checking dependencies...
@@ -48,12 +53,13 @@ echo ========================================================================
 echo   Installing dependencies (first run may take several minutes)...
 echo ========================================================================
 echo.
-pip install -r "%~dp0requirements.txt"
+python -m pip install --upgrade pip
+python -m pip install -r "%~dp0requirements.txt"
 if not errorlevel 1 goto LAUNCH
 
 echo.
 echo [X] requirements.txt failed, trying fallback install...
-pip install pywin32 psutil numpy opencv-python Pillow pyautogui pygetwindow pyperclip PyYAML requests mss customtkinter paddleocr
+python -m pip install pywin32 psutil numpy opencv-python Pillow pyautogui pygetwindow pyperclip PyYAML requests mss customtkinter paddleocr paddlepaddle
 echo.
 echo [OK] Dependencies installed
 goto LAUNCH
