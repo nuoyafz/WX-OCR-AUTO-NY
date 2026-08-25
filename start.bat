@@ -46,7 +46,10 @@ REM ================================================================
 echo [..] Checking dependencies...
 echo.
 set "PIP_MIRROR=-i https://pypi.tuna.tsinghua.edu.cn/simple --trusted-host pypi.tuna.tsinghua.edu.cn"
-python -c "import customtkinter, cv2, paddleocr, numpy, PIL, pyautogui, pygetwindow, pyperclip, yaml, requests, mss, win32con, psutil, matplotlib" >nul 2>&1
+REM   关键补充: paddleocr 不能只装"paddleocr"包，它必须配套 paddlepaddle (~70MB)
+REM        否则 ocr.ocr() 静默返回 [] / 0条，截图有内容但识别不到任何文字。
+REM        把 paddle (推理库) 也加入依赖检查，缺失时自动清华源重装。
+python -c "import customtkinter, cv2, paddleocr, paddle, numpy, PIL, pyautogui, pygetwindow, pyperclip, yaml, requests, mss, win32con, psutil, matplotlib" >nul 2>&1
 if not errorlevel 1 goto DEPS_OK
 
 echo [!] Missing dependencies, installing via Tsinghua mirror...
