@@ -55,7 +55,7 @@ logs/
 *.indent_bak
 # 调试/临时脚本（本地用，不入库）
 1.py
-tuning.py
+# tuning.py 已移除忽略 — 是核心模块，ocr_engine.py 依赖它
 _apply_ui_patch.py
 fix_*.py
 *_fixer.py

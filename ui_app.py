@@ -4339,7 +4339,7 @@ class WeChatAIApp(ctk.CTk):
             diagnosis_ok = self._diagnose_system()
             if not diagnosis_ok:
                 self.after(0, lambda: self._on_log("warning", "⚠️ 诊断发现问题，建议修复后再启动"))
-                self.after(0, lambda: ctk.messagebox.showwarning(
+                self.after(0, lambda: messagebox.showwarning(
                     "诊断结果",
                     "系统诊断发现一些问题，可能影响使用体验。"
                 ))
@@ -4506,7 +4506,7 @@ class WeChatAIApp(ctk.CTk):
                 self._on_log("warning", "⚠️ 未找到微信窗口")
                 self._on_log("info", "💡 请确保微信已打开并登录")
                 self.btn_start.configure(state="normal")
-                ctk.messagebox.showwarning(
+                messagebox.showwarning(
                     "微信未找到",
                     "未找到微信窗口，请确保：\n1. 微信已打开\n2. 已登录账号\n3. 窗口标题不包含'AI'或'助手'"
                 )
@@ -4522,7 +4522,7 @@ class WeChatAIApp(ctk.CTk):
                 self._on_log("error", f"❌ 模块导入失败: {e}")
                 self._on_log("error", "💡 请检查依赖是否完整安装")
                 self.btn_start.configure(state="normal")
-                ctk.messagebox.showerror(
+                messagebox.showerror(
                     "模块导入失败",
                     f"无法导入必要模块: {e}\n\n请运行: pip install -r requirements.txt"
                 )
@@ -4557,7 +4557,7 @@ class WeChatAIApp(ctk.CTk):
                 import traceback
                 self._on_log("error", traceback.format_exc()[-300:])
                 self.btn_start.configure(state="normal")
-                ctk.messagebox.showerror(
+                messagebox.showerror(
                     "引擎创建失败",
                     f"创建监控引擎失败: {e}\n\n请查看日志了解详情"
                 )
@@ -4577,7 +4577,7 @@ class WeChatAIApp(ctk.CTk):
             import traceback
             self._on_log("error", traceback.format_exc()[-500:])
             self.btn_start.configure(state="normal")
-            ctk.messagebox.showerror(
+            messagebox.showerror(
                 "启动异常",
                 f"启动过程发生异常: {e}\n\n请查看日志了解详情"
             )
@@ -5135,7 +5135,7 @@ class WeChatAIApp(ctk.CTk):
         """V4: Obsidian 写入失败 UI 弹窗告警（不静默吞掉）"""
         try:
             self._on_log("error", f"[Obsidian] 写入异常: {msg}")
-            ctk.messagebox.showwarning(
+            messagebox.showwarning(
                 "Obsidian 同步失败",
                 f"写入 Obsidian 失败，消息可能未同步：\n\n{msg}\n\n"
                 f"请检查 Vault 路径是否正确、磁盘空间、或 Obsidian 是否被占用。"
@@ -6148,7 +6148,7 @@ def _install_crash_handler():
         except Exception:
             pass
         try:
-            ctk.messagebox.showerror(
+            messagebox.showerror(
                 "程序异常（已记录到 crash.log）",
                 f"发生未捕获异常，请截图下方内容或打开 crash.log 发给我：\n\n{str(_exc_val)[:600]}")
         except Exception:
