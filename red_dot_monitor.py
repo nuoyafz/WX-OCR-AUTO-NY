@@ -477,41 +477,39 @@ class RedDotMonitor:
     def _is_valid_contact_name(self, text):
         """
         判定一段 OCR 文本是否是合法的"侧边栏联系人名"。
-        关键修复：
-        - 移除"公众号"黑名单 —— 公众号订阅号行的名字就叫"公众号"，黑掉它会让匹配器
-          拿不到真实名字、回退到下方预览文字"[18条]南阳本地宝"，那才是
-          "全部会话里出现 [18条]南阳本地宝："的根因；导航栏"公众号"图标由 x<nav_end
-          位置过滤已挡住，不必再用名称黑名单。
-        - 长度上限/句末标点/预览关键词拒绝 → 防止"[草稿] 哈哈，这么!"这类消息预览被当成联系人名。
         """
         if not text:
             return False
         t = self._strip_count_prefix(text)
         if len(t) < 1:
             return False
-        if len(t) > 16:
-            return False  # 消息预览通常 >16 字；真实联系人名 2-12 字
-        if t.isdigit():
+        # 去掉末尾" (N)" / "(N人)" / "（N人）" 群成员数后缀再校验长度
+        t_core = re.sub(r'[\s（(]\d{1,4}[\s人个）)]*$', '', t).strip()
+        if not t_core:
             return False
-        if re.match(r'^\d{1,2}[:：]\d{2}$', t):
+        # ★ 单字符绝不当联系人名（OCR常把预览首字"昨""早""今"等识别成行名，导致"名称不一致"）
+        if len(t_core) < 2:
             return False
-        if re.match(r'^(昨天|今天|前天|后天|明天|星期[一二三四五六日天\d]?|周[一二三四五六日天\d]|\/\d{1,2}|-\d{1,2})$', t):
+        if len(t_core) > 16:
             return False
-        if re.match(r'^\[?\d{1,3}\+?\s*条\]?$', t):
+        if t_core.isdigit():
             return False
-        if re.match(r'^\d{1,3}\+?$', t):
+        if re.match(r'^\d{1,2}[:：]\d{2}$', t_core):
             return False
-        # 含句末/句中标点 → 多半是消息正文/预览，不是名字
-        if re.search(r'[。！!？?,，;；、…：]', t):
+        if re.match(r'^(昨天|今天|前天|后天|明天|星期[一二三四五六日天\d]?|周[一二三四五六日天\d]|\/\d{1,2}|-\d{1,2})$', t_core):
             return False
-        # 以消息预览/系统提示开头（直接拒掉 [草稿] 哈哈，这么! 这类）
+        if re.match(r'^\[?\d{1,3}\+?\s*条\]?$', t_core):
+            return False
+        if re.match(r'^\d{1,3}\+?$', t_core):
+            return False
+        if re.search(r'[。！!？?,，;；、…：]', t_core):
+            return False
         for kw in self._PREVIEW_KEYWORDS:
-            if t.startswith(kw) or f"[{kw}]" in t:
+            if t_core.startswith(kw) or f"[{kw}]" in t_core:
                 return False
-        # 侧边栏导航/系统文本（位置 x<nav_end 已过滤一次，这里保留兜底）
-        # 注意：已去掉"公众号" — 理由见上方 docstring
-        if t in {"搜索", "Search", "search", "全部", "设置", "通讯录", "文件",
-                 "收藏", "朋友圈", "聊天", "视频号", "小程序"}:
+        if t_core in {"搜索", "Search", "search", "全部", "设置", "通讯录", "文件",
+                      "收藏", "朋友圈", "聊天", "视频号", "小程序", "订阅号",
+                      "公众号", "服务号", "群助手"}:
             return False
         return True
 
@@ -541,52 +539,70 @@ class RedDotMonitor:
         _nav_end = int(image_w * self.sidebar_nav_width_ratio)
         for dot in red_dots:
             dot_y, dot_x = dot["center_y"], dot["center_x"]
-            # ★ 防御性屏蔽：即使 HSV/模板漏过，匹配阶段再拦一次导航栏红点
             if dot_x < _nav_end:
                 logger.info(f"[红点匹配] ⚠ 红点({dot_x},{dot_y}) 在左侧导航栏(nav_end={_nav_end})，跳过")
                 continue
-            best_idx, best_y_diff, best_text = -1, 999, None
+            candidates = []
             for idx_original, r in ocr_sorted:
                 if idx_original in used_ocr_idx:
                     continue
-                # ★ 屏蔽左侧导航栏 OCR 文本（图标/无联系人名，避免"未读"被关联到导航图标）
                 if r.get("x_center", 0) < _nav_end:
                     continue
                 text = r.get("text", "").strip()
                 y_center = r.get("y_center", 0)
                 y_diff = abs(y_center - dot_y)
-                if y_diff <= self._match_y_band and y_diff < best_y_diff and self._is_valid_contact_name(text):
-                    best_idx, best_y_diff, best_text = idx_original, y_diff, text
-            if best_text is not None:
-                clean_name = best_text
-                # 剥前导 [N条] 未读数前缀（OCR 经常把 "[18条] 南阳本地宝" 当一行）
-                clean_name = self._strip_count_prefix(clean_name)
-                # 去尾部 " 数字+" 残留
-                m = re.match(r'^(.+?)\s+\d{1,3}\+?$', clean_name)
-                if m and len(m.group(1)) >= 2:
-                    clean_name = m.group(1).strip()
-                # 清理后若不再合法（空 / 仍是预览文字 / 过长等）→ 跳过，避免存进垃圾联系人名
-                if not self._is_valid_contact_name(clean_name):
-                    logger.info(f"[红点匹配] ⚠ 红点({dot_x},{dot_y}) 清理后 '{clean_name}' 仍无效，跳过")
+                if y_diff > self._match_y_band:
                     continue
-                name_y = ocr_results[best_idx].get("y_center", dot_y)
-                matched.append({
-                    "contact": clean_name,
-                    "red_dot_y": dot_y,         # 红点像素 Y（保留用于日志/调试）
-                    "red_dot_x": dot_x,
-                    "name_y": name_y,           # 匹配到的名字中心 Y（用于点击定位，比红点Y更精准）
-                    "confidence": ocr_results[best_idx].get("confidence", 0),
-                    "unread_count": "?", "method": dot.get("method", "hsv") + "+ocr",
-                })
-                used_ocr_idx.add(best_idx)
-                logger.info(f"[红点匹配] ✔ 红点({dot_x},{dot_y}) ↔ '{clean_name}' "
-                            f"y_diff={best_y_diff}px [{dot.get('method','?')}]")
-            else:
-                # ★ 不再生成 "未读_y" 幻像联系人（避免点击到完全无关的聊天行 → "乱套"根因）
-                #    真实场景下：经过 nav-bar 屏蔽 + 行带收紧后，绝大部分红点都能匹配到名称；
-                #    极少数 OCR 真的读不到名字的，宁可让该未读暂不处理，也不要误点别处。
+                if not self._is_valid_contact_name(text):
+                    continue
+                clean = self._strip_count_prefix(text)
+                m = re.match(r'^(.+?)\s+\d{1,3}\+?$', clean)
+                if m and len(m.group(1)) >= 2:
+                    clean = m.group(1).strip()
+                if not self._is_valid_contact_name(clean):
+                    continue
+                score = 0.0
+                t_core = re.sub(r'[\s（(]\d{1,4}[\s人个）)]*$', '', clean).strip()
+                # 1. 带群成员数（(6) / （6人）/ 100+）的优先：说明是标题行而非预览行
+                if re.search(r'[\s（(]\d{1,4}[\s人个）)]*$', clean) or re.search(r'\d{1,3}\+$', clean):
+                    score += 5.0
+                # 2. y_diff 越小越好（同一行对齐 = 真实行名）
+                score += max(0.0, 10.0 - y_diff * 0.35)
+                # 3. 长度 2-8 是典型联系人/群名，1 字/9+ 字降权
+                if 2 <= len(t_core) <= 8:
+                    score += 3.0
+                elif len(t_core) == 1:
+                    score -= 8.0
+                # 4. OCR 置信度
+                score += (r.get("confidence", 0) or 0) * 2.0
+                candidates.append((score, idx_original, y_diff, clean, y_center))
+            if not candidates:
                 logger.info(f"[红点匹配] ⚠ 红点({dot_x},{dot_y}) 在{self._match_y_band}px带内未匹配到有效联系人名，跳过(避免误点击)")
                 continue
+            candidates.sort(key=lambda x: x[0], reverse=True)
+            best_score, best_idx, best_y_diff, best_text, best_y = candidates[0]
+            if best_score <= 0:
+                logger.info(f"[红点匹配] ⚠ 红点({dot_x},{dot_y}) 候选分{best_score:.1f}过低，跳过")
+                continue
+            clean_name = best_text
+            t_core2 = re.sub(r'[\s（(]\d{1,4}[\s人个）)]*$', '', clean_name).strip()
+            if t_core2 and t_core2 != clean_name:
+                clean_name = t_core2
+            if not self._is_valid_contact_name(clean_name):
+                logger.info(f"[红点匹配] ⚠ 红点({dot_x},{dot_y}) 清理后 '{clean_name}' 仍无效，跳过")
+                continue
+            name_y = ocr_results[best_idx].get("y_center", dot_y)
+            matched.append({
+                "contact": clean_name,
+                "red_dot_y": dot_y,
+                "red_dot_x": dot_x,
+                "name_y": name_y,
+                "confidence": ocr_results[best_idx].get("confidence", 0),
+                "unread_count": "?", "method": dot.get("method", "hsv") + "+ocr",
+            })
+            used_ocr_idx.add(best_idx)
+            logger.info(f"[红点匹配] ✔ 红点({dot_x},{dot_y}) ↔ '{clean_name}' "
+                        f"y_diff={best_y_diff}px score={best_score:.1f} [{dot.get('method','?')}]")
         return matched
 
     def get_unread_contacts(self, window, debug=False):
@@ -656,16 +672,17 @@ class RedDotMonitor:
                             f"{self._vote_threshold}轮,当前票数={ {k: self._vote[k] for k in _this_round} })")
             for item in _voted_raw:
                 name = item["contact"]
-                # 黑名单联系人（含通配符*匹配）：直接跳过，不计入待处理
                 _bl_skip = False
                 for _bl in self.blacklist:
                     if "*" in _bl:
-                        if _bl.replace("*", "") in name:
+                        pattern = _bl.replace("*", "")
+                        if pattern in name:
                             _bl_skip = True
                             break
-                    elif _bl == name or _bl in name:
-                        _bl_skip = True
-                        break
+                    else:
+                        if _bl == name or _bl in name or name in _bl:
+                            _bl_skip = True
+                            break
                 if _bl_skip:
                     logger.info(f"[红点] 黑名单联系人跳过(诊断): {name}")
                     continue
@@ -693,9 +710,12 @@ class RedDotMonitor:
                     logger.info(f"[红点] ⏸ 冷却中: {name} 剩余{remaining}s，跳过")
             _blk_in_raw = sum(
                 1 for it in unread_raw
-                if any((("*" in b and b.replace("*", "") in it["contact"]) or
-                        b == it["contact"] or b in it["contact"])
-                       for b in self.blacklist)
+                if any((
+                    ("*" in b and b.replace("*", "") in it["contact"]),
+                    b == it["contact"],
+                    b in it["contact"],
+                    it["contact"] in b,
+                ) for b in self.blacklist)
             )
             _valid_match = len(unread_raw) - _blk_in_raw
             self._last_debug = (f"红点={len(red_dots)}个, OCR={len(ocr_results)}条, "

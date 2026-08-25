@@ -2698,7 +2698,7 @@ class WeChatEngine:
                     if pattern in contact:
                         skip = True
                         break
-                elif bl in contact:
+                elif bl == contact or bl in contact or contact in bl:
                     skip = True
                     break
             if skip:
@@ -2715,7 +2715,7 @@ class WeChatEngine:
                         if pattern in contact:
                             in_whitelist = True
                             break
-                    elif wl in contact:
+                    elif wl == contact or wl in contact or contact in wl:
                         in_whitelist = True
                         break
                 if not in_whitelist:
@@ -3059,12 +3059,18 @@ class WeChatEngine:
              # 二次黑名单检查：侧边栏OCR可能只提取部分联系人名，用聊天内容再检查
             all_text = " ".join(str(r.get("text", "")) for r in unique_results)
             for bl in all_blacklist:
-                if bl in all_text:
-                    self._log("info", f"[红点] 二次黑名单命中 '{bl}'，跳过: {new_contact}")
-                    self.red_dot_monitor.mark_processed(contact)
+                if "*" in bl:
+                    _pt = bl.replace("*", "")
+                    if _pt in all_text or _pt in new_contact:
+                        skip = True
+                        self._log("info", f"[红点] 二次黑名单命中(通配) '{bl}'，跳过: {new_contact}")
+                        break
+                elif bl in all_text or bl in new_contact or new_contact in bl:
                     skip = True
+                    self._log("info", f"[红点] 二次黑名单命中 '{bl}'，跳过: {new_contact}")
                     break
             if skip:
+                self.red_dot_monitor.mark_processed(contact)
                 continue
             # 前10次：AI看截图+OCR判断哪些是新消息；10次后：纯规则判断
             if self.ai_trainer:

@@ -154,23 +154,14 @@ def capture_full_window(window):
 def crop_chat_region_img(full_img, bottom_ratio=1.0):
     """
     把全窗/全客户区截图裁剪为"聊天消息区"：排除左侧联系人栏、顶部标题/搜索栏、底部输入框。
-    PrintWindow 截的是整个客户区（含左侧栏），直接对全宽做OCR会把联系人列表误识别成聊天消息。
-    这里按 get_chat_region 相同比例先裁掉侧栏，再取底部 bottom_ratio。
-
-    Args:
-        full_img: 全窗/全客户区截图 (numpy.ndarray, BGR)
-        bottom_ratio: 在聊天区内再取底部比例（1.0=整个聊天区，0.35=聊天区底部35%）
-
-    Returns:
-        numpy.ndarray 或 None
     """
     if full_img is None:
         return None
     h, w = full_img.shape[:2]
-    x1 = int(w * 0.30)              # 排除左侧联系人栏
-    y1 = int(h * 0.08)              # 排除顶部标题/搜索栏
-    x2 = x1 + int(w * 0.68)
-    y2 = y1 + int(h * 0.77)         # 排除底部输入框
+    x1 = int(w * 0.31)              # 左侧联系人栏约 28-30%，这里再右移 1% 避免把侧栏文字混进聊天区
+    y1 = int(h * 0.12)              # 顶部标题/搜索栏：12%（群名+成员数都在标题栏里，聊天正文从12%开始）
+    x2 = x1 + int(w * 0.67)         # 右侧再留 2% 边距（有些皮肤有滚动条/圆角白边）
+    y2 = y1 + int(h * 0.73)         # 底部输入框高度约 15%，从 12%+73%=85% 截止
     chat = full_img[y1:y2, x1:x2]
     if chat.size == 0:
         return full_img
@@ -182,22 +173,13 @@ def crop_chat_region_img(full_img, bottom_ratio=1.0):
 
 
 def crop_title_bar_img(full_img):
-    """截聊天窗口顶部标题栏区域（群名/联系人名所在）。
-
-    微信4.x 所有聊天窗口的*系统窗口标题*恒为"微信"，真实群名/联系人名
-    只显示在聊天区顶部的标题栏（群名 + 下方成员数/微信号）。本函数裁剪
-    该区域，供 OCR 提取当前会话真实名称，解决 contact 被误识别为"微信"的问题。
-    坐标与 crop_chat_region_img 一致（排除左侧联系人栏）。
-    """
+    """截聊天窗口顶部标题栏区域（群名/联系人名所在）。"""
     if full_img is None:
         return None
     h, w = full_img.shape[:2]
-    x1 = int(w * 0.30)              # 排除左侧联系人栏
-    x2 = x1 + int(w * 0.68)
-    # 顶部标题栏高度：微信4.x 在不同 DPI/缩放下约 8%~14%，
-    # 取 14% 留余量（多截一点不会误伤，少截则群名/成员数可能被切掉，
-    # 此前 12% 时较长群名(如"东赚30②群(258)")被截断只识别到首字"一"）
-    y2 = max(int(h * 0.14), 1)
+    x1 = int(w * 0.31)
+    x2 = x1 + int(w * 0.67)
+    y2 = max(int(h * 0.16), 1)
     bar = full_img[0:y2, x1:x2]
     return bar if bar.size else full_img
 
